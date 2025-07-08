@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>{{ config('app.name', 'Muhdin General Trading') }} - Login</title>
+    <title>{{ config('app.name', env('APP_NAME', 'Muhdin General Trading')) }} - Login</title>
 
     <!-- Favicon -->
     <link rel="icon" type="image/png" href="{{ asset('Logo.png') }}">
@@ -19,46 +19,159 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="{{ asset('css/theme/theme.css') }}">
     
+    <style>
+        /* Login-specific styles using ONLY theme variables - no custom classes */
+        body {
+            background: linear-gradient(135deg, var(--background) 0%, var(--muted) 100%);
+            min-height: 100vh;
+        }
+        
+        .card {
+            border-radius: calc(var(--border-radius) * 2);
+            box-shadow: var(--shadow-md);
+            transition: all 0.3s ease;
+            max-width: 28rem;
+            margin: 0 auto;
+        }
+        
+        .card:hover {
+            box-shadow: 0 1rem 2rem rgb(0 0 0 / 20%);
+            transform: translateY(-2px);
+        }
+        
+        .bg-gradient-primary {
+            background: linear-gradient(135deg, var(--bs-primary) 0%, var(--bs-info) 100%);
+            box-shadow: 0 0.5rem 1rem rgb(var(--bs-primary-rgb) / 25%);
+        }
+        
+        .form-floating .form-control:focus ~ label,
+        .form-floating .form-control:not(:placeholder-shown) ~ label {
+            color: var(--bs-primary);
+        }
+        
+        .password-toggle {
+            position: absolute;
+            right: 0.75rem;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: var(--muted-foreground);
+            cursor: pointer;
+            padding: 0.25rem;
+            border-radius: var(--border-radius);
+            transition: all 0.15s ease;
+        }
+        
+        .password-toggle:hover {
+            color: var(--foreground);
+            background-color: var(--muted);
+        }
+        
+        .btn-primary {
+            padding: 0.875rem;
+            font-weight: 600;
+            border-radius: var(--border-radius);
+            transition: all 0.2s ease;
+        }
+        
+        .btn-primary:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+        
+        .alert-danger {
+            background-color: rgb(var(--bs-danger-rgb) / 10%);
+            border-color: var(--bs-danger);
+            color: var(--bs-danger);
+            border-radius: var(--border-radius);
+        }
+        
+        /* Responsive adjustments using Bootstrap breakpoints */
+        @media (max-width: 576px) {
+            .card {
+                margin: 1rem;
+                padding: 2rem 1.5rem !important;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .card {
+                padding: 1.5rem 1rem !important;
+            }
+        }
+    </style>
 </head>
-<body class="d-flex align-items-center justify-content-center min-vh-100 bg-body">
-    <div class="card shadow-sm border-0 p-4" style="max-width: 400px; width: 100%;">
+<body class="d-flex align-items-center justify-content-center">
+    <div class="card border-0 shadow-sm p-4 p-md-5">
         <div class="d-flex flex-column align-items-center mb-4">
-            <div class="bg-primary text-white rounded d-flex align-items-center justify-content-center mb-3" style="width: 60px; height: 60px;">
+            <div class="bg-gradient-primary text-white rounded d-flex align-items-center justify-content-center mb-3" style="width: 4rem; height: 4rem;">
                 <i class="bi bi-box fs-2"></i>
             </div>
-            <h4 class="fw-bold mb-1">{{ config('app.name', 'Muhdin General Trading') }}</h4>
-            <p class="text-secondary small mb-0">Welcome back! Please sign in to continue.</p>
+            <h1 class="fw-bold mb-1 text-center">{{ config('app.name', env('APP_NAME', 'Muhdin General Trading')) }}</h1>
+            <p class="text-muted-foreground text-center mb-0 small">Welcome back! Please sign in to continue.</p>
         </div>
+        
         <form method="POST" action="{{ route('login') }}" id="loginForm">
             @csrf
-            <div class="mb-3">
-                <label for="email" class="form-label">Email</label>
-                <input id="email" type="email" class="form-control" name="email" value="{{ old('email') }}" required autofocus autocomplete="username">
+            
+            <div class="form-floating mb-3">
+                <input id="email" type="email" class="form-control" name="email" 
+                       value="{{ old('email') }}" required autofocus autocomplete="username" 
+                       placeholder="Enter your email">
+                <label for="email">Email Address</label>
             </div>
-            <div class="mb-3">
-                <label for="password" class="form-label">Password</label>
-                <div class="input-group">
-                    <input id="password" type="password" class="form-control" name="password" required autocomplete="current-password">
-                    <button type="button" class="btn btn-outline-secondary toggle-password" title="Show password">
-                        <i class="bi bi-eye"></i>
-                    </button>
-                </div>
+            
+            <div class="form-floating position-relative mb-3">
+                <input id="password" type="password" class="form-control" name="password" 
+                       required autocomplete="current-password" placeholder="Enter your password">
+                <label for="password">Password</label>
+                <button type="button" class="password-toggle toggle-password" title="Show password">
+                    <i class="bi bi-eye"></i>
+                </button>
             </div>
-            <div class="mb-3 form-check">
-                <input class="form-check-input" type="checkbox" name="remember" id="remember" {{ old('remember') ? 'checked' : '' }}>
-                <label class="form-check-label" for="remember">Remember me</label>
+            
+            <div class="form-check mb-3">
+                <input class="form-check-input" type="checkbox" name="remember" id="remember" 
+                       {{ old('remember') ? 'checked' : '' }}>
+                <label class="form-check-label text-muted-foreground" for="remember">
+                    Remember me
+                </label>
             </div>
+            
             @if ($errors->any())
                 <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
                     {{ $errors->first() }}
                 </div>
             @endif
+            
             <div class="d-grid mb-3">
-                <button type="submit" class="btn btn-primary" id="loginBtn">Sign In</button>
+                <button type="submit" class="btn btn-primary" id="loginBtn">
+                    <span class="btn-content">
+                        <i class="bi bi-box-arrow-in-right me-2"></i>
+                        Sign In
+                    </span>
+                    <span class="btn-loading d-none">
+                        <div class="spinner-border spinner-border-sm me-2" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <span>Signing in...</span>
+                    </span>
+                </button>
             </div>
-            <div class="d-flex justify-content-between align-items-center">
-                <a href="#" class="text-primary small" onclick="alert('Please contact your system administrator to reset your password.')">Forgot password?</a>
-                <a href="#" class="text-primary small" onclick="alert('User registration is managed by system administrators. Please contact your administrator for account creation.')">Need an account?</a>
+            
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                <a href="#" class="text-primary small text-decoration-none fw-medium" 
+                   onclick="showMessage('Please contact your system administrator to reset your password.')">
+                    <i class="bi bi-question-circle me-1"></i>
+                    Forgot password?
+                </a>
+                <a href="#" class="text-primary small text-decoration-none fw-medium" 
+                   onclick="showMessage('User registration is managed by system administrators. Please contact your administrator for account creation.')">
+                    <i class="bi bi-person-plus me-1"></i>
+                    Need an account?
+                </a>
             </div>
         </form>
     </div>
@@ -70,7 +183,7 @@
         // Password toggle functionality
         document.querySelectorAll('.toggle-password').forEach(button => {
             button.addEventListener('click', function() {
-                const input = this.closest('.input-group').querySelector('input');
+                const input = this.closest('.form-floating').querySelector('input');
                 const icon = this.querySelector('i');
                 
                 if (input.type === 'password') {
@@ -93,30 +206,21 @@
         
         if (loginForm && loginBtn) {
             loginForm.addEventListener('submit', function() {
-                const originalContent = loginBtn.innerHTML;
-                loginBtn.innerHTML = `
-                    <span class="d-flex align-items-center justify-content-center">
-                        <div class="spinner-border spinner-border-sm me-2" role="status">
-                            <span class="visually-hidden">Loading...</span>
-                        </div>
-                        <span>Signing in...</span>
-                    </span>
-                `;
+                const btnContent = loginBtn.querySelector('.btn-content');
+                const btnLoading = loginBtn.querySelector('.btn-loading');
+                
+                btnContent.classList.add('d-none');
+                btnLoading.classList.remove('d-none');
                 loginBtn.disabled = true;
                 
-                // Re-enable after 5 seconds as fallback
+                // Re-enable after 10 seconds as fallback
                 setTimeout(() => {
-                    loginBtn.innerHTML = originalContent;
+                    btnContent.classList.remove('d-none');
+                    btnLoading.classList.add('d-none');
                     loginBtn.disabled = false;
-                }, 5000);
+                }, 10000);
             });
         }
-        
-        // Initialize tooltips
-        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-            return new bootstrap.Tooltip(tooltipTriggerEl);
-        });
         
         // Form validation feedback
         const inputs = document.querySelectorAll('input[required]');
@@ -130,6 +234,26 @@
                     this.classList.add('is-invalid');
                 }
             });
+        });
+        
+        // Message display function
+        function showMessage(message) {
+            alert(message);
+        }
+        
+        // Add subtle animation on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            const loginCard = document.querySelector('.card');
+            if (loginCard) {
+                loginCard.style.opacity = '0';
+                loginCard.style.transform = 'translateY(20px)';
+                
+                setTimeout(() => {
+                    loginCard.style.transition = 'all 0.5s ease';
+                    loginCard.style.opacity = '1';
+                    loginCard.style.transform = 'translateY(0)';
+                }, 100);
+            }
         });
     </script>
 </body>
