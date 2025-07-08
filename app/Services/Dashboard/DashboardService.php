@@ -57,7 +57,7 @@ class DashboardService
             'can_view_purchases' => false,
             'low_stock_items_list' => collect([]),
             'activities' => collect([]),
-            'error' => 'Unable to load dashboard data. Please refresh the page.',
+            'error' => 'Dashboard data is temporarily unavailable. Please try again in a moment.',
         ];
     }
 } 

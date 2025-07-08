@@ -44,13 +44,19 @@ class DashboardController extends Controller
             }
             
             return view('dashboard', $dashboardData);
+            
         } catch (\Exception $e) {
-            \Log::error('Dashboard error: ' . $e->getMessage(), [
+            \Log::error('Dashboard data loading failed', [
+                'error' => $e->getMessage(),
                 'user_id' => auth()->id(),
                 'trace' => $e->getTraceAsString()
             ]);
             
-            return view('dashboard', $this->dashboardService->getEmptyDashboardData());
+            // Return empty dashboard data with user-friendly error message
+            $emptyData = $this->dashboardService->getEmptyDashboardData();
+            $emptyData['error'] = 'Dashboard data is temporarily unavailable. Please try again in a moment.';
+            
+            return view('dashboard', $emptyData);
         }
     }
 
@@ -64,14 +70,21 @@ class DashboardController extends Controller
             $chartData = $this->chartDataService->getChartData($user, $range);
             
             return response()->json($chartData);
+            
         } catch (\Exception $e) {
-            \Log::error('Chart data error: ' . $e->getMessage(), [
+            \Log::error('Chart data loading failed', [
+                'error' => $e->getMessage(),
                 'user_id' => auth()->id(),
                 'range' => $range,
                 'trace' => $e->getTraceAsString()
             ]);
             
-            return response()->json($this->chartDataService->getEmptyChartData(), 500);
+            return response()->json([
+                'error' => 'Chart data is temporarily unavailable. Please try again.',
+                'labels' => [],
+                'sales' => [],
+                'purchases' => []
+            ], 500);
         }
     }
 }
