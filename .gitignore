@@ -1,0 +1,118 @@
+# Laravel .gitignore
+
+# Environment files
+.env
+.env.backup
+.env.production
+.env.local
+.env.testing
+
+# Dependencies
+/vendor/
+/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build files
+/public/hot
+/public/storage
+/public/build
+/storage/*.key
+
+# Laravel specific
+/bootstrap/cache/*
+!/bootstrap/cache/.gitignore
+/storage/app/*
+!/storage/app/.gitignore
+!/storage/app/public/
+/storage/framework/cache/*
+!/storage/framework/cache/.gitignore
+/storage/framework/sessions/*
+!/storage/framework/sessions/.gitignore
+/storage/framework/testing/*
+!/storage/framework/testing/.gitignore
+/storage/framework/views/*
+!/storage/framework/views/.gitignore
+/storage/logs/*
+!/storage/logs/.gitignore
+
+# Database
+database.sqlite
+*.sqlite
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Backup files
+*.backup
+*.bak
+
+# Log files
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# Compiled files
+*.com
+*.class
+*.dll
+*.exe
+*.o
+*.so
+
+# Packages
+*.7z
+*.dmg
+*.gz
+*.iso
+*.jar
+*.rar
+*.tar
+*.zip
+
+# PHPUnit
+.phpunit.result.cache
+phpunit.xml
+
+# Coverage reports
+coverage/
+.nyc_output
+
+# Development tools
+.phpcs-cache
+.php_cs.cache
+.php-cs-fixer.cache
+
+# Deployment scripts (keep tracked but ignore specific deployment files)
+deployment-scripts/deploy.log
+deployment-scripts/*.log
+
+# Keep but ignore sensitive production files
+production.env.backup
+*.env.backup
+
+# Cursor IDE
+.cursorrules.backup
+.cursor/
+
+# Laravel Telescope (if used)
+telescope.php
+
+# Laravel Horizon (if used)
+horizon.php

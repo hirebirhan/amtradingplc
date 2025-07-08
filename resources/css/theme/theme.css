@@ -1,0 +1,139 @@
+/**
+ * Stock360 Theme System
+ * Built on Bootstrap 5 with CSS custom properties
+ * Following Bootstrap's official theming guidelines
+ * 
+ * @see https://getbootstrap.com/docs/5.0/customize/css-variables/
+ */
+
+/* 1. Import CSS Variables - Single Source of Truth */
+@import url('_variables.css');
+
+/* 2. Import Layout Components */
+@import url('_layout.css');
+
+/* 3. Import UI Components */
+@import url('_components.css');
+
+/* 4. Import Utilities */
+@import url('_utilities.css');
+
+/* Import Google Fonts - Inter */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* === BOOTSTRAP CUSTOMIZATION === */
+/* Override Bootstrap's CSS variables with our theme values */
+:root {
+    /* Bootstrap uses these CSS variables throughout their components */
+    --bs-font-family-sans-serif: var(--bs-font-sans-serif);
+    --bs-body-font-family: var(--bs-font-sans-serif);
+    --bs-body-font-size: 0.875rem;
+    --bs-body-font-weight: 400;
+    --bs-body-line-height: 1.5;
+    
+    /* Bootstrap Component Variables */
+    --bs-border-width: 1px;
+    --bs-border-radius: var(--radius-sm);
+    --bs-border-radius-sm: 0.25rem;
+    --bs-border-radius-lg: var(--radius-lg);
+    --bs-border-radius-xl: 1rem;
+    --bs-border-radius-pill: 50rem;
+}
+
+/* === BASE RESET === */
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+
+html {
+    scroll-behavior: smooth;
+    font-family: var(--bs-font-sans-serif);
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    background-color: var(--bs-body-bg);
+    color: var(--bs-body-color);
+    font-family: var(--bs-font-sans-serif);
+    font-size: var(--bs-body-font-size);
+    font-weight: var(--bs-body-font-weight);
+    line-height: var(--bs-body-line-height);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    transition: background-color 0.3s ease-in-out, color 0.3s ease-in-out;
+}
+
+/* === ACCESSIBILITY === */
+:focus-visible {
+    outline: 2px solid var(--bs-primary);
+    outline-offset: 2px;
+}
+
+.visually-hidden,
+.visually-hidden-focusable:not(:focus):not(:focus-within) {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+}
+
+/* === LINKS === */
+a {
+    color: var(--bs-link-color);
+    text-decoration: none;
+    transition: color 0.2s ease-in-out;
+}
+
+a:hover {
+    color: var(--bs-link-hover-color);
+    text-decoration: underline;
+}
+
+/* === DARK MODE SUPPORT === */
+[data-bs-theme="dark"] a {
+    color: var(--bs-link-color);
+}
+
+[data-bs-theme="dark"] a:hover {
+    color: var(--bs-link-hover-color);
+}
+
+/* === PRINT STYLES === */
+@media print {
+    .d-print-none {
+        display: none !important;
+    }
+    
+    body {
+        min-height: auto !important;
+        background-color: white !important;
+        color: black !important;
+    }
+    
+    .card {
+        box-shadow: none !important;
+        border: 1px solid #ddd !important;
+    }
+    
+    .app-navbar,
+    .app-sidebar,
+    .app-footer,
+    .mobile-overlay {
+        display: none !important;
+    }
+    
+    .main-wrapper {
+        margin-left: 0 !important;
+    }
+    
+    .main-content {
+        padding: 0 !important;
+    }
+} 

@@ -1,0 +1,401 @@
+/* stylelint-disable custom-property-empty-line-before */
+/* stylelint-disable function-disallowed-list */
+/* stylelint-disable scale-unlimited/declaration-strict-value */
+/* stylelint-disable comment-empty-line-before */
+
+/* Bootstrap Theme Variables */
+:root {
+  /* Light Theme Colors - Professional Trading Theme */
+  --bs-primary: rgb(32 84 147);       /* Deep Blue */
+  --bs-primary-rgb: 32, 84, 147;
+  --bs-secondary: rgb(108 117 125);    /* Bootstrap Gray */
+  --bs-secondary-rgb: 108, 117, 125;
+  --bs-success: rgb(40 167 69);        /* Vibrant Green */
+  --bs-success-rgb: 40, 167, 69;
+  --bs-info: rgb(0 149 182);           /* Ocean Blue */
+  --bs-info-rgb: 0, 149, 182;
+  --bs-warning: rgb(255 193 7);        /* Standard Warning */
+  --bs-warning-rgb: 255, 193, 7;
+  --bs-danger: rgb(220 53 69);         /* Standard Danger */
+  --bs-danger-rgb: 220, 53, 69;
+  --bs-light: rgb(248 249 250);        /* Light Background */
+  --bs-light-rgb: 248, 249, 250;
+  --bs-dark: rgb(33 37 41);            /* Dark Text */
+  --bs-dark-rgb: 33, 37, 41;
+
+  /* Layout Variables */
+  --sidebar-width: 300px;
+  --sidebar-collapsed-width: 64px;
+  --navbar-height: 64px;
+
+  /* Component Sizes */
+  --icon-btn-size: 2.5rem;
+  --avatar-size: 2rem;
+  --notification-size: 1rem;
+  --notification-offset: -0.25rem;
+  --notification-font-size: 0.625rem;
+  --border-radius: 0.375rem;
+
+  /* Border Values */
+  --border-width: 1px;
+  --box-shadow-offset: 2px;
+
+  /* Custom Theme Colors */
+  --background: rgb(250 251 252);       /* Subtle off-white for better contrast */
+  --foreground: rgb(33 37 41);          /* Standard dark text */
+  --muted: rgb(241 245 249);            /* Subtle light gray for secondary areas */
+  --muted-foreground: rgb(100 116 139); /* Softer text for secondary content */
+  --border: rgb(226 232 240);           /* Subtle border color */
+  --input: rgb(255 255 255);            /* White input background */
+  --card: rgb(255 255 255);             /* White card background */
+  --card-foreground: rgb(33 37 41);     /* Standard dark text for cards */
+  --accent: rgb(32 84 147);             /* Primary color as accent */
+  --accent-foreground: rgb(255 255 255);/* White text on accent */
+
+  /* Shadows */
+  --shadow-sm: 0 0.125rem 0.25rem rgb(0 0 0 / 7.5%);
+  --shadow-md: 0 0.5rem 1rem rgb(0 0 0 / 15%);
+}
+
+/* Dark Theme */
+[data-bs-theme="dark"] {
+  --bs-primary: rgb(78 156 246);         /* Vibrant blue */
+  --bs-primary-rgb: 78, 156, 246;
+  --bs-secondary: rgb(142 152 163);
+  --bs-secondary-rgb: 142, 152, 163;
+  --bs-success: rgb(56 193 114);
+  --bs-success-rgb: 56, 193, 114;
+  --bs-info: rgb(14 165 233);
+  --bs-info-rgb: 14, 165, 233;
+  --bs-warning: rgb(245 158 11);
+  --bs-warning-rgb: 245, 158, 11;
+  --bs-danger: rgb(239 68 68);
+  --bs-danger-rgb: 239, 68, 68;
+  --bs-light: rgb(33 37 41);
+  --bs-light-rgb: 33, 37, 41;
+  --bs-dark: rgb(248 249 250);
+  --bs-dark-rgb: 248, 249, 250;
+
+  /* Improved Custom Colors */
+  --background: rgb(20 24 28);           /* Main background: deep blue-gray */
+  --foreground: rgb(235 238 243);        /* Main text: off-white */
+  --muted: rgb(36 41 47);                /* Muted bg: slightly lighter than background */
+  --muted-foreground: rgb(160 170 185);  /* Muted text: soft gray-blue */
+  --border: rgb(55 65 81);               /* Border: visible, not harsh */
+  --input: rgb(28 32 38);                /* Input bg: between card and background */
+  --card: rgb(28 32 38);                 /* Card bg: lighter than background */
+  --card-foreground: rgb(235 238 243);   /* Card text: off-white */
+  --accent: rgb(78 156 246);             /* Accent: blue */
+  --accent-foreground: rgb(255 255 255); /* Accent text: white */
+}
+
+/* Base Styles */
+body {
+  font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif;
+  background-color: var(--background);
+  color: var(--foreground);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Utility Classes */
+.bg-muted {
+  background-color: var(--muted);
+}
+
+.text-muted-foreground {
+  color: var(--muted-foreground);
+}
+
+.border-border {
+  border-color: var(--border);
+}
+
+/* Layout Classes */
+.sidebar {
+  width: var(--sidebar-width);
+  background-color: var(--card);
+  border-right: var(--border-width) solid var(--border);
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  z-index: 1000;
+  transition: width 0.2s ease;
+}
+
+.sidebar.collapsed {
+  width: var(--sidebar-collapsed-width);
+}
+
+.main-content {
+  flex: 1;
+  margin-left: var(--sidebar-width);
+  transition: margin-left 0.2s ease;
+  background-color: var(--background);
+}
+
+.main-content.sidebar-collapsed {
+  margin-left: var(--sidebar-collapsed-width);
+}
+
+.top-navbar {
+  height: var(--navbar-height);
+  background-color: var(--background);
+  border-bottom: var(--border-width) solid var(--border);
+}
+
+/* Sidebar Navigation */
+.sidebar-logo {
+  font-weight: 600;
+  color: var(--foreground);
+  text-decoration: none;
+}
+
+.sidebar .nav-link {
+  color: var(--muted-foreground);
+  font-weight: 500;
+  border-radius: var(--border-radius);
+  transition: all 0.15s ease;
+}
+
+.sidebar .nav-link:hover {
+  background-color: var(--muted);
+  color: var(--foreground);
+}
+
+.sidebar .nav-link.active {
+  background-color: var(--muted);
+  color: var(--foreground);
+}
+
+/* Button Styles */
+.btn-primary {
+  background-color: var(--bs-primary);
+  border-color: var(--bs-primary);
+  box-shadow: 0 2px 4px rgb(var(--bs-primary-rgb) / 15%);
+  transition: all 0.2s ease;
+}
+
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgb(var(--bs-primary-rgb) / 25%);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 2px rgb(var(--bs-primary-rgb) / 15%);
+}
+
+.btn-outline-primary {
+  color: var(--bs-primary);
+  border-color: var(--bs-primary);
+  transition: all 0.2s ease;
+}
+
+.btn-outline-primary:hover {
+  background-color: rgb(var(--bs-primary-rgb) / 10%);
+}
+
+.btn-outline-secondary {
+  color: var(--muted-foreground);
+  border-color: var(--border);
+}
+
+.btn-outline-secondary:hover {
+  background-color: var(--muted);
+  border-color: var(--border);
+  color: var(--foreground);
+}
+
+/* Card Styles */
+.card {
+  background-color: var(--card);
+  color: var(--card-foreground);
+  border-radius: var(--border-radius);
+  border: var(--border-width) solid var(--border);
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.card-header {
+  border-bottom: var(--border-width) solid var(--border);
+  background-color: transparent;
+}
+
+.card-footer {
+  border-top: var(--border-width) solid var(--border);
+  background-color: transparent;
+}
+
+/* Table Striped Styles */
+.table-striped > tbody > tr:nth-of-type(odd) > * {
+  background-color: var(--muted);
+  color: var(--foreground);
+}
+
+/* Form Overrides */
+.form-control,
+.form-select {
+  background-color: var(--input);
+  border: var(--border-width) solid var(--border);
+  color: var(--foreground);
+  border-radius: var(--border-radius);
+}
+
+.form-control:focus,
+.form-select:focus {
+  background-color: var(--input);
+  border-color: var(--bs-primary);
+  box-shadow: 0 0 0 var(--box-shadow-offset) rgb(var(--bs-primary-rgb) / 25%);
+  color: var(--foreground);
+}
+
+.form-label {
+  color: var(--foreground);
+  font-weight: 500;
+}
+
+/* Table Overrides - Enhanced */
+.table {
+  color: var(--foreground);
+  border-color: var(--border);
+}
+
+.table th {
+  color: var(--muted-foreground);
+  font-weight: 500;
+  border-bottom: var(--border-width) solid var(--border);
+  background-color: var(--muted);
+}
+
+.table td {
+  border-bottom: var(--border-width) solid var(--border);
+}
+
+.table-hover tbody tr:hover {
+  background-color: var(--muted);
+}
+
+/* Breadcrumb */
+.breadcrumb-item {
+  color: var(--muted-foreground);
+}
+
+.breadcrumb-item.active {
+  color: var(--foreground);
+}
+
+.breadcrumb-item a {
+  color: var(--muted-foreground);
+  text-decoration: none;
+}
+
+.breadcrumb-item a:hover {
+  color: var(--foreground);
+}
+
+/* Icon Buttons */
+.icon-btn {
+  width: var(--icon-btn-size);
+  height: var(--icon-btn-size);
+  border: var(--border-width) solid var(--border);
+  background-color: var(--background);
+  color: var(--muted-foreground);
+  border-radius: var(--border-radius);
+  transition: all 0.15s ease;
+}
+
+.icon-btn:hover {
+  background-color: var(--muted);
+  color: var(--foreground);
+  border-color: var(--border);
+}
+
+/* Avatar */
+.avatar {
+  width: var(--avatar-size);
+  height: var(--avatar-size);
+  border-radius: 50%;
+  border: var(--border-width) solid var(--border);
+}
+
+/* Badge Overrides */
+.badge {
+  font-weight: 500;
+  border-radius: 9999px;
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+  .sidebar {
+    transform: translateX(-100%);
+  }
+
+  .sidebar.show {
+    transform: translateX(0);
+  }
+
+  .main-content {
+    margin-left: 0;
+  }
+}
+
+/* Notification Badge */
+.notification-badge {
+  position: absolute;
+  top: var(--notification-offset);
+  right: var(--notification-offset);
+  min-width: var(--notification-size);
+  height: var(--notification-size);
+  font-size: var(--notification-font-size);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Dashboard Icon Containers */
+.icon-container {
+  width: 2.5rem;
+  height: 2.5rem;
+  background-color: var(--muted);
+  transition: transform 0.2s ease;
+}
+
+.text-primary .icon-container {
+  background-color: rgb(var(--bs-primary-rgb) / 10%);
+}
+
+.text-success .icon-container {
+  background-color: rgb(var(--bs-success-rgb) / 10%);
+}
+
+.text-info .icon-container {
+  background-color: rgb(var(--bs-info-rgb) / 10%);
+}
+
+.text-warning .icon-container {
+  background-color: rgb(var(--bs-warning-rgb) / 10%);
+}
+
+.text-danger .icon-container {
+  background-color: rgb(var(--bs-danger-rgb) / 10%);
+}
+
+/* Dashboard Filter Selects */
+.filter-select {
+  width: auto;
+  min-width: 150px;
+  border-color: var(--border);
+  color: var(--foreground);
+  background-color: var(--input);
+}
+
+.filter-select:focus {
+  border-color: var(--bs-primary);
+  box-shadow: 0 0 0 0.25rem rgb(var(--bs-primary-rgb) / 25%);
+}

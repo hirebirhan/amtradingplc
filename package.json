@@ -1,0 +1,28 @@
+{
+    "private": true,
+    "scripts": {
+        "dev": "vite",
+        "build": "vite build",
+        "css:audit": "node scripts/css-audit.js",
+        "css:lint": "stylelint \"**/*.css\" --fix",
+        "css:merge": "node scripts/merge-css.js",
+        "css:update-links": "node scripts/update-css-links.js",
+        "css:unify": "npm run css:merge && npm run css:update-links"
+    },
+    "devDependencies": {
+        "@popperjs/core": "^2.11.8",
+        "alpinejs": "^3.14.9",
+        "axios": "^1.8.2",
+        "bootstrap": "^5.3.7",
+        "concurrently": "^9.0.1",
+        "glob": "^10.4.5",
+        "jquery": "^3.7.1",
+        "laravel-vite-plugin": "^1.2.0",
+        "postcss": "^8.4.35",
+        "stylelint": "^14.16.1",
+        "stylelint-config-standard": "^29.0.0",
+        "stylelint-declaration-strict-value": "^1.9.2",
+        "toastr": "^2.1.4",
+        "vite": "^6.2.4"
+    }
+}

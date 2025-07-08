@@ -1,0 +1,23 @@
+  --green-500: #10b981;
+    --red-50: #fee2e2;
+    --red-500: #ef4444;
+    --red-600: #dc2626;
+
+  /* === LIGHT THEME === */
+.dropdown-item.text-danger:hover {
+    background-color: var(--red-50);
+    color: var(--red-600) !important;
+}
+.btn-theme-toggle:hover {
+    background-color: var(--hover-bg);
+    border-color: var(--border-secondary);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-sm);
+}
+@media (max-width: 991.98px) {
+    .offcanvas-header {
+        background: var(--accent-primary);
+        color: var(--surface-primary);
+        border-bottom: 1px solid var(--accent-secondary);
+    }
+} 

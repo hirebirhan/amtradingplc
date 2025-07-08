@@ -1,0 +1,322 @@
+name: Deploy to cPanel
+
+on:
+  push:
+    branches: [ main, production ]
+  pull_request:
+    branches: [ main ]
+    types: [ closed ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+        - production
+        - staging
+
+env:
+  PHP_VERSION: '8.2'
+  NODE_VERSION: '18'
+
+jobs:
+  tests:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: password
+          MYSQL_DATABASE: testing
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: ${{ env.PHP_VERSION }}
+        extensions: mbstring, xml, ctype, iconv, intl, pdo_mysql, zip, curl
+        coverage: xdebug
+        
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        
+    - name: Copy environment file
+      run: cp .env.example .env
+      
+    - name: Install PHP dependencies
+      run: composer install --dev --prefer-dist --no-interaction --no-progress
+      
+    - name: Generate application key
+      run: php artisan key:generate
+      
+    - name: Run database migrations
+      run: php artisan migrate --force
+      env:
+        DB_CONNECTION: mysql
+        DB_HOST: 127.0.0.1
+        DB_PORT: 3306
+        DB_DATABASE: testing
+        DB_USERNAME: root
+        DB_PASSWORD: password
+        
+    - name: Install Node dependencies
+      run: npm ci
+      
+    - name: Build assets
+      run: npm run build
+      
+    - name: Run PHP tests
+      run: vendor/bin/phpunit --coverage-clover coverage.xml
+      env:
+        DB_CONNECTION: mysql
+        DB_HOST: 127.0.0.1
+        DB_PORT: 3306
+        DB_DATABASE: testing
+        DB_USERNAME: root
+        DB_PASSWORD: password
+        
+    - name: Run PHP Static Analysis
+      run: |
+        if [ -f "./vendor/bin/phpstan" ]; then
+          ./vendor/bin/phpstan analyse --memory-limit=2G
+        fi
+        
+    - name: Run Code Style Check
+      run: |
+        if [ -f "./vendor/bin/php-cs-fixer" ]; then
+          ./vendor/bin/php-cs-fixer fix --dry-run --diff
+        fi
+
+  deploy:
+    name: Deploy to cPanel
+    runs-on: ubuntu-latest
+    needs: tests
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/production' || github.event_name == 'workflow_dispatch'
+    
+    environment: 
+      name: ${{ github.ref == 'refs/heads/production' && 'production' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment) || 'staging' }}
+      
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: ${{ env.PHP_VERSION }}
+        extensions: mbstring, xml, ctype, iconv, intl, pdo_mysql, zip, curl
+        
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        
+    - name: Install PHP dependencies
+      run: composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist
+      
+    - name: Install Node dependencies
+      run: npm ci --production=false
+      
+    - name: Build assets for production
+      run: npm run build
+      
+    - name: Create deployment archive
+      run: |
+        # Remove development files and directories
+        rm -rf node_modules tests .github .git .gitignore .editorconfig .stylelintrc.json
+        rm -rf .vscode .idea phpunit.xml .phpunit.result.cache
+        
+        # Create archive excluding unnecessary files
+        tar -czf deployment.tar.gz \
+          --exclude='*.log' \
+          --exclude='storage/logs/*' \
+          --exclude='storage/framework/cache/*' \
+          --exclude='storage/framework/sessions/*' \
+          --exclude='storage/framework/views/*' \
+          --exclude='.env*' \
+          .
+        
+    - name: Deploy to cPanel via SSH
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.CPANEL_HOST }}
+        username: ${{ secrets.CPANEL_USERNAME }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        port: ${{ secrets.SSH_PORT || 22 }}
+        timeout: 300s
+        script_stop: true
+        script: |
+          # Set deployment variables
+          APP_NAME="${{ secrets.APP_NAME || 'laravel-app' }}"
+          DOMAIN="${{ secrets.DOMAIN }}"
+          BRANCH="${{ github.ref_name }}"
+          
+          # Create deployment directory structure
+          mkdir -p ~/$APP_NAME/{releases,shared,backups}
+          mkdir -p ~/$APP_NAME/shared/{storage,uploads}
+          mkdir -p ~/$APP_NAME/shared/storage/{app,framework,logs}
+          mkdir -p ~/$APP_NAME/shared/storage/framework/{cache,sessions,views}
+          mkdir -p ~/$APP_NAME/shared/storage/app/public
+          
+          # Set permissions
+          chmod -R 755 ~/$APP_NAME/shared/storage
+          
+          # Create release directory
+          RELEASE_NAME=$(date +%Y%m%d-%H%M%S)
+          RELEASE_PATH="~/$APP_NAME/releases/$RELEASE_NAME"
+          mkdir -p $RELEASE_PATH
+          
+          echo "🚀 Starting deployment of release: $RELEASE_NAME"
+          
+    - name: Upload deployment archive
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.CPANEL_HOST }}
+        username: ${{ secrets.CPANEL_USERNAME }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        port: ${{ secrets.SSH_PORT || 22 }}
+        source: "deployment.tar.gz"
+        target: "~/${{ secrets.APP_NAME || 'laravel-app' }}/releases/$(date +%Y%m%d-%H%M%S)/"
+        
+    - name: Complete deployment
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.CPANEL_HOST }}
+        username: ${{ secrets.CPANEL_USERNAME }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        port: ${{ secrets.SSH_PORT || 22 }}
+        timeout: 600s
+        script_stop: true
+        script: |
+          # Deployment variables
+          APP_NAME="${{ secrets.APP_NAME || 'laravel-app' }}"
+          DOMAIN="${{ secrets.DOMAIN }}"
+          RELEASE_NAME=$(ls -t ~/$APP_NAME/releases/ | head -n 1)
+          RELEASE_PATH="~/$APP_NAME/releases/$RELEASE_NAME"
+          
+          echo "📦 Extracting deployment archive..."
+          cd $RELEASE_PATH
+          tar -xzf deployment.tar.gz
+          rm deployment.tar.gz
+          
+          echo "🔗 Creating symbolic links..."
+          # Remove existing storage and .env
+          rm -rf storage .env
+          
+          # Create .env if not exists
+          if [ ! -f ~/$APP_NAME/shared/.env ]; then
+            cp .env.example ~/$APP_NAME/shared/.env
+            echo "⚠️  Please configure your .env file at ~/$APP_NAME/shared/.env"
+          fi
+          
+          # Create symbolic links
+          ln -sf ~/$APP_NAME/shared/.env .env
+          ln -sf ~/$APP_NAME/shared/storage storage
+          
+          echo "🔧 Running Laravel commands..."
+          # Generate app key if not set
+          if ! grep -q "APP_KEY=base64:" ~/$APP_NAME/shared/.env; then
+            php artisan key:generate --force
+          fi
+          
+          # Run migrations
+          php artisan migrate --force
+          
+          # Clear and cache config
+          php artisan config:clear
+          php artisan config:cache
+          php artisan route:clear
+          php artisan route:cache
+          php artisan view:clear
+          php artisan view:cache
+          
+          echo "🌐 Updating web directory..."
+          # Backup current public_html
+          if [ -d ~/public_html ] && [ "$(ls -A ~/public_html)" ]; then
+            mkdir -p ~/$APP_NAME/backups/$(date +%Y%m%d-%H%M%S)
+            cp -r ~/public_html/* ~/$APP_NAME/backups/$(date +%Y%m%d-%H%M%S)/ 2>/dev/null || true
+          fi
+          
+          # Clear public_html and copy new files
+          rm -rf ~/public_html/*
+          cp -r $RELEASE_PATH/public/* ~/public_html/
+          
+          # Update index.php to point to new release
+          cat > ~/public_html/index.php << 'PHPEOF'
+<?php
+use Illuminate\Contracts\Http\Kernel;
+use Illuminate\Http\Request;
+
+define('LARAVEL_START', microtime(true));
+
+if (file_exists($maintenance = __DIR__.'/../${{ secrets.APP_NAME || 'laravel-app' }}/releases/$RELEASE_NAME/storage/framework/maintenance.php')) {
+    require $maintenance;
+}
+
+require __DIR__.'/../${{ secrets.APP_NAME || 'laravel-app' }}/releases/$RELEASE_NAME/vendor/autoload.php';
+
+$app = require_once __DIR__.'/../${{ secrets.APP_NAME || 'laravel-app' }}/releases/$RELEASE_NAME/bootstrap/app.php';
+
+$kernel = $app->make(Kernel::class);
+
+$response = tap($kernel->handle(
+    $request = Request::capture()
+))->send();
+
+$kernel->terminate($request, $response);
+PHPEOF
+          
+          # Create storage link
+          ln -sf ../$APP_NAME/shared/storage/app/public ~/public_html/storage
+          
+          # Update current release symlink
+          cd ~/$APP_NAME
+          rm -f current
+          ln -sf releases/$RELEASE_NAME current
+          
+          # Clean up old releases (keep last 5)
+          cd ~/$APP_NAME/releases
+          ls -t | tail -n +6 | xargs -r rm -rf
+          
+          # Set proper permissions
+          find $RELEASE_PATH -type f -exec chmod 644 {} \;
+          find $RELEASE_PATH -type d -exec chmod 755 {} \;
+          chmod -R 775 ~/$APP_NAME/shared/storage
+          
+          echo "✅ Deployment completed successfully!"
+          echo "🚀 Release: $RELEASE_NAME"
+          echo "🌐 Domain: $DOMAIN"
+          
+    - name: Notify deployment status
+      if: always()
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ job.status }}
+        channel: '#deployments'
+        text: |
+          *${{ job.status == 'success' && ':white_check_mark:' || ':x:' }} Deployment ${{ job.status }}*
+          
+          *Repository:* ${{ github.repository }}
+          *Branch:* ${{ github.ref_name }}
+          *Commit:* ${{ github.sha }}
+          *Author:* ${{ github.actor }}
+          *Environment:* ${{ github.ref == 'refs/heads/production' && 'Production' || 'Staging' }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      continue-on-error: true
