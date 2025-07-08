@@ -45,6 +45,8 @@ class DashboardService
         return [
             'total_sales' => 0,
             'total_revenue' => 0,
+            'total_purchases' => 0,
+            'total_purchase_amount' => 0,
             'low_stock_items' => 0,
             'pending_sales' => 0,
             'categories_count' => 0,
@@ -52,6 +54,7 @@ class DashboardService
             'warehouses_count' => 0,
             'customers_count' => 0,
             'can_view_revenue' => false,
+            'can_view_purchases' => false,
             'low_stock_items_list' => collect([]),
             'activities' => collect([]),
             'error' => 'Unable to load dashboard data. Please refresh the page.',
