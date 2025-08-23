@@ -7,21 +7,12 @@
             <!-- Row 1: Title and Stats Badges -->
             <div class="d-flex flex-column flex-md-row align-items-md-center gap-3 mb-2">
                 <h4 class="fw-bold mb-0">
-                    @if(auth()->user()->hasRole('Sales') && !auth()->user()->hasAnyRole(['SuperAdmin', 'BranchManager']))
-                        My Activity Log
-                    @else
-                        Recent Activity
-                    @endif
+                    {{ $pageTitle }}
                 </h4>
-               
             </div>
             <!-- Row 2: Description -->
             <p class="text-secondary mb-0 small">
-                @if(auth()->user()->hasRole('Sales') && !auth()->user()->hasAnyRole(['SuperAdmin', 'BranchManager']))
-                    Track your inventory movements, sales, and stock changes
-                @else
-                    Monitor all inventory movements, stock changes, and system activities
-                @endif
+                {{ $pageDescription }}
             </p>
         </div>
         <!-- Action Buttons -->
@@ -51,32 +42,19 @@
                 </div>
                 
                 <!-- Activity Type -->
-                @if(auth()->user()->hasAnyRole(['SuperAdmin', 'BranchManager']))
-                <div class="col-md-2">
-                @else
-                <div class="col-md-3">
-                @endif
+                <div class="{{ $isSalesView ? 'col-md-4' : 'col-md-3' }}">
                     <label class="form-label small text-muted mb-1">Activity Type</label>
                     <select class="form-select" wire:model.live="activityType">
                         <option value="">All Types</option>
-                        @if(auth()->user()->hasRole('Sales') && !auth()->user()->hasAnyRole(['SuperAdmin', 'BranchManager']))
-                            {{-- Sales users only see sale and return activities --}}
-                            <option value="sale">Sale</option>
-                            <option value="return">Return</option>
-                        @else
-                            {{-- Admin and managers see all activity types --}}
-                            <option value="sale">Sale</option>
-                            <option value="purchase">Purchase</option>
-                            <option value="transfer">Transfer</option>
-                            <option value="return">Return</option>
-                            <option value="initial">Initial Stock</option>
-                        @endif
+                        @foreach($activityTypes as $key => $label)
+                            <option value="{{ $key }}">{{ $label }}</option>
+                        @endforeach
                     </select>
                 </div>
                 
-                <!-- Warehouse Filter (Only for SuperAdmin and BranchManager) -->
-                @if(auth()->user()->hasAnyRole(['SuperAdmin', 'BranchManager']))
-                <div class="col-md-2">
+                <!-- Warehouse Filter (Only for non-sales users) -->
+                @if(!$isSalesView)
+                <div class="col-md-3">
                     <label class="form-label small text-muted mb-1">Warehouse</label>
                     <select class="form-select" wire:model.live="warehouseFilter">
                         <option value="">All Warehouses</option>
@@ -91,7 +69,7 @@
                 @if(auth()->user()->hasAnyRole(['SuperAdmin', 'BranchManager']))
                 <div class="col-md-3">
                 @else
-                <div class="col-md-4">
+                <div class="col-md-6">
                 @endif
                     <label class="form-label small text-muted mb-1">Date Range</label>
                     <div class="d-flex gap-2">
@@ -100,16 +78,7 @@
                     </div>
                 </div>
                 
-                <!-- Records Per Page -->
-                <div class="col-md-2">
-                    <label class="form-label small text-muted mb-1">Per Page</label>
-                    <select wire:model.live="perPage" class="form-select">
-                        <option value="10">10 records</option>
-                        <option value="20">20 records</option>
-                        <option value="50">50 records</option>
-                        <option value="100">100 records</option>
-                    </select>
-                </div>
+              
             </div>
         </div>
         

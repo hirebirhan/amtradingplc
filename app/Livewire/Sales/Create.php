@@ -135,6 +135,9 @@ class Create extends Component
 
     public function mount()
     {
+        // Initialize items as an empty array if not already set
+        $this->items = is_array($this->items) ? $this->items : [];
+        
         $this->form = [
             'sale_date' => date('Y-m-d'),
             'reference_no' => $this->generateReferenceNumber(),
@@ -208,7 +211,13 @@ class Create extends Component
         $this->itemOptions = [];
         
         // Get items already in cart
-        $addedItemIds = collect($this->items)->pluck('item_id')->toArray();
+        $addedItemIds = [];
+        if (is_array($this->items)) {
+            $collection = collect($this->items);
+            if (method_exists($collection, 'pluck')) {
+                $addedItemIds = $collection->pluck('item_id')->toArray();
+            }
+        }
         
         if ($this->form['warehouse_id']) {
             // Load items with stock in the selected warehouse
@@ -244,10 +253,16 @@ class Create extends Component
                 
         } elseif ($this->form['branch_id']) {
             // Load items available in warehouses serving this branch
-            $warehouseIds = DB::table('branch_warehouse')
-                ->where('branch_id', $this->form['branch_id'])
-                ->pluck('warehouse_id')
-                ->toArray();
+            $warehouseIds = [];
+            try {
+                $warehouseIds = DB::table('branch_warehouse')
+                    ->where('branch_id', $this->form['branch_id'])
+                    ->pluck('warehouse_id')
+                    ->toArray();
+            } catch (\Exception $e) {
+                \Log::error('Failed to load warehouse IDs', ['error' => $e->getMessage()]);
+                $warehouseIds = [];
+            }
                 
             if (!empty($warehouseIds)) {
                 $this->itemOptions = Item::where('is_active', true)
@@ -472,15 +487,35 @@ class Create extends Component
                 $this->availableStock = $stock ? $stock->quantity + $item['quantity'] : $item['quantity'];
             } else {
                 // For branch sales, calculate total available
-                $warehouseIds = DB::table('branch_warehouse')
-                    ->where('branch_id', $this->form['branch_id'])
-                    ->pluck('warehouse_id');
-                    
+        $warehouseIds = [];
+        try {
+            $warehouseIds = DB::table('branch_warehouse')
+                ->where('branch_id', $this->form['branch_id'])
+                ->pluck('warehouse_id')
+                ->toArray();
+        } catch (\Exception $e) {
+            \Log::error('Failed to load warehouse IDs in editItem', [
+                'error' => $e->getMessage(),
+                'branch_id' => $this->form['branch_id'] ?? null
+            ]);
+        }
+        
+        $totalStock = 0;
+        if (!empty($warehouseIds)) {
+            try {
                 $totalStock = Stock::where('item_id', $item['item_id'])
                     ->whereIn('warehouse_id', $warehouseIds)
                     ->sum('quantity');
-                    
-                $this->availableStock = $totalStock + $item['quantity'];
+            } catch (\Exception $e) {
+                \Log::error('Failed to calculate total stock', [
+                    'error' => $e->getMessage(),
+                    'item_id' => $item['item_id'] ?? null,
+                    'warehouse_ids' => $warehouseIds
+                ]);
+            }
+        }
+        
+        $this->availableStock = $totalStock + $item['quantity'];
             }
         }
     }
@@ -523,8 +558,21 @@ class Create extends Component
 
     private function updateTotals()
     {
-        // Calculate subtotal
-        $this->subtotal = collect($this->items)->sum('subtotal');
+        // Calculate subtotal safely
+        $this->subtotal = 0;
+        if (is_array($this->items)) {
+            try {
+                $collection = collect($this->items);
+                if (method_exists($collection, 'sum')) {
+                    $this->subtotal = $collection->sum('subtotal');
+                }
+            } catch (\Exception $e) {
+                \Log::error('Failed to calculate subtotal', [
+                    'error' => $e->getMessage(),
+                    'items' => is_array($this->items) ? count($this->items) : 'not_array'
+                ]);
+            }
+        }
         
         // Calculate tax
         $taxRate = $this->form['tax'] ?? 0;
@@ -995,14 +1043,30 @@ class Create extends Component
 
     public function getFilteredItemOptionsProperty()
     {
-        if (empty($this->itemSearch)) {
-            return $this->itemOptions;
+        if (empty($this->itemSearch) || !is_array($this->itemOptions)) {
+            return is_array($this->itemOptions) ? $this->itemOptions : [];
         }
 
-        return collect($this->itemOptions)->filter(function ($item) {
-            return str_contains(strtolower($item['name']), strtolower($this->itemSearch)) ||
-                   str_contains(strtolower($item['sku']), strtolower($this->itemSearch));
-        })->values();
+        try {
+            $collection = collect($this->itemOptions);
+            if (method_exists($collection, 'filter') && method_exists($collection, 'values')) {
+                return $collection->filter(function ($item) {
+                    if (!is_array($item) || !isset($item['name'], $item['sku'])) {
+                        return false;
+                    }
+                    $searchTerm = strtolower($this->itemSearch);
+                    return str_contains(strtolower($item['name']), $searchTerm) ||
+                           str_contains(strtolower($item['sku']), $searchTerm);
+                })->values()->all();
+            }
+        } catch (\Exception $e) {
+            \Log::error('Error filtering item options', [
+                'error' => $e->getMessage(),
+                'itemOptions' => is_array($this->itemOptions) ? count($this->itemOptions) : 'not_array'
+            ]);
+        }
+        
+        return [];
     }
 
     public function isFormReady()

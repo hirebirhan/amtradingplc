@@ -35,7 +35,7 @@
                         @endforeach
                     </select>
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-8">
                     <select class="form-select" wire:model.live="filters.branch_id">
                         <option value="">All Branches</option>
                         @foreach($branches as $branch)
@@ -43,14 +43,7 @@
                         @endforeach
                     </select>
                 </div>
-                <div class="col-md-4">
-                    <select class="form-select" wire:model.live="perPage">
-                        <option value="10">10 per page</option>
-                        <option value="25">25 per page</option>
-                        <option value="50">50 per page</option>
-                        <option value="100">100 per page</option>
-                    </select>
-                </div>
+                
             </div>
 
             @if($filters['bank_name'] || $filters['branch_id'])

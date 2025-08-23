@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Enums\UserRole;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 use Spatie\Permission\Models\Role;
@@ -89,12 +90,12 @@ class RoleAndPermissionSeeder extends Seeder
 
         // Create roles and assign permissions
 
-        // SuperAdmin role - has all permissions
-        $superAdminRole = Role::create(['name' => 'SuperAdmin']);
+        // Create roles using the enum
+        $superAdminRole = Role::create(['name' => UserRole::SUPER_ADMIN->value]);
         $superAdminRole->givePermissionTo(Permission::all());
 
-        // BranchManager role
-        $branchManagerRole = Role::create(['name' => 'BranchManager']);
+        // BranchManager role with specific permissions
+        $branchManagerRole = Role::create(['name' => UserRole::BRANCH_MANAGER->value]);
         $branchManagerPermissions = [
             'items.view', 'items.create', 'items.edit',
             'categories.view', 'categories.create', 'categories.edit',
@@ -110,8 +111,8 @@ class RoleAndPermissionSeeder extends Seeder
         ];
         $branchManagerRole->givePermissionTo($branchManagerPermissions);
 
-        // WarehouseUser role
-        $warehouseUserRole = Role::create(['name' => 'WarehouseUser']);
+        // WarehouseManager role
+        $warehouseManagerRole = Role::create(['name' => UserRole::WAREHOUSE_MANAGER->value]);
         $warehouseUserPermissions = [
             'items.view', 'items.edit',
             'categories.view',
@@ -120,17 +121,51 @@ class RoleAndPermissionSeeder extends Seeder
             'stock-card.view', 'stock-card.create',
             'transfers.create',
         ];
-        $warehouseUserRole->givePermissionTo($warehouseUserPermissions);
+        $warehouseManagerRole->givePermissionTo($warehouseUserPermissions);
 
-        // Clerk role
-        $clerkRole = Role::create(['name' => 'Clerk']);
-        $clerkPermissions = [
+
+        // Accountant role
+        $accountantRole = Role::create(['name' => UserRole::ACCOUNTANT->value]);
+        $accountantPermissions = [
             'items.view',
             'categories.view',
             'stock.view',
             'stock-card.view',
+            'purchases.create',
+            'reports.view',
+            'reports.export',
+        ];
+        $accountantRole->givePermissionTo($accountantPermissions);
+
+        // CustomerService role
+        $customerServiceRole = Role::create(['name' => UserRole::CUSTOMER_SERVICE->value]);
+        $customerServicePermissions = [
+            'customers.view', 'customers.create', 'customers.edit',
             'sales.create',
         ];
-        $clerkRole->givePermissionTo($clerkPermissions);
+        $customerServiceRole->givePermissionTo($customerServicePermissions);
+
+        // Sales role
+        $salesRole = Role::create(['name' => UserRole::SALES->value]);
+        $salesPermissions = [
+            'items.view',
+            'categories.view',
+            'stock.view',
+            'sales.create',
+            'customers.view', 'customers.create', 'customers.edit',
+        ];
+        $salesRole->givePermissionTo($salesPermissions);
+
+        // PurchaseOfficer role
+        $purchaseOfficerRole = Role::create(['name' => UserRole::PURCHASE_OFFICER->value]);
+        $purchaseOfficerPermissions = [
+            'items.view', 'items.create', 'items.edit',
+            'categories.view',
+            'stock.view',
+            'purchases.create',
+        ];
+        $purchaseOfficerRole->givePermissionTo($purchaseOfficerPermissions);
+
+        // Moved inventory clerk permissions to Warehouse Manager
     }
 }

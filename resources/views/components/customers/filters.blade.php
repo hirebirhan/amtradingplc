@@ -39,21 +39,11 @@
         </div>
 
         <!-- Status Filter -->
-        <div class="col-md-2">
+        <div class="col-md-4">
             <select wire:model.live="statusFilter" class="form-select">
                 <option value="">All Statuses</option>
                 <option value="1">Active</option>
                 <option value="0">Inactive</option>
-            </select>
-        </div>
-
-        <!-- Per Page Selector -->
-        <div class="col-md-2">
-            <select wire:model.live="perPage" class="form-select">
-                <option value="10">10 per page</option>
-                <option value="25">25 per page</option>
-                <option value="50">50 per page</option>
-                <option value="100">100 per page</option>
             </select>
         </div>
     </div>

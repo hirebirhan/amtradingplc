@@ -50,16 +50,7 @@
                     </select>
                 </div>
 
-                <!-- Per Page -->
-                <div class="col-6 col-md-2">
-                    <select class="form-select" wire:model.live="perPage">
-                        <option value="10">10 per page</option>
-                        <option value="25">25 per page</option>
-                        <option value="50">50 per page</option>
-                        <option value="100">100 per page</option>
-                    </select>
-                </div>
-
+                
                 <!-- Reset Button -->
                 <div class="col-12 col-md-4">
                     <button class="btn btn-outline-secondary btn-sm w-100" wire:click="$set('search', ''); $set('typeFilter', '');">

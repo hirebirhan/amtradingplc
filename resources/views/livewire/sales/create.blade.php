@@ -12,8 +12,11 @@
                     <h4 class="fw-bold mb-1">Create New Sale</h4>
                     <div class="d-flex align-items-center gap-2">
                         <span class="text-secondary mb-0 small">Add items and complete sale details</span>
-                        @if(count($items) > 0)
-                            <span class="badge bg-secondary-subtle text-secondary-emphasis">{{ count($items) }} item{{ count($items) > 1 ? 's' : '' }}</span>
+                        @php
+                            $itemCount = is_countable($items) ? count($items) : 0;
+                        @endphp
+                        @if($itemCount > 0)
+                            <span class="badge bg-secondary-subtle text-secondary-emphasis">{{ $itemCount }} item{{ $itemCount > 1 ? 's' : '' }}</span>
                         @endif
                         @if($form['payment_method'] === 'credit_advance')
                             <span class="badge bg-warning">Partial Credit</span>
@@ -131,11 +134,15 @@
                                 <label for="warehouse_id" class="form-label fw-medium mb-0">
                                     Selling From <span class="text-primary">*</span>
                                 </label>
-                                @if(count($items) > 0)
+                                @php
+                                    $itemCount = is_countable($items) ? count($items) : 0;
+                                    $warehouseCount = isset($warehouses) && is_object($warehouses) && method_exists($warehouses, 'count') ? $warehouses->count() : 0;
+                                @endphp
+                                @if($itemCount > 0)
                                     <small class="text-secondary"><i class="bi bi-lock me-1"></i>Locked</small>
-                                @elseif($warehouses->count() === 1)
+                                @elseif($warehouseCount === 1)
                                     <small class="text-info"><i class="bi bi-info-circle me-1"></i>Auto-selected</small>
-                                @elseif($warehouses->count() === 0)
+                                @elseif($warehouseCount === 0)
                                     <small class="text-danger"><i class="bi bi-exclamation-triangle me-1"></i>None available</small>
                                 @endif
                             </div>
@@ -144,7 +151,7 @@
                                     wire:model.live="form.warehouse_id" 
                                     id="warehouse_id" 
                                     class="form-select @error('form.warehouse_id') is-invalid @enderror" 
-                                    {{ count($items) > 0 ? 'disabled' : '' }} 
+                                    {{ (is_countable($items) && count($items) > 0) ? 'disabled' : '' }} 
                                     required 
                                 >
                                     <option value="">Select selling location...</option>
@@ -236,7 +243,10 @@
                                     required
                                 >
                                     <option value="">Select bank account...</option>
-                                    @if(isset($bankAccounts) && $bankAccounts->count() > 0)
+                                    @php
+                                        $hasBankAccounts = isset($bankAccounts) && is_object($bankAccounts) && method_exists($bankAccounts, 'count') && $bankAccounts->count() > 0;
+                                    @endphp
+                                    @if($hasBankAccounts)
                                         @foreach($bankAccounts as $account)
                                             <option value="{{ $account->id }}">{{ $account->account_name }} - {{ $account->bank_name }}</option>
                                         @endforeach
@@ -314,7 +324,10 @@
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <div class="d-flex align-items-center gap-3">
                             <h6 class="fw-semibold mb-0">Sale Items</h6>
-                            @if(count($items) > 0)
+                            @php
+                                $itemCount = is_countable($items) ? count($items) : 0;
+                            @endphp
+                            @if($itemCount > 0)
                                 <div class="d-flex align-items-center gap-3">
                                     <small class="text-muted">Subtotal: <span class="fw-semibold">{{ number_format($subtotal, 2) }}</span></small>
                                     <small class="text-muted">Total: <span class="fw-bold">{{ number_format($totalAmount, 2) }}</span></small>
@@ -325,11 +338,14 @@
                             <button type="button" class="btn btn-outline-secondary btn-sm" wire:click="loadItemOptions" title="Refresh items">
                                 <i class="bi bi-arrow-clockwise"></i>
                             </button>
-                            @if(count($items) > 0)
+                            @php
+                                $itemCount = is_countable($items) ? count($items) : 0;
+                            @endphp
+                            @if($itemCount > 0)
                                 <button type="button" class="btn btn-outline-danger btn-sm" wire:click="clearCart"
                                     wire:confirm="Are you sure you want to clear all items from the cart?"
                                     title="Clear all items">
-                                    <i class="bi bi-trash"></i>
+                                    <i class="bi bi-trash me-1"></i>Clear All
                                 </button>
                             @endif
                         </div>
@@ -402,7 +418,10 @@
                 </div>
 
                 <!-- Items List -->
-                @if(count($items) > 0)
+                @php
+                    $itemCount = is_countable($items) ? count($items) : 0;
+                @endphp
+                @if($itemCount > 0)
                     <div class="mb-4">
                         <div class="table-responsive">
                             <table class="table table-hover mb-0">
@@ -461,7 +480,10 @@
                     <i class="bi bi-x-lg me-1"></i>Cancel
                 </button>
                 <div class="d-flex gap-2">
-                    @if(count($items) > 0)
+                    @php
+                        $itemCount = is_countable($items) ? count($items) : 0;
+                    @endphp
+                    @if($itemCount > 0)
                         <button type="button" class="btn btn-primary" wire:click="validateAndShowModal" wire:loading.attr="disabled">
                             <i class="bi bi-check-lg me-1"></i>
                             <span wire:loading.remove>Complete Sale</span>
@@ -518,10 +540,13 @@
                                 <span class="text-muted small">Location:</span>
                                 <span class="fw-semibold ms-1">
                                     @php
-                                        $selectedWarehouse = $warehouses->firstWhere('id', $form['warehouse_id']);
+                                        $selectedWarehouse = null;
+                                        if (isset($warehouses) && is_object($warehouses) && method_exists($warehouses, 'firstWhere')) {
+                                            $selectedWarehouse = $warehouses->firstWhere('id', $form['warehouse_id']);
+                                        }
                                     @endphp
                                     @if($selectedWarehouse)
-                                        @if($selectedWarehouse->branch)
+                                        @if(isset($selectedWarehouse->branch) && $selectedWarehouse->branch)
                                             {{ $selectedWarehouse->branch->name }} - {{ $selectedWarehouse->name }}
                                         @else
                                             {{ $selectedWarehouse->name }}
@@ -573,7 +598,10 @@
                     <!-- Items Summary -->
                     <div class="mb-3">
                         <div class="d-flex justify-content-between align-items-center mb-2">
-                            <h6 class="fw-semibold mb-0">Items ({{ count($items) }})</h6>
+                            @php
+                                $itemCount = is_countable($items) ? count($items) : 0;
+                            @endphp
+                            <h6 class="fw-semibold mb-0">Items ({{ $itemCount }})</h6>
                         </div>
                         
                         <div class="table-responsive">

@@ -62,16 +62,7 @@
                                         @endforeach
                                     </select>
                                 </div>
-                        <div class="col-md-6 col-lg-3">
-                            <label for="per_page" class="form-label fw-semibold text-dark">Records per page</label>
-                            <select class="form-select border-0 shadow-sm bg-light" id="per_page" name="per_page">
-                                        <option value="10" {{ request('per_page', 10) == 10 ? 'selected' : '' }}>10 records</option>
-                                        <option value="15" {{ request('per_page') == 15 ? 'selected' : '' }}>15 records</option>
-                                        <option value="25" {{ request('per_page') == 25 ? 'selected' : '' }}>25 records</option>
-                                        <option value="50" {{ request('per_page') == 50 ? 'selected' : '' }}>50 records</option>
-                                        <option value="100" {{ request('per_page') == 100 ? 'selected' : '' }}>100 records</option>
-                                    </select>
-                                </div>
+                   
                                 <div class="col-12">
                             <div class="d-flex gap-2 flex-wrap">
                                 <button type="submit" class="btn btn-primary px-4 shadow-sm">

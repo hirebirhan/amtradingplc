@@ -81,16 +81,8 @@
                 <div class="col-6 col-md-2">
                     <input type="date" wire:model.live="filters.date_from" class="form-control" placeholder="From">
                 </div>
-                <div class="col-6 col-md-2">
+                <div class="col-6 col-md-3">
                     <input type="date" wire:model.live="filters.date_to" class="form-control" placeholder="To">
-                </div>
-                <div class="col-6 col-md-1">
-                    <select wire:model.live="perPage" class="form-select">
-                        <option value="10">10</option>
-                        <option value="25">25</option>
-                        <option value="50">50</option>
-                        <option value="100">100</option>
-                    </select>
                 </div>
             </div>
             
@@ -417,23 +409,6 @@
                             Showing {{ $credits->firstItem() ?? 0 }} to {{ $credits->lastItem() ?? 0 }} of {{ $credits->total() }} results
                         </div>
                         
-                        <!-- Per Page Selector and Pagination -->
-                        <div class="d-flex align-items-center gap-3">
-                            <!-- Per Page Selector -->
-                            <div class="d-flex align-items-center gap-2">
-                                <select wire:model.live="perPage" id="perPage" class="form-select form-select-sm" style="width: auto;">
-                                    <option value="10">10</option>
-                                    <option value="25">25</option>
-                                    <option value="50">50</option>
-                                    <option value="100">100</option>
-                                </select>
-                            </div>
-                            
-                            <!-- Pagination Links -->
-                            <div>
-                                {{ $credits->links() }}
-                            </div>
-                        </div>
                     </div>
                 </div>
             @endif

@@ -7,6 +7,7 @@ use App\Models\StockReservation;
 use App\Services\StockMovementService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use UserHelper;
 
 class StockReservationController extends Controller
 {
@@ -23,25 +24,47 @@ class StockReservationController extends Controller
      */
     public function index()
     {
-        // Get active reservations with relationships
-        $activeReservations = StockReservation::active()
-            ->with(['item', 'creator'])
-            ->orderBy('expires_at', 'asc')
+        // Start building the query
+        $activeQuery = StockReservation::active()->with(['item', 'creator']);
+        
+        // Filter by warehouse if user doesn't have global access
+        if (!UserHelper::canManageStockReservations()) {
+            $warehouseIds = UserHelper::getAccessibleWarehouseIds();
+            $activeQuery->whereIn('warehouse_id', $warehouseIds);
+        }
+        
+        $activeReservations = $activeQuery->orderBy('expires_at', 'asc')
             ->paginate(20);
 
         // Get expired reservations (last 50)
-        $expiredReservations = StockReservation::expired()
-            ->with(['item', 'creator'])
-            ->orderBy('expires_at', 'desc')
+        $expiredQuery = StockReservation::expired()->with(['item', 'creator']);
+        
+        // Filter by warehouse if user doesn't have global access
+        if (!UserHelper::canManageStockReservations()) {
+            $warehouseIds = UserHelper::getAccessibleWarehouseIds();
+            $expiredQuery->whereIn('warehouse_id', $warehouseIds);
+        }
+        
+        $expiredReservations = $expiredQuery->orderBy('expires_at', 'desc')
             ->limit(50)
             ->get();
 
-        // Calculate statistics
+        // Calculate statistics with access control
+        $statsQuery = StockReservation::query();
+        
+        if (!UserHelper::canManageStockReservations()) {
+            $warehouseIds = UserHelper::getAccessibleWarehouseIds();
+            $statsQuery->whereIn('warehouse_id', $warehouseIds);
+        }
+        
+        $activeQuery = (clone $statsQuery)->active();
+        $expiredQuery = (clone $statsQuery)->expired();
+        
         $stats = [
-            'active_reservations' => StockReservation::active()->count(),
-            'expired_reservations' => StockReservation::expired()->count(),
-            'total_reserved_quantity' => StockReservation::active()->sum('quantity'),
-            'unique_items' => StockReservation::active()->distinct('item_id')->count(),
+            'active_reservations' => $activeQuery->count(),
+            'expired_reservations' => $expiredQuery->count(),
+            'total_reserved_quantity' => $activeQuery->sum('quantity'),
+            'unique_items' => $activeQuery->distinct('item_id')->count(),
         ];
 
         return view('admin.stock-reservations', compact(

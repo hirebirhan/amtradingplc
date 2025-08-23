@@ -4,7 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Purchase;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
+use UserHelper;
 
 class PurchasesController extends Controller
 {
@@ -13,9 +13,9 @@ class PurchasesController extends Controller
      */
     public function generatePdf(Purchase $purchase)
     {
-        // Check authorization
-        if (!Auth::user()->can('view', $purchase)) {
-            abort(403, 'Unauthorized action.');
+        // Check authorization using UserHelper
+        if (!UserHelper::hasAccessToWarehouse($purchase->warehouse_id)) {
+            abort(403, 'You do not have permission to access this purchase.');
         }
         
         // This is a placeholder implementation
@@ -32,9 +32,9 @@ class PurchasesController extends Controller
      */
     public function printPurchase(Purchase $purchase)
     {
-        // Check authorization
-        if (!Auth::user()->can('view', $purchase)) {
-            abort(403, 'Unauthorized action.');
+        // Check authorization using UserHelper
+        if (!UserHelper::hasAccessToWarehouse($purchase->warehouse_id)) {
+            abort(403, 'You do not have permission to access this purchase.');
         }
         
         // This is a placeholder implementation
