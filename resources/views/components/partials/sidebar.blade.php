@@ -52,14 +52,6 @@
             </div>
         </div>
         @endif
-        <!-- Stock Card Link -->
-        <div>
-            <a href="{{ route('stock-card.index') }}" class="nav-link d-flex align-items-center gap-3 px-3 py-2 rounded fw-bold text-primary text-decoration-none {{ request()->routeIs('stock-card.index') ? 'bg-primary bg-opacity-10' : '' }}">
-                <i class="bi bi-journal-text fs-5"></i>
-                <span>Stock Card</span>
-            </a>
-        </div>
-
         <!-- Purchases Section -->
         @if(auth()->user()->can('suppliers.view') || auth()->user()->can('purchases.view') || auth()->user()->can('purchases.create'))
         <div>

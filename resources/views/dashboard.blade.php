@@ -10,27 +10,9 @@
                             Welcome back, {{ auth()->user()->name }}!
                         </div>
                     </div>
-                    <!-- User Context & Time Range -->
-                    <div class="d-flex flex-column flex-sm-row align-items-start align-items-sm-center gap-2 gap-sm-3 mt-2 mt-md-0 w-100 w-md-auto">
-                        @if(auth()->user()->hasRole('Sales') && auth()->user()->branch)
-                            <div class="badge border rounded-pill text-primary border-primary">
-                                <i class="bi bi-person-badge me-1"></i> Sales • {{ auth()->user()->branch->name }}
-                            </div>
-                        @elseif(auth()->user()->hasRole('BranchManager') && auth()->user()->branch)
-                            <div class="badge border rounded-pill text-success border-success">
-                                <i class="bi bi-person-video3 me-1"></i> Manager • {{ auth()->user()->branch->name }}
-                            </div>
-                        @elseif(auth()->user()->hasRole('WarehouseUser') && auth()->user()->warehouse)
-                            <div class="badge border rounded-pill text-warning border-warning">
-                                <i class="bi bi-house-gear me-1"></i> Warehouse • {{ auth()->user()->warehouse->name }}
-                            </div>
-                        @elseif(auth()->user()->hasRole('SystemAdmin'))
-                            <div class="badge border rounded-pill text-danger border-danger">
-                                <i class="bi bi-shield-lock me-1"></i> System Admin
-                            </div>
-                        @endif
-                        <!-- Time Range Selector -->
-                        <div class="position-relative" x-data="{ open: false }">
+                   
+                       <!-- Time Range Selector -->
+                       <div class="position-relative" x-data="{ open: false }">
                             <button @click="open = !open" class="btn d-flex align-items-center gap-2 px-3 py-2 small">
                                 <i class="bi bi-calendar3"></i>
                                 <span id="selectedRange">Last 30 Days</span>
@@ -47,7 +29,6 @@
                                 <a href="#" class="dropdown-item small" data-range="year">This Year</a>
                             </div>
                         </div>
-                    </div>
                 </div>
             </div>
         </div>
