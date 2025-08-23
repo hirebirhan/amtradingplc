@@ -115,10 +115,7 @@ class User extends Authenticatable
      */
     public function isWarehouseUser(): bool
     {
-        return $this->hasAnyRole([
-            UserRole::WAREHOUSE_MANAGER->value,
-            UserRole::WAREHOUSE_STAFF->value
-        ]);
+        return $this->hasRole(UserRole::WAREHOUSE_MANAGER->value);
     }
 
     /**
