@@ -26,7 +26,7 @@ class UserSeeder extends Seeder
         // Create General Manager (with full access similar to SuperAdmin)
         $generalManager = User::create([
             'name' => 'General Manager',
-            'email' => 'gm@stock360.com',
+            'email' => 'gm@amtradingplc.com',
             'password' => Hash::make('password'),
             'email_verified_at' => now(),
             'position' => 'General Manager',
@@ -48,7 +48,7 @@ class UserSeeder extends Seeder
         foreach ($branches as $index => $branch) {
             $branchManager = User::create([
                 'name' => "Branch Manager " . ($index + 1),
-                'email' => "branch-manager-{$index}@stock360.com",
+                'email' => "branch-manager-{$index}@amtradingplc.com",
             'password' => Hash::make('password'),
             'email_verified_at' => now(),
                 'branch_id' => $branch->id,
@@ -61,7 +61,7 @@ class UserSeeder extends Seeder
             // Create a Sales User for each branch
             $salesUser = User::create([
                 'name' => "Sales User " . ($index + 1),
-                'email' => "sales-{$index}@stock360.com",
+                'email' => "sales-{$index}@amtradingplc.com",
             'password' => Hash::make('password'),
             'email_verified_at' => now(),
                 'branch_id' => $branch->id,
@@ -76,7 +76,7 @@ class UserSeeder extends Seeder
         foreach ($warehouses as $index => $warehouse) {
             $warehouseUser = User::create([
                 'name' => "Warehouse User " . ($index + 1),
-                'email' => "warehouse-{$index}@stock360.com",
+                'email' => "warehouse-{$index}@amtradingplc.com",
             'password' => Hash::make('password'),
             'email_verified_at' => now(),
                 'branch_id' => $warehouse->branch_id,

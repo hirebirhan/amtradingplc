@@ -16,7 +16,7 @@ class SuperAdminSeeder extends Seeder
         // Create SuperAdmin user
         $superAdmin = User::create([
             'name' => 'System Administrator',
-            'email' => 'superadmin@stock360.com',
+            'email' => 'superadmin@amtradingplc.com',
             'password' => Hash::make('password'),
             'email_verified_at' => now(),
             'position' => 'System Administrator',
