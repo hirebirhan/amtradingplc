@@ -1,0 +1,65 @@
+version: '3.8'
+services:
+    app:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        container_name: amtradingplc-app
+        restart: unless-stopped
+        working_dir: /var/www/html
+        volumes:
+            - .:/var/www/html
+            - vendor:/var/www/html/vendor
+            - node_modules:/var/www/html/node_modules
+        ports:
+            - "8002:8002"
+        depends_on:
+            db:
+                condition: service_healthy
+        environment:
+            - "DB_HOST=db"
+            - "DB_PORT=3306"
+            - "DB_DATABASE=amtradingplc"
+            - "DB_USERNAME=root"
+            - "DB_PASSWORD="
+        command: >
+            bash -c "if [ ! -f .env ]; then cp .env.example .env; fi &&
+                     composer install --no-interaction --no-progress &&
+                     php artisan key:generate --force &&
+                     php artisan migrate --force &&
+                     php artisan serve --host=0.0.0.0 --port=8002"
+
+    node:
+        image: node:18-alpine
+        container_name: amtradingplc-node
+        working_dir: /var/www/html
+        volumes:
+            - .:/var/www/html
+            - node_modules:/var/www/html/node_modules
+        ports:
+            - "5173:5173"
+        command: >
+            sh -c "npm install &&
+                     npm run dev -- --host 0.0.0.0 --port 5173"
+        restart: unless-stopped
+
+    db:
+        image: mysql:8.0
+        container_name: amtradingplc-db
+        restart: unless-stopped
+        environment:
+            MYSQL_DATABASE: amtradingplc
+            MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+        ports:
+            - "3306:3306"
+        volumes:
+            - amtradingplc_db_data:/var/lib/mysql
+        healthcheck:
+            test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+            timeout: 20s
+            retries: 10
+
+volumes:
+    amtradingplc_db_data:
+    vendor:
+    node_modules:
