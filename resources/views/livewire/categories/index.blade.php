@@ -59,14 +59,7 @@
                             <option value="child">Child Only</option>
                         </select>
                     </div>
-                    <div class="col-6 col-md-3">
-                        <select wire:model.live="perPage" class="form-select">
-                            <option value="10">10 per page</option>
-                            <option value="25">25 per page</option>
-                            <option value="50">50 per page</option>
-                            <option value="100">100 per page</option>
-                        </select>
-                    </div>
+                    
                 </div>
                 @if($search || $parentFilter || $perPage != 10)
                 <div class="mt-3">

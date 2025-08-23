@@ -68,14 +68,7 @@
                         @endforeach
                     </select>
                 </div>
-                <div class="col-6 col-md-2">
-                    <select class="form-select" wire:model.live="perPage">
-                        <option value="10">10 per page</option>
-                        <option value="25">25 per page</option>
-                        <option value="50">50 per page</option>
-                        <option value="100">100 per page</option>
-                    </select>
-                </div>
+             
             </div>
             
             <!-- Row 2: Date Range -->
@@ -215,22 +208,8 @@
                             Showing {{ $purchases->firstItem() ?? 0 }} to {{ $purchases->lastItem() ?? 0 }} of {{ $purchases->total() }} results
                         </div>
                         
-                        <!-- Per Page Selector and Pagination -->
                         <div class="d-flex align-items-center gap-3">
-                            <!-- Per Page Selector -->
-                            <div class="d-flex align-items-center gap-2">
-                                <select wire:model.live="perPage" id="perPage" class="form-select form-select-sm" style="width: auto;">
-                                    <option value="10">10</option>
-                                    <option value="25">25</option>
-                                    <option value="50">50</option>
-                                    <option value="100">100</option>
-                                </select>
-                            </div>
-                            
-                            <!-- Pagination Links -->
-                            <div>
-                                {{ $purchases->links() }}
-                            </div>
+                            {{ $purchases->links() }}
                         </div>
                     </div>
                 </div>

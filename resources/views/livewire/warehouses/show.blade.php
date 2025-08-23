@@ -277,17 +277,7 @@
                                     <span class="fw-medium">{{ $stocks->total() ?? 0 }}</span> items
                                 </p>
                             </div>
-                            <div class="d-flex gap-2 align-items-center">
-                                <select class="form-select form-select-sm" wire:model.live="perPage">
-                                    <option value="10">10 per page</option>
-                                    <option value="25">25 per page</option>
-                                    <option value="50">50 per page</option>
-                                    <option value="100">100 per page</option>
-                                </select>
-                                <a href="#" class="btn btn-primary">
-                                    <i class="fas fa-plus me-1"></i> Add Stock
-                                </a>
-                            </div>
+                        
                         </div>
                     </div>
                     <div class="card-body p-0">

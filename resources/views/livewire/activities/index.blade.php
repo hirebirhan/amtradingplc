@@ -91,7 +91,7 @@
                 @if(auth()->user()->hasAnyRole(['SuperAdmin', 'BranchManager']))
                 <div class="col-md-3">
                 @else
-                <div class="col-md-4">
+                <div class="col-md-6">
                 @endif
                     <label class="form-label small text-muted mb-1">Date Range</label>
                     <div class="d-flex gap-2">
@@ -100,16 +100,7 @@
                     </div>
                 </div>
                 
-                <!-- Records Per Page -->
-                <div class="col-md-2">
-                    <label class="form-label small text-muted mb-1">Per Page</label>
-                    <select wire:model.live="perPage" class="form-select">
-                        <option value="10">10 records</option>
-                        <option value="20">20 records</option>
-                        <option value="50">50 records</option>
-                        <option value="100">100 records</option>
-                    </select>
-                </div>
+              
             </div>
         </div>
         

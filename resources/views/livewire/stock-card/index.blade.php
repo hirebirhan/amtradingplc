@@ -167,7 +167,7 @@
                     </div>
                 </div>
                 
-                <!-- Row 2: Date Range and Per Page -->
+                <!-- Row 2: Date Range -->
                 <div class="row g-3">
                     <div class="col-12 col-md-4">
                         <label class="form-label small">Date From</label>
@@ -177,14 +177,7 @@
                         <label class="form-label small">Date To</label>
                         <input type="date" class="form-control" wire:model.live="dateTo">
                     </div>
-                    <div class="col-12 col-md-4">
-                        <label class="form-label small">Per Page</label>
-                        <select class="form-select" wire:model.live="perPage">
-                            <option value="25">25</option>
-                            <option value="50">50</option>
-                            <option value="100">100</option>
-                        </select>
-                    </div>
+                
                 </div>
 
                 @if($itemFilter || $typeFilter || $dateFrom || $dateTo)

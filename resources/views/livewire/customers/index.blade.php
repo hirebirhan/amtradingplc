@@ -56,15 +56,7 @@
                     </div>
                 </div>
 
-                <!-- Per Page -->
-                <div class="col-md-4">
-                    <select class="form-select" wire:model.live="perPage">
-                        <option value="10">10 per page</option>
-                        <option value="25">25 per page</option>
-                        <option value="50">50 per page</option>
-                        <option value="100">100 per page</option>
-                    </select>
-                </div>
+            
 
                 <!-- Filters Row -->
                 <div class="col-12">
@@ -230,19 +222,8 @@
                             Showing {{ $customers->firstItem() ?? 0 }} to {{ $customers->lastItem() ?? 0 }} of {{ $customers->total() }} results
                         </div>
                         
-                        <!-- Per Page Selector and Pagination -->
+                        <!-- Pagination -->
                         <div class="d-flex align-items-center gap-3">
-                            <!-- Per Page Selector -->
-                            <div class="d-flex align-items-center gap-2">
-                                <select wire:model.live="perPage" id="perPage" class="form-select form-select-sm" style="width: auto;">
-                                    <option value="10">10</option>
-                                    <option value="25">25</option>
-                                    <option value="50">50</option>
-                                    <option value="100">100</option>
-                                </select>
-                            </div>
-                            
-                            <!-- Pagination Links -->
                             <div>
                                 {{ $customers->links() }}
                             </div>
