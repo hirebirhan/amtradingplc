@@ -8,6 +8,7 @@ use App\Models\StockHistory;
 use App\Models\Item;
 use App\Models\Warehouse;
 use Carbon\Carbon;
+use App\Helpers\UserHelper;
 
 class Index extends Component
 {
@@ -19,6 +20,9 @@ class Index extends Component
     public $dateFrom = '';
     public $dateTo = '';
     public $perPage = 10;
+    public $isSalesView = false;
+    public $pageTitle = 'Recent Activity';
+    public $pageDescription = 'Monitor all inventory movements, stock changes, and system activities';
 
     protected $queryString = [
         'search' => ['except' => ''],
@@ -32,6 +36,15 @@ class Index extends Component
     {
         $this->dateFrom = Carbon::now()->subDays(7)->format('Y-m-d');
         $this->dateTo = Carbon::now()->format('Y-m-d');
+        
+        // Set view-specific properties based on user role
+        $userHelper = new UserHelper();
+        $this->isSalesView = $userHelper->isSales();
+        
+        if ($this->isSalesView) {
+            $this->pageTitle = 'My Activity Log';
+            $this->pageDescription = 'Track your inventory movements, sales, and stock changes';
+        }
     }
 
     public function updatingSearch()
@@ -63,11 +76,9 @@ class Index extends Component
             ->with(['item:id,name,sku', 'warehouse:id,name', 'user:id,name']);
 
         // Filter by user for Sales role - they can only see their own activities
-        $user = auth()->user();
-        $isSales = $user->hasRole('Sales');
-        $isSuperAdminOrManager = $user->hasAnyRole(['SuperAdmin', 'BranchManager']);
+        $userHelper = new UserHelper();
         
-        if ($isSales && !$isSuperAdminOrManager) {
+        if ($userHelper->isSales() && !$userHelper->isAdminOrManager()) {
             $query->where('user_id', auth()->id());
         }
 
@@ -130,11 +141,33 @@ class Index extends Component
         };
     }
 
+    public function getActivityTypes()
+    {
+        $types = [
+            'sale' => 'Sale',
+            'purchase' => 'Purchase',
+            'transfer' => 'Transfer',
+            'return' => 'Return',
+            'adjustment' => 'Adjustment'
+        ];
+
+        // If user is sales, only show sale and return types
+        if ($this->isSalesView) {
+            return array_intersect_key($types, array_flip(['sale', 'return']));
+        }
+
+        return $types;
+    }
+
     public function render()
     {
         return view('livewire.activities.index', [
             'activities' => $this->activities,
             'warehouses' => $this->warehouses,
+            'activityTypes' => $this->getActivityTypes(),
+            'isSalesView' => $this->isSalesView,
+            'pageTitle' => $this->pageTitle,
+            'pageDescription' => $this->pageDescription
         ])->layout('layouts.app');
     }
 } 

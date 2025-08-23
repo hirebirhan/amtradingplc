@@ -13,6 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
+use UserHelper;
 
 class StockReportController extends Controller
 {
@@ -38,6 +39,32 @@ class StockReportController extends Controller
     public function generateReport(Request $request): JsonResponse
     {
         try {
+            // Check if user has access to the requested location
+            $locationType = $request->input('location_type');
+            $locationId = $request->input('location_id');
+            
+            if ($locationType === 'warehouse' && $locationId) {
+                if (!UserHelper::hasAccessToWarehouse($locationId)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'You do not have permission to access this warehouse.'
+                    ], 403);
+                }
+            } elseif ($locationType === 'branch' && $locationId) {
+                if (!UserHelper::hasAccessToBranch($locationId)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'You do not have permission to access this branch.'
+                    ], 403);
+                }
+            } elseif (!UserHelper::isSuperAdmin()) {
+                // Only super admin can view all locations
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You do not have permission to view all locations.'
+                ], 403);
+            }
+            
             $validated = $request->validate([
                 'location_type' => 'nullable|in:warehouse,branch',
                 'location_id' => 'nullable|integer',

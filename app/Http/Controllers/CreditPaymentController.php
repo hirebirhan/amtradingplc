@@ -6,6 +6,7 @@ use App\Models\Credit;
 use App\Models\CreditPayment;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use UserHelper;
 
 class CreditPaymentController extends Controller
 {
@@ -14,6 +15,11 @@ class CreditPaymentController extends Controller
      */
     public function create(Credit $credit)
     {
+        // Check if user has access to this credit's warehouse
+        if (!UserHelper::hasAccessToWarehouse($credit->warehouse_id)) {
+            abort(403, 'You do not have permission to access this credit.');
+        }
+        
         return view('credit-payments.create', compact('credit'));
     }
 
@@ -22,6 +28,11 @@ class CreditPaymentController extends Controller
      */
     public function store(Request $request, Credit $credit)
     {
+        // Check if user has access to this credit's warehouse
+        if (!UserHelper::hasAccessToWarehouse($credit->warehouse_id)) {
+            abort(403, 'You do not have permission to access this credit.');
+        }
+        
         try {
             // Validate the payment data
             $validatedData = $request->validate([

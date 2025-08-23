@@ -10,6 +10,7 @@ use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use App\Models\User;
+use App\Enums\UserRole;
 
 class User extends Authenticatable
 {
@@ -87,15 +88,18 @@ class User extends Authenticatable
      */
     public function isSuperAdmin(): bool
     {
-        return $this->hasRole(['SuperAdmin', 'GeneralManager']);
+        return $this->hasRole(UserRole::SUPER_ADMIN->value);
     }
 
     /**
      * Determine if the user is a general manager.
+     * 
+     * @deprecated This role doesn't exist in the system anymore
+     * @return bool Always returns false
      */
     public function isGeneralManager(): bool
     {
-        return $this->hasRole('GeneralManager');
+        return false;
     }
 
     /**
@@ -103,7 +107,7 @@ class User extends Authenticatable
      */
     public function isBranchManager(): bool
     {
-        return $this->hasRole('BranchManager');
+        return $this->hasRole(UserRole::BRANCH_MANAGER->value);
     }
 
     /**
@@ -111,7 +115,10 @@ class User extends Authenticatable
      */
     public function isWarehouseUser(): bool
     {
-        return $this->hasRole('WarehouseUser');
+        return $this->hasAnyRole([
+            UserRole::WAREHOUSE_MANAGER->value,
+            UserRole::WAREHOUSE_STAFF->value
+        ]);
     }
 
     /**
@@ -119,7 +126,7 @@ class User extends Authenticatable
      */
     public function isSales(): bool
     {
-        return $this->hasRole('Sales');
+        return $this->hasRole(UserRole::SALES->value);
     }
 
     /**
@@ -147,7 +154,11 @@ class User extends Authenticatable
         $userRoles = $this->getRoleNames();
         
         // Define roles that can access location filters
-        $adminRoles = ['SystemAdmin', 'SuperAdmin', 'Manager', 'GeneralManager'];
+        $adminRoles = [
+            UserRole::SUPER_ADMIN->value,
+            UserRole::BRANCH_MANAGER->value,
+            UserRole::WAREHOUSE_MANAGER->value
+        ];
         
         // Check if user has any admin role
         return !empty(array_intersect($userRoles, $adminRoles));

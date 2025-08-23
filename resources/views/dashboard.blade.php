@@ -5,9 +5,9 @@
             <div class="container-fluid">
                 <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between py-2 gap-2 gap-md-0 flex-wrap">
                     <div>
-                        <h1 class="h2 fw-bold mb-0">Dashboard</h1>
+                        <h1 class="h2 fw-bold mb-0">{{ $page_title ?? 'Dashboard' }}</h1>
                         <div class="small text-secondary">
-                            Welcome back, {{ auth()->user()->name }}!
+                            Welcome back, {{ auth()->user()->name }}! {{ $page_description ?? '' }}
                         </div>
                     </div>
                    
@@ -47,8 +47,8 @@
                 </div>
             @endif
 
-            <!-- Activity Filters (SuperAdmin & Manager Only) -->
-            @if(auth()->user()->hasRole(['SystemAdmin', 'Manager']) && isset($available_branches))
+            <!-- Activity Filters -->
+            @if($show_filters && isset($available_branches))
                 <div class="card mb-4">
                     <div class="card-body">
                         <form method="GET" action="{{ route('admin.dashboard') }}" class="d-flex flex-column flex-md-row align-items-stretch gap-2 gap-md-3 flex-wrap">
@@ -88,8 +88,13 @@
                     :total_revenue="$total_revenue"
                     :total_purchases="$total_purchases"
                     :total_purchase_amount="$total_purchase_amount"
+                    :total_inventory_value="$total_inventory_value ?? 0"
+                    :customers_count="$customers_count ?? 0"
                     :can_view_revenue="$can_view_revenue"
                     :can_view_purchases="$can_view_purchases"
+                    :can_view_inventory="$can_view_inventory"
+                    :is_sales="$is_sales ?? false"
+                    :is_admin_or_manager="$is_admin_or_manager ?? false"
                 />
             </div>
 
@@ -101,18 +106,24 @@
                         <div class="card-body p-2 p-md-4">
                             <div class="d-flex align-items-center justify-content-between mb-4">
                                 <div>
-                                    <h3 class="h5 fw-semibold mb-1">Sales Overview</h3>
-                                    <p class="small text-secondary mb-0">Track your sales and purchase trends</p>
+                                    <h3 class="h5 fw-semibold mb-1">
+                                        {{ $is_sales ? 'My Sales' : 'Sales Overview' }}
+                                    </h3>
+                                    <p class="small text-secondary mb-0">
+                                        {{ $is_sales ? 'Track your sales performance' : 'Track sales and purchase trends' }}
+                                    </p>
                                 </div>
                                 <div class="d-flex align-items-center gap-3 small">
                                     <div class="d-flex align-items-center gap-2">
                                         <div class="rounded-circle bg-primary" style="width: 1rem; height: 1rem;"></div>
                                         <span class="fw-medium text-muted">Sales</span>
                                     </div>
+                                    @if($can_view_purchases)
                                     <div class="d-flex align-items-center gap-2">
                                         <div class="rounded-circle bg-success" style="width: 1rem; height: 1rem;"></div>
                                         <span class="fw-medium text-muted">Purchases</span>
                                     </div>
+                                    @endif
                                 </div>
                             </div>
                             
@@ -128,8 +139,12 @@
                     <div class="card h-100">
                         <div class="card-body p-2 p-md-4">
                             <div class="mb-4">
-                                <h3 class="h5 fw-semibold mb-1">Recent Activity</h3>
-                                <p class="small text-secondary mb-0">Latest inventory movements</p>
+                                <h3 class="h5 fw-semibold mb-1">
+                                    {{ $is_sales ? 'My Recent Activity' : 'Recent Activity' }}
+                                </h3>
+                                <p class="small text-secondary mb-0">
+                                    {{ $is_sales ? 'Your latest transactions' : 'Latest inventory movements' }}
+                                </p>
                             </div>
                             
                             <div>
@@ -310,7 +325,7 @@
                         
                     // Check if we have meaningful data
                         const hasData = data.labels && data.labels.length > 0 && 
-                                   (salesTotal > 0 || purchasesTotal > 0);
+                                   (salesTotal > 0 || (purchasesTotal > 0 && {{ $can_view_purchases ? 'true' : 'false' }}));
                         
                         if (hasData) {
                         console.log('🎨 Creating chart with data...');
@@ -318,13 +333,14 @@
                         if (chartContainer) {
                             chartContainer.classList.remove('d-none');
                         }
+                        const noDataMessage = document.getElementById('noDataMessage');
                         if (noDataMessage) {
                             noDataMessage.classList.add('d-none');
                         }
                         
                         const colors = getThemeColors();
                         const showSales = salesTotal > 0;
-                        const showPurchases = purchasesTotal > 0;
+                        const showPurchases = purchasesTotal > 0 && {{ $can_view_purchases ? 'true' : 'false' }};
                         
                         console.log('🎨 Chart Colors:', {
                             primary: colors.primary,
@@ -458,6 +474,7 @@
                         if (chartContainer) {
                             chartContainer.classList.add('d-none');
                         }
+                        const noDataMessage = document.getElementById('noDataMessage');
                         if (noDataMessage) {
                             noDataMessage.classList.remove('d-none');
                         }
@@ -470,6 +487,7 @@
                         chartContainer.style.opacity = '1';
                         chartContainer.classList.add('d-none');
                     }
+                    const noDataMessage = document.getElementById('noDataMessage');
                     if (noDataMessage) {
                         noDataMessage.classList.remove('d-none');
                     }
@@ -482,11 +500,19 @@
                     e.preventDefault();
                     const range = this.getAttribute('data-range');
                     updateChart(range);
+                    
+                    // Update active state
+                    document.querySelectorAll('[data-range]').forEach(el => {
+                        el.classList.remove('active');
+                    });
+                    this.classList.add('active');
+                    
+                    // Update the selected range text
+                    document.getElementById('selectedRange').textContent = this.textContent.trim();
                 });
             });
-
-            // Initial chart load
-            console.log('🚀 Starting initial chart load...');
+            
+            // Initial chart update with default range
             updateChart('month');
             
             // Debug: Check elements
