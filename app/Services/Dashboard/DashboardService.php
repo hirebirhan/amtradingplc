@@ -8,6 +8,7 @@ use App\Models\Category;
 use App\Models\Warehouse;
 use App\Models\StockHistory;
 use App\Models\Sale;
+use App\Facades\UserHelperFacade as UserHelper;
 use App\Services\Dashboard\Contracts\{
     StatsServiceInterface,
     ActivityServiceInterface,
@@ -22,10 +23,7 @@ class DashboardService
         private ActivityServiceInterface $activityService,
         private InventoryServiceInterface $inventoryService
     ) {
-        // Initialize UserHelper if needed for role checks
-        if (!class_exists('App\Helpers\UserHelper')) {
-            throw new \RuntimeException('UserHelper class not found. Make sure it is properly loaded.');
-        }
+        // All role and access checks are centralized via UserHelper facade
     }
 
     /**
@@ -43,20 +41,20 @@ class DashboardService
         ];
         
         // Add role-based view permissions using UserHelper
-        $data['can_view_revenue'] = \App\Helpers\UserHelper::hasRole(\App\Enums\UserRole::SUPER_ADMIN) || 
-                                  \App\Helpers\UserHelper::hasRole(\App\Enums\UserRole::BRANCH_MANAGER) || 
-                                  \App\Helpers\UserHelper::hasRole(\App\Enums\UserRole::ACCOUNTANT);
+        $data['can_view_revenue'] = UserHelper::hasRole(\App\Enums\UserRole::SUPER_ADMIN) || 
+                                  UserHelper::hasRole(\App\Enums\UserRole::BRANCH_MANAGER) || 
+                                  UserHelper::hasRole(\App\Enums\UserRole::ACCOUNTANT);
         
-        $data['can_view_purchases'] = \App\Helpers\UserHelper::hasRole(\App\Enums\UserRole::SUPER_ADMIN) || 
-                                    \App\Helpers\UserHelper::hasRole(\App\Enums\UserRole::BRANCH_MANAGER) || 
-                                    \App\Helpers\UserHelper::hasRole(\App\Enums\UserRole::PURCHASE_OFFICER);
+        $data['can_view_purchases'] = UserHelper::hasRole(\App\Enums\UserRole::SUPER_ADMIN) || 
+                                    UserHelper::hasRole(\App\Enums\UserRole::BRANCH_MANAGER) || 
+                                    UserHelper::hasRole(\App\Enums\UserRole::PURCHASE_OFFICER);
         
-        $data['can_view_inventory'] = \App\Helpers\UserHelper::hasRole(\App\Enums\UserRole::SUPER_ADMIN) || 
-                                    \App\Helpers\UserHelper::hasRole(\App\Enums\UserRole::BRANCH_MANAGER) || 
-                                    \App\Helpers\UserHelper::hasRole(\App\Enums\UserRole::WAREHOUSE_MANAGER);
+        $data['can_view_inventory'] = UserHelper::hasRole(\App\Enums\UserRole::SUPER_ADMIN) || 
+                                    UserHelper::hasRole(\App\Enums\UserRole::BRANCH_MANAGER) || 
+                                    UserHelper::hasRole(\App\Enums\UserRole::WAREHOUSE_MANAGER);
         
         // Filter activities based on user role
-        if (\App\Helpers\UserHelper::isSales() && !\App\Helpers\UserHelper::isAdminOrManager()) {
+        if (UserHelper::isSales() && !UserHelper::isAdminOrManager()) {
             $data['activities'] = $data['activities']->filter(function ($activity) use ($user) {
                 return $activity->user_id === $user->id;
             });

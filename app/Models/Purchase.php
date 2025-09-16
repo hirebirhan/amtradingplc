@@ -12,6 +12,7 @@ use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
 use App\Models\PriceHistory;
 use App\Models\User;
+use App\Enums\PaymentStatus;
 
 class Purchase extends Model
 {
@@ -265,7 +266,7 @@ class Purchase extends Model
             $this->save();
 
             // If the purchase is not fully paid, create a credit record
-            if ($this->payment_status === 'due' || $this->payment_status === 'partial') {
+            if (in_array($this->payment_status, [PaymentStatus::DUE->value, PaymentStatus::PARTIAL->value], true)) {
                 $this->createCreditRecord();
             }
 
@@ -371,11 +372,11 @@ class Purchase extends Model
     public function updatePaymentStatus(): void
     {
         if ($this->due_amount <= 0) {
-            $this->payment_status = 'paid';
+            $this->payment_status = PaymentStatus::PAID->value;
         } elseif ($this->paid_amount > 0) {
-            $this->payment_status = 'partial';
+            $this->payment_status = PaymentStatus::PARTIAL->value;
         } else {
-            $this->payment_status = 'due';
+            $this->payment_status = PaymentStatus::DUE->value;
         }
         $this->save();
     }

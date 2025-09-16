@@ -9,6 +9,9 @@ use App\Models\Purchase;
 use App\Models\PurchaseItem;
 use App\Models\Warehouse;
 use App\Models\Stock;
+use App\Enums\PaymentMethod;
+use App\Enums\PaymentStatus;
+use App\Facades\UserHelperFacade as UserHelper;
 use Livewire\Component;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\On;
@@ -44,20 +47,20 @@ class Create extends Component
                     }
                 }
             ],
-            'form.payment_method' => 'required|in:cash,bank_transfer,telebirr,credit_advance,full_credit',
+            'form.payment_method' => ['required', Rule::enum(PaymentMethod::class)],
             'form.tax' => 'nullable|numeric|min:0|max:100',
             'items' => 'required|array|min:1',
         ];
 
-        if ($this->form['payment_method'] === 'telebirr') {
+        if ($this->form['payment_method'] === PaymentMethod::TELEBIRR->value) {
             $rules['form.transaction_number'] = 'required|string|min:5';
         }
 
-        if ($this->form['payment_method'] === 'bank_transfer') {
+        if ($this->form['payment_method'] === PaymentMethod::BANK_TRANSFER->value) {
             $rules['form.bank_account_id'] = 'required|exists:bank_accounts,id';
         }
 
-        if ($this->form['payment_method'] === 'credit_advance') {
+        if ($this->form['payment_method'] === PaymentMethod::CREDIT_ADVANCE->value) {
             $rules['form.advance_amount'] = 'required|numeric|min:0.01|max:' . $this->totalAmount;
         }
 
@@ -134,8 +137,8 @@ class Create extends Component
             'reference_no' => $this->getDefaultReferenceNumber(),
             'supplier_id' => '',
             'warehouse_id' => '',
-            'payment_method' => \App\Enums\PaymentMethod::defaultForPurchases()->value,
-            'payment_status' => 'paid',
+            'payment_method' => PaymentMethod::defaultForPurchases()->value,
+            'payment_status' => PaymentStatus::PAID->value,
             'tax' => 0,
             'transaction_number' => '',
             'bank_account_id' => '',
@@ -206,34 +209,8 @@ class Create extends Component
      */
     private function getAccessibleWarehouses()
     {
-        $user = auth()->user();
-        
-        // SuperAdmin and GeneralManager can access all warehouses
-        if ($user->isSuperAdmin()) {
-            return Warehouse::orderBy('name')->get();
-        }
-        
-        // Sales users can only access warehouses in their assigned branch
-        if ($user->isSales() && $user->branch_id) {
-            return Warehouse::whereHas('branches', function($query) use ($user) {
-                $query->where('branches.id', $user->branch_id);
-            })->orderBy('name')->get();
-        }
-        
-        // WarehouseUser can only access their assigned warehouse
-        if ($user->isWarehouseUser() && $user->warehouse_id) {
-            return Warehouse::where('id', $user->warehouse_id)->orderBy('name')->get();
-        }
-        
-        // BranchManager can access warehouses in their branch
-        if ($user->isBranchManager() && $user->branch_id) {
-            return Warehouse::whereHas('branches', function($query) use ($user) {
-                $query->where('branches.id', $user->branch_id);
-            })->orderBy('name')->get();
-        }
-        
-        // Default: return empty collection if no access
-        return collect();
+        // Centralized user-aware warehouse access
+        return UserHelper::allowedWarehouses();
     }
 
     /**
@@ -241,36 +218,7 @@ class Create extends Component
      */
     private function canAccessWarehouse($warehouseId)
     {
-        $user = auth()->user();
-        
-        // SuperAdmin and GeneralManager can access all warehouses
-        if ($user->isSuperAdmin()) {
-            return true;
-        }
-        
-        // Sales users can only access warehouses in their assigned branch
-        if ($user->isSales() && $user->branch_id) {
-            return Warehouse::where('id', $warehouseId)
-                ->whereHas('branches', function($query) use ($user) {
-                    $query->where('branches.id', $user->branch_id);
-                })->exists();
-        }
-        
-        // WarehouseUser can only access their assigned warehouse
-        if ($user->isWarehouseUser() && $user->warehouse_id) {
-            return $user->warehouse_id == $warehouseId;
-        }
-        
-        // BranchManager can access warehouses in their branch
-        if ($user->isBranchManager() && $user->branch_id) {
-            return Warehouse::where('id', $warehouseId)
-                ->whereHas('branches', function($query) use ($user) {
-                    $query->where('branches.id', $user->branch_id);
-                })->exists();
-        }
-        
-        // Default: no access
-        return false;
+        return UserHelper::hasAccessToWarehouse((int)$warehouseId);
     }
 
     public function loadItems()
@@ -539,7 +487,7 @@ class Create extends Component
         $this->totalAmount = round($subtotal + $this->taxAmount, 2);
         
         // Handle credit with advance
-        if ($this->form['payment_method'] === 'credit_advance') {
+        if ($this->form['payment_method'] === PaymentMethod::CREDIT_ADVANCE->value) {
             if (!isset($this->form['advance_amount']) || floatval($this->form['advance_amount']) <= 0) {
                 $this->form['advance_amount'] = round($this->totalAmount * 0.2, 2); // Default 20%
             } else if (floatval($this->form['advance_amount']) > $this->totalAmount) {
@@ -574,20 +522,20 @@ class Create extends Component
         $this->form['advance_amount'] = 0;
 
         // Set payment status based on payment method
-        if ($value === 'cash' || $value === 'bank_transfer' || $value === 'telebirr') {
+        if (in_array($value, [PaymentMethod::CASH->value, PaymentMethod::BANK_TRANSFER->value, PaymentMethod::TELEBIRR->value], true)) {
             // For immediate payment methods, set to paid
-            $this->form['payment_status'] = 'paid';
-        } else if ($value === 'credit_advance') {
+            $this->form['payment_status'] = PaymentStatus::PAID->value;
+        } else if ($value === PaymentMethod::CREDIT_ADVANCE->value) {
             // For credit with advance, set to partial
-            $this->form['payment_status'] = 'partial';
+            $this->form['payment_status'] = PaymentStatus::PARTIAL->value;
 
             // Initialize advance amount with a percentage of the total (e.g., 20%)
             if ($this->totalAmount > 0) {
                 $this->form['advance_amount'] = round($this->totalAmount * 0.2, 2);
             }
-        } else if ($value === 'full_credit') {
+        } else if ($value === PaymentMethod::FULL_CREDIT->value) {
             // For full credit, set to due
-            $this->form['payment_status'] = 'due';
+            $this->form['payment_status'] = PaymentStatus::DUE->value;
         }
 
         // Update totals after changing payment method
@@ -615,15 +563,15 @@ class Create extends Component
         }
 
         // Check payment method specific validations
-        if ($this->form['payment_method'] === 'telebirr' && empty($this->form['transaction_number'])) {
+        if ($this->form['payment_method'] === PaymentMethod::TELEBIRR->value && empty($this->form['transaction_number'])) {
             $validationErrors['form.transaction_number'] = 'Transaction number is required for Telebirr payments.';
         }
 
-        if ($this->form['payment_method'] === 'bank_transfer' && empty($this->form['bank_account_id'])) {
+        if ($this->form['payment_method'] === PaymentMethod::BANK_TRANSFER->value && empty($this->form['bank_account_id'])) {
             $validationErrors['form.bank_account_id'] = 'Bank account is required for bank transfer payments.';
         }
 
-        if ($this->form['payment_method'] === 'credit_advance') {
+        if ($this->form['payment_method'] === PaymentMethod::CREDIT_ADVANCE->value) {
             if (empty($this->form['advance_amount']) || $this->form['advance_amount'] <= 0) {
                 $validationErrors['form.advance_amount'] = 'Advance amount is required and must be greater than zero.';
             } elseif ($this->form['advance_amount'] > $this->totalAmount) {
@@ -688,17 +636,17 @@ class Create extends Component
             $purchase->discount = 0;
             $purchase->tax = $this->taxAmount;
             $purchase->total_amount = $this->totalAmount;
-            $purchase->paid_amount = $this->form['payment_method'] === 'full_credit' ? 0 : 
-                                    ($this->form['payment_method'] === 'credit_advance' ? $this->form['advance_amount'] : $this->totalAmount);
-            $purchase->due_amount = $this->form['payment_method'] === 'full_credit' ? $this->totalAmount : 
-                                   ($this->form['payment_method'] === 'credit_advance' ? $this->totalAmount - $this->form['advance_amount'] : 0);
+            $purchase->paid_amount = $this->form['payment_method'] === PaymentMethod::FULL_CREDIT->value ? 0 : 
+                                    ($this->form['payment_method'] === PaymentMethod::CREDIT_ADVANCE->value ? $this->form['advance_amount'] : $this->totalAmount);
+            $purchase->due_amount = $this->form['payment_method'] === PaymentMethod::FULL_CREDIT->value ? $this->totalAmount : 
+                                   ($this->form['payment_method'] === PaymentMethod::CREDIT_ADVANCE->value ? $this->totalAmount - $this->form['advance_amount'] : 0);
             $purchase->notes = $this->form['notes'];
             
             // Handle payment type specific fields
-            if ($this->form['payment_method'] === 'bank_transfer') {
+            if ($this->form['payment_method'] === PaymentMethod::BANK_TRANSFER->value) {
                 $purchase->bank_account_id = $this->form['bank_account_id'] ?? null;
                 // Note: receipt_url field doesn't exist in database schema
-            } elseif ($this->form['payment_method'] === 'telebirr') {
+            } elseif ($this->form['payment_method'] === PaymentMethod::TELEBIRR->value) {
                 $purchase->transaction_number = $this->form['transaction_number'] ?? null;
             }
             
@@ -772,8 +720,8 @@ class Create extends Component
             }
             
             // Create credit record for credit-type payments
-            if ($this->form['payment_method'] === 'full_credit' || $this->form['payment_method'] === 'credit_advance') {
-                $dueAmount = $this->form['payment_method'] === 'full_credit' ? 
+            if (in_array($this->form['payment_method'], [PaymentMethod::FULL_CREDIT->value, PaymentMethod::CREDIT_ADVANCE->value], true)) {
+                $dueAmount = $this->form['payment_method'] === PaymentMethod::FULL_CREDIT->value ? 
                     $this->totalAmount : 
                     ($this->totalAmount - $this->form['advance_amount']);
                 
@@ -1379,7 +1327,7 @@ class Create extends Component
                 'form.supplier_id' => 'required|exists:suppliers,id',
                 'form.warehouse_id' => 'required|exists:warehouses,id',
                 'form.purchase_date' => 'required|date',
-                'form.payment_method' => 'required|in:cash,bank_transfer,telebirr,credit_advance,full_credit',
+                'form.payment_method' => ['required', Rule::enum(PaymentMethod::class)],
             ]);
             
             // Log before saving
@@ -1614,8 +1562,8 @@ class Create extends Component
             $this->form['reference_no'] = $this->generateUniqueReferenceNumber();
             $this->form['supplier_id'] = (int)($params['form']['supplier_id'] ?? 0);
             $this->form['warehouse_id'] = (int)($params['form']['warehouse_id'] ?? 0);
-            $this->form['payment_method'] = 'cash';
-            $this->form['payment_status'] = 'paid';
+            $this->form['payment_method'] = PaymentMethod::CASH->value;
+            $this->form['payment_status'] = PaymentStatus::PAID->value;
             $this->form['tax'] = (float)($params['form']['tax'] ?? 0);
             $this->form['notes'] = $params['form']['notes'] ?? '';
         }

@@ -5,15 +5,48 @@ namespace App\Helpers;
 use App\Enums\UserRole;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
+use App\Services\User\UserContextService;
 
 class UserHelper
 {
+    public function __construct(
+        private readonly UserContextService $context = new UserContextService(),
+    ) {}
+
     /**
      * Get the currently authenticated user
      */
     public static function currentUser(): ?User
     {
         return Auth::user();
+    }
+
+    /**
+     * Current branch/warehouse from user context service
+     */
+    public function currentBranch(): ?\App\Models\Branch
+    {
+        return $this->context->currentBranch();
+    }
+
+    public function currentWarehouse(): ?\App\Models\Warehouse
+    {
+        return $this->context->currentWarehouse();
+    }
+
+    public function allowedWarehouses(): \Illuminate\Support\Collection
+    {
+        return $this->context->allowedWarehouses();
+    }
+
+    public function setBranchId(int $branchId): bool
+    {
+        return $this->context->setBranchId($branchId);
+    }
+
+    public function setWarehouseId(int $warehouseId): bool
+    {
+        return $this->context->setWarehouseId($warehouseId);
     }
 
     /**
@@ -72,10 +105,8 @@ class UserHelper
      */
     public static function isWarehouseUser(): bool
     {
-        return self::hasRole([
-            UserRole::WAREHOUSE_MANAGER,
-            UserRole::WAREHOUSE_STAFF
-        ]);
+        // Align with seeded roles; only WarehouseManager exists currently
+        return self::hasRole(UserRole::WAREHOUSE_MANAGER);
     }
 
     /**

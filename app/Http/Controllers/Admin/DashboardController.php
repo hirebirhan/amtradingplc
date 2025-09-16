@@ -8,7 +8,7 @@ use App\Services\Dashboard\ChartDataService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\View\View;
-use UserHelper;
+use App\Facades\UserHelperFacade as UserHelper;
 
 class DashboardController extends Controller
 {
