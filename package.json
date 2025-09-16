@@ -17,13 +17,13 @@
         "concurrently": "^9.0.1",
         "glob": "^10.4.5",
         "jquery": "^3.7.1",
-        "laravel-vite-plugin": "^1.2.0",
+        "laravel-vite-plugin": "^1.3.0",
         "postcss": "^8.4.35",
         "sass": "^1.77.0",
         "stylelint": "^14.16.1",
         "stylelint-config-standard": "^29.0.0",
         "stylelint-declaration-strict-value": "^1.9.2",
         "toastr": "^2.1.4",
-        "vite": "^6.2.4"
+        "vite": "^5.4.10"
     }
 }

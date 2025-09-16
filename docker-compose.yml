@@ -10,7 +10,10 @@ services:
         ports:
             - "8000:8000"
         depends_on:
-            - node
+            node:
+                condition: service_started
+            db:
+                condition: service_healthy
         environment:
             - DB_HOST=db
             - DB_DATABASE=amtradingplc
@@ -22,15 +25,7 @@ services:
             - COMPOSER_MEMORY_LIMIT=-1
             - COMPOSER_ALLOW_SUPERUSER=1
         command: >
-            bash -c "if [ ! -f .env ]; then cp .env.example .env; fi && \
-                     rm -f bootstrap/cache/*.php && \
-                                         rm -f public/hot && \
-                                         if [ ! -d vendor ] || [ -z "$(ls -A vendor 2>/dev/null)" ]; then \
-                       composer install --no-interaction --no-progress; \
-                     fi && \
-                     php artisan key:generate --force && \
-                     php artisan migrate --force && \
-                     php artisan serve --host=0.0.0.0 --port=8000"
+            bash docker/php/entrypoint.sh
         restart: unless-stopped
 
     node:
@@ -45,7 +40,7 @@ services:
         environment:
             - APP_ENV=${APP_ENV:-local}
         command: >
-            sh -c "(npm ci || npm install) && npm run dev -- --host 0.0.0.0 --port 5173"
+            sh -c "(npm ci --no-audit --no-fund || npm install --no-audit --no-fund) && npm run dev -- --host 0.0.0.0 --port 5173 --config vite.config.mjs"
         restart: unless-stopped
 
     db:
@@ -59,10 +54,14 @@ services:
             - "3306:3306"
         volumes:
             - db_data:/var/lib/mysql
+            - ./docker/mysql/my.cnf:/etc/mysql/conf.d/dev.cnf:ro
         healthcheck:
             test: [ "CMD", "mysqladmin", "ping", "-h", "localhost" ]
             timeout: 20s
             retries: 10
+        command:
+            - mysqld
+            - --defaults-file=/etc/mysql/conf.d/dev.cnf
 
 volumes:
     db_data:
