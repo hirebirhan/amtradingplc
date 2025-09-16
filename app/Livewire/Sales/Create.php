@@ -12,6 +12,8 @@ use App\Models\BankAccount;
 use App\Models\Branch;
 use App\Models\Credit;
 use App\Models\StockHistory;
+use App\Models\CreditPayment;
+use App\Facades\UserHelperFacade as UserHelper;
 use Livewire\Component;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\On;
@@ -106,6 +108,13 @@ class Create extends Component
             $rules['form.branch_id'] = 'required_without:form.warehouse_id|nullable|exists:branches,id';
             $rules['form.warehouse_id'] = 'required_without:form.branch_id|nullable|exists:warehouses,id';
         }
+
+        // Enforce that selected warehouse is accessible by the user
+        $rules['form.warehouse_id'][] = function ($attribute, $value, $fail) {
+            if (!empty($value) && !\App\Facades\UserHelperFacade::hasAccessToWarehouse((int) $value)) {
+                $fail('You do not have permission to access this warehouse.');
+            }
+        };
 
         // Payment method specific validations
         if ($this->form['payment_method'] === PaymentMethod::TELEBIRR->value) {
@@ -257,10 +266,15 @@ class Create extends Component
             // Load items available in warehouses serving this branch
             $warehouseIds = [];
             try {
-                $warehouseIds = DB::table('branch_warehouse')
-                    ->where('branch_id', $this->form['branch_id'])
-                    ->pluck('warehouse_id')
-                    ->toArray();
+                $branch = Branch::with('warehouses:id')->find($this->form['branch_id']);
+                if ($branch && method_exists($branch, 'warehouses')) {
+                    $warehouseIds = $branch->warehouses()->pluck('warehouses.id')->toArray();
+                } else {
+                    $warehouseIds = DB::table('branch_warehouse')
+                        ->where('branch_id', $this->form['branch_id'])
+                        ->pluck('warehouse_id')
+                        ->toArray();
+                }
             } catch (\Exception $e) {
                 \Log::error('Failed to load warehouse IDs', ['error' => $e->getMessage()]);
                 $warehouseIds = [];
@@ -739,9 +753,9 @@ class Create extends Component
             ]);
 
             // Handle credit creation for credit-based payment methods
-            if ($this->form['payment_method'] === 'credit_advance' && $this->form['advance_amount'] > 0) {
+            if ($this->form['payment_method'] === PaymentMethod::CREDIT_ADVANCE->value && $this->form['advance_amount'] > 0) {
                 $this->createCreditAndAdvancePayment($sale);
-            } elseif ($this->form['payment_method'] === 'full_credit') {
+            } elseif ($this->form['payment_method'] === PaymentMethod::FULL_CREDIT->value) {
                 $this->createFullCredit($sale);
             }
 
@@ -749,9 +763,9 @@ class Create extends Component
             
             // Show success message with credit information if applicable
             $successMessage = 'Sale created successfully!';
-            if ($this->form['payment_method'] === 'credit_advance' && $this->form['advance_amount'] > 0) {
+            if ($this->form['payment_method'] === PaymentMethod::CREDIT_ADVANCE->value && $this->form['advance_amount'] > 0) {
                 $successMessage .= ' Credit record created for remaining amount of ' . number_format($this->totalAmount - $this->form['advance_amount'], 2) . ' ETB.';
-            } elseif ($this->form['payment_method'] === 'full_credit') {
+            } elseif ($this->form['payment_method'] === PaymentMethod::FULL_CREDIT->value) {
                 $successMessage .= ' Credit record created for full amount of ' . number_format($this->totalAmount, 2) . ' ETB.';
             }
             

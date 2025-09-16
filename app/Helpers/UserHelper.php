@@ -44,7 +44,7 @@ class UserHelper
         return $this->context->setBranchId($branchId);
     }
 
-    public function setWarehouseId(int $warehouseId): bool
+    public function setWarehosuseId(int $warehouseId): bool
     {
         return $this->context->setWarehouseId($warehouseId);
     }
