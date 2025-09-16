@@ -1,45 +1,51 @@
 services:
-    app:
-        build:
-            context: .
-            dockerfile: Dockerfile
-        container_name: amtradingplc-app
-        restart: unless-stopped
-        working_dir: /var/www/html
+    php:
+        build: .
+        container_name: amtradingplc-php
+        working_dir: /app
         volumes:
-            - .:/var/www/html
-            - vendor:/var/www/html/vendor
-            - node_modules:/var/www/html/node_modules
+            - .:/app
+            - vendor:/app/vendor
+            - node_modules:/app/node_modules
         ports:
-            - "8002:8002"
+            - "8000:8000"
         depends_on:
-            db:
-                condition: service_healthy
+            - node
         environment:
-            - "DB_HOST=db"
-            - "DB_PORT=3306"
-            - "DB_DATABASE=amtradingplc"
-            - "DB_USERNAME=root"
-            - "DB_PASSWORD="
+            - DB_HOST=db
+            - DB_DATABASE=amtradingplc
+            - DB_USERNAME=root
+            - DB_PASSWORD=root
+            - APP_ENV=local
+            - APP_DEBUG=true
+            - COMPOSER_PROCESS_TIMEOUT=1200
+            - COMPOSER_MEMORY_LIMIT=-1
+            - COMPOSER_ALLOW_SUPERUSER=1
         command: >
-            bash -c "if [ ! -f .env ]; then cp .env.example .env; fi &&
-                     composer install --no-interaction --no-progress &&
-                     php artisan key:generate --force &&
-                     php artisan migrate --force &&
-                     php artisan serve --host=0.0.0.0 --port=8002"
+            bash -c "if [ ! -f .env ]; then cp .env.example .env; fi && \
+                     rm -f bootstrap/cache/*.php && \
+                                         rm -f public/hot && \
+                                         if [ ! -d vendor ] || [ -z "$(ls -A vendor 2>/dev/null)" ]; then \
+                       composer install --no-interaction --no-progress; \
+                     fi && \
+                     php artisan key:generate --force && \
+                     php artisan migrate --force && \
+                     php artisan serve --host=0.0.0.0 --port=8000"
+        restart: unless-stopped
 
     node:
         image: node:18-alpine
         container_name: amtradingplc-node
-        working_dir: /var/www/html
+        working_dir: /app
         volumes:
-            - .:/var/www/html
-            - node_modules:/var/www/html/node_modules
+            - .:/app
+            - node_modules:/app/node_modules
         ports:
             - "5173:5173"
+        environment:
+            - APP_ENV=${APP_ENV:-local}
         command: >
-            sh -c "npm install &&
-                     npm run dev -- --host 0.0.0.0 --port 5173"
+            sh -c "(npm ci || npm install) && npm run dev -- --host 0.0.0.0 --port 5173"
         restart: unless-stopped
 
     db:
@@ -48,17 +54,17 @@ services:
         restart: unless-stopped
         environment:
             MYSQL_DATABASE: amtradingplc
-            MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+            MYSQL_ROOT_PASSWORD: root
         ports:
             - "3306:3306"
         volumes:
-            - amtradingplc_db_data:/var/lib/mysql
+            - db_data:/var/lib/mysql
         healthcheck:
-            test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+            test: [ "CMD", "mysqladmin", "ping", "-h", "localhost" ]
             timeout: 20s
             retries: 10
 
 volumes:
-    amtradingplc_db_data:
+    db_data:
     vendor:
     node_modules:
