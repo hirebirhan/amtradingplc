@@ -16,61 +16,83 @@ A modern, robust inventory management system for Muhdin General Trading, built w
 - **Role-based Access** - Granular permissions for different user roles
 - **Modern UI** - Clean, responsive interface with dark/light mode
 
-## 🚀 Quick Start
+## 🚀 Docker-Based Quick Start
+
+This project is fully containerized with Docker. No local PHP, Node, or MySQL installation is required.
 
 ### Prerequisites
 
-- PHP 8.2 or higher
-- MySQL 8.0 or higher
-- Composer
-- Node.js 16+ & NPM
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) or Docker Engine.
 
-### Installation
+### Installation & Setup
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/your-org/muhdin-trading.git
-   cd muhdin-trading
-   ```
+1.  **Clone the repository:**
+    ```bash
+    git clone https://github.com/your-org/muhdin-trading.git
+    cd muhdin-trading
+    ```
 
-2. Install PHP dependencies:
-   ```bash
-   composer install
-   ```
+2.  **Copy the environment file:**
+    A `.env` file is created from `production.env` automatically if it doesn't exist. Make sure the database credentials in `.env` are set as follows for the Docker environment:
+    ```env
+    DB_CONNECTION=mysql
+    DB_HOST=db
+    DB_PORT=3306
+    DB_DATABASE=amtradingplc
+    DB_USERNAME=root
+    DB_PASSWORD=root
+    ```
 
-3. Install NPM dependencies:
-   ```bash
-   npm install
-   npm run dev
-   ```
+3.  **Build and run the containers:**
+    ```bash
+    docker-compose up -d --build
+    ```
+    This command will build the images and start the `app`, `webserver`, and `db` services in detached mode.
 
-4. Copy environment file:
-   ```bash
-   cp .env.example .env
-   php artisan key:generate
-   ```
+4.  **Install Composer dependencies:**
+    ```bash
+    docker-compose exec app composer install
+    ```
 
-5. Configure your database in `.env`:
-   ```env
-   DB_CONNECTION=mysql
-   DB_HOST=127.0.0.1
-   DB_PORT=3306
-   DB_DATABASE=muhdin_trading
-   DB_USERNAME=your_username
-   DB_PASSWORD=your_password
-   ```
+5.  **Generate application key:**
+    ```bash
+    docker-compose exec app php artisan key:generate
+    ```
 
-6. Run migrations and seeders:
-   ```bash
-   php artisan migrate --seed
-   ```
+6.  **Run database migrations:**
+    ```bash
+    docker-compose exec app php artisan migrate --seed
+    ```
 
-7. Start the development server:
-   ```bash
-   php artisan serve
-   ```
+7.  **Install NPM dependencies:**
+    ```bash
+    docker-compose run --rm node npm install
+    ```
 
-8. Access the application at `http://localhost:8000`
+8.  **Access the application:**
+    You can now access the application at [http://localhost:8000](http://localhost:8000).
+
+### Running Commands
+
+All commands (`php artisan`, `composer`, `npm`) should be run inside their respective containers.
+
+-   **Artisan commands:**
+    ```bash
+    docker-compose exec app php artisan <command>
+    ```
+    Example: `docker-compose exec app php artisan cache:clear`
+
+-   **Composer commands:**
+    ```bash
+    docker-compose exec app composer <command>
+    ```
+    Example: `docker-compose exec app composer update`
+
+-   **NPM commands:**
+    ```bash
+    docker-compose run --rm node npm <command>
+    ```
+    Example: `docker-compose run --rm node npm run dev`
 
 ### Default Credentials
 

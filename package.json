@@ -19,6 +19,7 @@
         "jquery": "^3.7.1",
         "laravel-vite-plugin": "^1.2.0",
         "postcss": "^8.4.35",
+        "sass": "^1.77.0",
         "stylelint": "^14.16.1",
         "stylelint-config-standard": "^29.0.0",
         "stylelint-declaration-strict-value": "^1.9.2",
