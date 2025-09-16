@@ -68,5 +68,6 @@ class Kernel extends HttpKernel
         'role_or_permission' => \Spatie\Permission\Middlewares\RoleOrPermissionMiddleware::class,
         'network.check' => \App\Http\Middleware\CheckNetworkConnectivity::class,
         'db.check' => \App\Http\Middleware\CheckDatabaseConnection::class,
+        'user.context' => \App\Http\Middleware\EnsureUserContext::class,
     ];
 }

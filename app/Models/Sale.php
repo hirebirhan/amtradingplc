@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\MorphOne;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
 use App\Models\User;
+use App\Enums\PaymentStatus;
 
 class Sale extends Model
 {
@@ -182,7 +183,7 @@ class Sale extends Model
             $this->save();
 
             // If the sale is not fully paid, create a credit record
-            if ($this->payment_status === 'due' || $this->payment_status === 'partial' || $this->payment_status === 'credit') {
+            if (in_array($this->payment_status, [PaymentStatus::DUE->value, PaymentStatus::PARTIAL->value, 'credit'], true)) {
                 $this->createCreditRecord();
             }
 
@@ -374,11 +375,11 @@ class Sale extends Model
     public function updatePaymentStatus(): void
     {
         if ($this->due_amount <= 0) {
-            $this->payment_status = 'paid';
+            $this->payment_status = PaymentStatus::PAID->value;
         } elseif ($this->paid_amount > 0) {
-            $this->payment_status = 'partial';
+            $this->payment_status = PaymentStatus::PARTIAL->value;
         } elseif ($this->payment_status !== 'credit') {
-            $this->payment_status = 'due';
+            $this->payment_status = PaymentStatus::DUE->value;
         }
         $this->save();
     }

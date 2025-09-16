@@ -12,6 +12,8 @@ use App\Models\BankAccount;
 use App\Models\Branch;
 use App\Models\Credit;
 use App\Models\StockHistory;
+use App\Models\CreditPayment;
+use App\Facades\UserHelperFacade as UserHelper;
 use Livewire\Component;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\On;
@@ -19,6 +21,8 @@ use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
+use App\Enums\PaymentMethod;
+use App\Enums\PaymentStatus;
 
 #[Layout('layouts.app')]
 
@@ -93,7 +97,7 @@ class Create extends Component
         $rules = [
             'form.sale_date' => 'required|date',
             'form.customer_id' => 'required|exists:customers,id',
-            'form.payment_method' => 'required|in:cash,bank_transfer,telebirr,credit_advance,full_credit',
+            'form.payment_method' => ['required', \Illuminate\Validation\Rule::enum(PaymentMethod::class)],
             'form.tax' => 'nullable|numeric|min:0|max:100',
             'form.shipping' => 'nullable|numeric|min:0',
             'items' => 'required|array|min:1',
@@ -105,16 +109,23 @@ class Create extends Component
             $rules['form.warehouse_id'] = 'required_without:form.branch_id|nullable|exists:warehouses,id';
         }
 
+        // Enforce that selected warehouse is accessible by the user
+        $rules['form.warehouse_id'][] = function ($attribute, $value, $fail) {
+            if (!empty($value) && !\App\Facades\UserHelperFacade::hasAccessToWarehouse((int) $value)) {
+                $fail('You do not have permission to access this warehouse.');
+            }
+        };
+
         // Payment method specific validations
-        if ($this->form['payment_method'] === 'telebirr') {
+        if ($this->form['payment_method'] === PaymentMethod::TELEBIRR->value) {
             $rules['form.transaction_number'] = 'required|string|min:5';
         }
 
-        if ($this->form['payment_method'] === 'bank_transfer') {
+        if ($this->form['payment_method'] === PaymentMethod::BANK_TRANSFER->value) {
             $rules['form.bank_account_id'] = 'required|exists:bank_accounts,id';
         }
 
-        if ($this->form['payment_method'] === 'credit_advance') {
+        if ($this->form['payment_method'] === PaymentMethod::CREDIT_ADVANCE->value) {
             $rules['form.advance_amount'] = 'required|numeric|min:0.01|lt:' . $this->totalAmount;
         }
 
@@ -144,8 +155,8 @@ class Create extends Component
             'customer_id' => '',
             'warehouse_id' => '',
             'branch_id' => '',
-            'payment_method' => 'cash',
-            'payment_status' => 'paid',
+            'payment_method' => PaymentMethod::defaultForSales()->value,
+            'payment_status' => PaymentStatus::PAID->value,
             'tax' => 0,
             'shipping' => 0,
             'transaction_number' => '',
@@ -255,10 +266,15 @@ class Create extends Component
             // Load items available in warehouses serving this branch
             $warehouseIds = [];
             try {
-                $warehouseIds = DB::table('branch_warehouse')
-                    ->where('branch_id', $this->form['branch_id'])
-                    ->pluck('warehouse_id')
-                    ->toArray();
+                $branch = Branch::with('warehouses:id')->find($this->form['branch_id']);
+                if ($branch && method_exists($branch, 'warehouses')) {
+                    $warehouseIds = $branch->warehouses()->pluck('warehouses.id')->toArray();
+                } else {
+                    $warehouseIds = DB::table('branch_warehouse')
+                        ->where('branch_id', $this->form['branch_id'])
+                        ->pluck('warehouse_id')
+                        ->toArray();
+                }
             } catch (\Exception $e) {
                 \Log::error('Failed to load warehouse IDs', ['error' => $e->getMessage()]);
                 $warehouseIds = [];
@@ -613,19 +629,19 @@ class Create extends Component
     private function updatePaymentStatus()
     {
         switch ($this->form['payment_method']) {
-            case 'cash':
-            case 'bank_transfer':
-            case 'telebirr':
-                $this->form['payment_status'] = 'paid';
+            case PaymentMethod::CASH->value:
+            case PaymentMethod::BANK_TRANSFER->value:
+            case PaymentMethod::TELEBIRR->value:
+                $this->form['payment_status'] = PaymentStatus::PAID->value;
                 break;
-            case 'credit_advance':
-                $this->form['payment_status'] = 'partial';
-                if ($this->totalAmount > 0 && $this->form['advance_amount'] == 0) {
-                    $this->form['advance_amount'] = round($this->totalAmount * 0.3, 2); // Default 30%
+            case PaymentMethod::CREDIT_ADVANCE->value:
+                $this->form['payment_status'] = PaymentStatus::PARTIAL->value;
+                if ($this->totalAmount > 0 && (empty($this->form['advance_amount']) || $this->form['advance_amount'] == 0)) {
+                    $this->form['advance_amount'] = round($this->totalAmount * 0.2, 2); // Default 20%
                 }
                 break;
-            case 'full_credit':
-                $this->form['payment_status'] = 'credit';
+            case PaymentMethod::FULL_CREDIT->value:
+                $this->form['payment_status'] = PaymentStatus::DUE->value;
                 break;
         }
     }
@@ -672,29 +688,29 @@ class Create extends Component
 
             // Set payment-specific fields
             switch ($this->form['payment_method']) {
-                case 'cash':
-                case 'bank_transfer':
-                case 'telebirr':
+                case PaymentMethod::CASH->value:
+                case PaymentMethod::BANK_TRANSFER->value:
+                case PaymentMethod::TELEBIRR->value:
                     $sale->paid_amount = $this->totalAmount;
                     $sale->due_amount = 0;
                     break;
-                case 'credit_advance':
+                case PaymentMethod::CREDIT_ADVANCE->value:
                     $sale->paid_amount = $this->form['advance_amount'];
                     $sale->advance_amount = $this->form['advance_amount'];
                     $sale->due_amount = $this->totalAmount - $this->form['advance_amount'];
                     break;
-                case 'full_credit':
+                case PaymentMethod::FULL_CREDIT->value:
                     $sale->paid_amount = 0;
                     $sale->due_amount = $this->totalAmount;
                     break;
             }
 
-            if ($this->form['payment_method'] === 'telebirr') {
+            if ($this->form['payment_method'] === PaymentMethod::TELEBIRR->value) {
                 $sale->transaction_number = $this->form['transaction_number'];
                 $sale->receipt_url = $this->form['receipt_url'];
             }
 
-            if ($this->form['payment_method'] === 'bank_transfer') {
+            if ($this->form['payment_method'] === PaymentMethod::BANK_TRANSFER->value) {
                 $sale->bank_account_id = $this->form['bank_account_id'];
             }
 
@@ -737,9 +753,9 @@ class Create extends Component
             ]);
 
             // Handle credit creation for credit-based payment methods
-            if ($this->form['payment_method'] === 'credit_advance' && $this->form['advance_amount'] > 0) {
+            if ($this->form['payment_method'] === PaymentMethod::CREDIT_ADVANCE->value && $this->form['advance_amount'] > 0) {
                 $this->createCreditAndAdvancePayment($sale);
-            } elseif ($this->form['payment_method'] === 'full_credit') {
+            } elseif ($this->form['payment_method'] === PaymentMethod::FULL_CREDIT->value) {
                 $this->createFullCredit($sale);
             }
 
@@ -747,9 +763,9 @@ class Create extends Component
             
             // Show success message with credit information if applicable
             $successMessage = 'Sale created successfully!';
-            if ($this->form['payment_method'] === 'credit_advance' && $this->form['advance_amount'] > 0) {
+            if ($this->form['payment_method'] === PaymentMethod::CREDIT_ADVANCE->value && $this->form['advance_amount'] > 0) {
                 $successMessage .= ' Credit record created for remaining amount of ' . number_format($this->totalAmount - $this->form['advance_amount'], 2) . ' ETB.';
-            } elseif ($this->form['payment_method'] === 'full_credit') {
+            } elseif ($this->form['payment_method'] === PaymentMethod::FULL_CREDIT->value) {
                 $successMessage .= ' Credit record created for full amount of ' . number_format($this->totalAmount, 2) . ' ETB.';
             }
             

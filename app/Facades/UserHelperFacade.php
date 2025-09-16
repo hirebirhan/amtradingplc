@@ -18,6 +18,11 @@ use Illuminate\Support\Facades\Facade;
  * @method static bool hasAccessToWarehouse($warehouseId)
  * @method static array getRoleNames()
  * @method static bool canManageStockReservations()
+ * @method static \App\Models\Branch|null currentBranch()
+ * @method static \App\Models\Warehouse|null currentWarehouse()
+ * @method static \Illuminate\Support\Collection allowedWarehouses()
+ * @method static bool setBranchId(int $branchId)
+ * @method static bool setWarehouseId(int $warehouseId)
  * 
  * @see \App\Helpers\UserHelper
  */
