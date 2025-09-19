@@ -45,6 +45,20 @@ done
 # Run migrations (safe when none pending)
 php artisan migrate --force || true
 
+# Optionally seed database on first boot in dev
+SEED_ON_START=${SEED_ON_START:-true}
+if [ "$SEED_ON_START" = "true" ] || [ "$SEED_ON_START" = "1" ]; then
+  # Use a marker file so we don't reseed every container restart
+  mkdir -p storage/app || true
+  if [ ! -f storage/app/.seeded ]; then
+    echo "Seeding database (one-time on first boot)..."
+    php artisan db:seed --force || true
+    date > storage/app/.seeded || true
+  else
+    echo "Seed marker found; skipping seeding."
+  fi
+fi
+
 # Start Laravel dev server
 echo "Starting Laravel dev server on http://0.0.0.0:8000"
 exec php artisan serve --host=0.0.0.0 --port=8000

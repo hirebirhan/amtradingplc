@@ -21,6 +21,7 @@ services:
             - DB_PASSWORD=root
             - APP_ENV=local
             - APP_DEBUG=true
+            - SEED_ON_START=true
             - COMPOSER_PROCESS_TIMEOUT=1200
             - COMPOSER_MEMORY_LIMIT=-1
             - COMPOSER_ALLOW_SUPERUSER=1
