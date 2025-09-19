@@ -13,7 +13,7 @@ services:
             node:
                 condition: service_started
             db:
-                condition: service_healthy
+                condition: service_started
         environment:
             - DB_HOST=db
             - DB_DATABASE=amtradingplc
@@ -25,7 +25,7 @@ services:
             - COMPOSER_MEMORY_LIMIT=-1
             - COMPOSER_ALLOW_SUPERUSER=1
         command: >
-            bash docker/php/entrypoint.sh
+            sh docker/php/entrypoint.sh
         restart: unless-stopped
 
     node:
@@ -56,9 +56,11 @@ services:
             - db_data:/var/lib/mysql
             - ./docker/mysql/my.cnf:/etc/mysql/conf.d/dev.cnf:ro
         healthcheck:
-            test: [ "CMD", "mysqladmin", "ping", "-h", "localhost" ]
-            timeout: 20s
-            retries: 10
+            test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 --silent || exit 1"]
+            interval: 3s
+            timeout: 5s
+            retries: 20
+            start_period: 10s
         command:
             - mysqld
             - --defaults-file=/etc/mysql/conf.d/dev.cnf
