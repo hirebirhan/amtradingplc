@@ -19,9 +19,9 @@ use Illuminate\Support\Facades\Log;
 class Create extends Component
 {
     public $form = [
-        'source_type' => 'warehouse',
+        'source_type' => 'branch',
         'source_id' => '',
-        'destination_type' => 'warehouse', 
+        'destination_type' => 'branch', 
         'destination_id' => '',
         'note' => '',
     ];
@@ -221,47 +221,24 @@ class Create extends Component
     private function loadUserPermissions()
     {
         $user = auth()->user();
-        
+        // Branch-only mode: restrict to branches the user can access
+        $this->warehouses = collect();
         if ($user->isSuperAdmin()) {
-            $this->warehouses = Warehouse::orderBy('name')->get();
             $this->branches = Branch::where('is_active', true)->orderBy('name')->get();
-        } elseif ($user->warehouse_id) {
-            // Warehouse user - can only transfer from their warehouse
-            $this->warehouses = Warehouse::where('id', $user->warehouse_id)->get();
-            $this->branches = Branch::whereHas('warehouses', function($query) use ($user) {
-                $query->where('warehouses.id', $user->warehouse_id);
-            })->where('is_active', true)->get();
         } elseif ($user->branch_id) {
-            // Branch user - can access warehouses in their branch
-            $this->warehouses = Warehouse::whereHas('branches', function($query) use ($user) {
-                $query->where('branches.id', $user->branch_id);
-            })->orderBy('name')->get();
-            $this->branches = Branch::where('is_active', true)->orderBy('name')->get();
+            $this->branches = Branch::where('id', $user->branch_id)->where('is_active', true)->get();
         } else {
-            $this->warehouses = collect();
             $this->branches = collect();
         }
     }
 
     private function updateAvailableLocations()
     {
-        // Source lists
-        if ($this->form['source_type'] === 'warehouse') {
-            $this->availableSourceWarehouses = $this->getUserAccessibleWarehouses();
-            $this->availableSourceBranches = collect();
-        } else {
-            $this->availableSourceBranches = $this->getUserAccessibleBranches();
-            $this->availableSourceWarehouses = collect();
-        }
-
-        // Destination lists (user can send to any active location)
-        if ($this->form['destination_type'] === 'warehouse') {
-            $this->availableDestinationWarehouses = $this->warehouses;
-            $this->availableDestinationBranches = collect();
-        } else {
-            $this->availableDestinationBranches = $this->branches;
-            $this->availableDestinationWarehouses = collect();
-        }
+        // Branch-only lists
+        $this->availableSourceBranches = $this->getUserAccessibleBranches();
+        $this->availableSourceWarehouses = collect();
+        $this->availableDestinationBranches = $this->branches;
+        $this->availableDestinationWarehouses = collect();
     }
 
     private function getUserAccessibleWarehouses()
@@ -320,27 +297,20 @@ class Create extends Component
         $stockMovementService = new \App\Services\StockMovementService();
 
         // Determine base items query based on location type
-        if ($this->form['source_type'] === 'warehouse') {
-            $itemsQuery = Item::select('items.id', 'items.name', 'items.sku')
-                ->join('stocks', 'items.id', '=', 'stocks.item_id')
-                ->where('stocks.warehouse_id', $this->form['source_id'])
-                ->where('stocks.quantity', '>', 0)
-                ->where('items.is_active', true);
-        } else {
-            $branch = Branch::with('warehouses')->find($this->form['source_id']);
-            if (!$branch || $branch->warehouses->isEmpty()) {
-                $this->itemOptions = [];
-                return;
-            }
-            $warehouseIds = $branch->warehouses->pluck('id');
-
-            $itemsQuery = Item::select('items.id', 'items.name', 'items.sku')
-                ->join('stocks', 'items.id', '=', 'stocks.item_id')
-                ->whereIn('stocks.warehouse_id', $warehouseIds)
-                ->where('items.is_active', true)
-                ->groupBy('items.id', 'items.name', 'items.sku')
-                ->havingRaw('SUM(stocks.quantity) > 0');
+        // Branch-only aggregation of stock across a branch
+        $branch = Branch::with('warehouses')->find($this->form['source_id']);
+        if (!$branch || $branch->warehouses->isEmpty()) {
+            $this->itemOptions = [];
+            return;
         }
+        $warehouseIds = $branch->warehouses->pluck('id');
+
+        $itemsQuery = Item::select('items.id', 'items.name', 'items.sku')
+            ->join('stocks', 'items.id', '=', 'stocks.item_id')
+            ->whereIn('stocks.warehouse_id', $warehouseIds)
+            ->where('items.is_active', true)
+            ->groupBy('items.id', 'items.name', 'items.sku')
+            ->havingRaw('SUM(stocks.quantity) > 0');
 
         // Apply search term filter (handle both raw SKU and formatted SKU with prefix)
         if ($this->itemSearchTerm !== '') {
@@ -677,9 +647,9 @@ class Create extends Component
 
             // Enhanced validation with production-grade error messages
             $this->validate([
-                'form.source_type' => 'required|in:warehouse,branch',
+                'form.source_type' => 'required|in:branch',
                 'form.source_id' => 'required|integer|min:1',
-                'form.destination_type' => 'required|in:warehouse,branch', 
+                'form.destination_type' => 'required|in:branch', 
                 'form.destination_id' => 'required|integer|min:1',
                 'form.note' => 'nullable|string|max:1000',
                 'items' => 'required|array|min:1|max:100', // Limit max items for performance
@@ -736,9 +706,9 @@ class Create extends Component
 
             // Create transfer with enhanced error tracking
             $transferData = [
-                'source_type' => $this->form['source_type'],
+                'source_type' => 'branch',
                 'source_id' => (int)$this->form['source_id'],
-                'destination_type' => $this->form['destination_type'],
+                'destination_type' => 'branch',
                 'destination_id' => (int)$this->form['destination_id'],
                 'note' => $this->form['note'],
                 'created_via' => 'web_form',

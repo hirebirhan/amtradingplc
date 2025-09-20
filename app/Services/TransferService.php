@@ -153,6 +153,11 @@ class TransferService
      */
     private function validateTransferData(array $transferData, array $items, User $user): void
     {
+        // Branch-only mode
+        if (($transferData['source_type'] ?? 'branch') !== 'branch' || ($transferData['destination_type'] ?? 'branch') !== 'branch') {
+            throw new TransferException('Only branch-to-branch transfers are supported in this setup.');
+        }
+
         // Validate different locations
         if ($transferData['source_type'] === $transferData['destination_type'] && 
             $transferData['source_id'] === $transferData['destination_id']) {

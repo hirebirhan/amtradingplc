@@ -14,6 +14,32 @@ use Illuminate\Support\Facades\Log;
 
 class StockMovementService
 {
+    private function ensureBranchWarehouse(int $branchId): Warehouse
+    {
+        $branch = Branch::with('warehouses')->find($branchId);
+        if (!$branch) {
+            throw new TransferException('Branch not found.');
+        }
+        $warehouse = $branch->warehouses->first();
+        if ($warehouse) {
+            return $warehouse;
+        }
+        // Create a default internal warehouse for this branch
+        $code = 'WH-BR-' . $branch->id;
+        $name = 'Default Warehouse - ' . ($branch->name ?? ('Branch ' . $branch->id));
+        $warehouse = Warehouse::firstOrCreate(
+            ['code' => $code],
+            [
+                'name' => $name,
+                'address' => $branch->address ?? null,
+                'manager_name' => null,
+                'phone' => null,
+            ]
+        );
+        // Attach to branch via pivot
+        $warehouse->branches()->syncWithoutDetaching([$branch->id]);
+        return $warehouse;
+    }
     /**
      * Reserve stock for a transfer
      */
@@ -265,9 +291,10 @@ class StockMovementService
     private function removeStockFromBranch(int $itemId, float $quantity, int $branchId): array
     {
         $branch = Branch::with('warehouses')->find($branchId);
-        
         if (!$branch || $branch->warehouses->isEmpty()) {
-            throw new TransferException("No warehouses found in branch.");
+            $wh = $this->ensureBranchWarehouse($branchId);
+            // refresh relation
+            $branch = Branch::with('warehouses')->find($branchId);
         }
 
         // Get all stocks in branch with locking
@@ -320,9 +347,9 @@ class StockMovementService
     private function addStockToBranch(int $itemId, float $quantity, int $branchId): array
     {
         $branch = Branch::with('warehouses')->find($branchId);
-        
         if (!$branch || $branch->warehouses->isEmpty()) {
-            throw new TransferException("No warehouses found in destination branch.");
+            $wh = $this->ensureBranchWarehouse($branchId);
+            $branch = Branch::with('warehouses')->find($branchId);
         }
 
         // Add to primary warehouse (first one) or warehouse with existing stock
@@ -351,6 +378,11 @@ class StockMovementService
         // For branch, sum all warehouses
         $branch = Branch::with('warehouses')->find($locationId);
         if (!$branch) return 0;
+        if ($branch->warehouses->isEmpty()) {
+            $this->ensureBranchWarehouse($locationId);
+            $branch = Branch::with('warehouses')->find($locationId);
+            if (!$branch) return 0;
+        }
 
         return Stock::whereIn('warehouse_id', $branch->warehouses->pluck('id'))
             ->where('item_id', $itemId)

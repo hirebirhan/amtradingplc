@@ -8,6 +8,7 @@ use App\Models\Item;
 use App\Models\Purchase;
 use App\Models\PurchaseItem;
 use App\Models\Warehouse;
+use App\Models\Branch;
 use App\Models\Stock;
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
@@ -38,15 +39,7 @@ class Create extends Component
         $rules = [
             'form.purchase_date' => 'required|date',
             'form.supplier_id' => 'required|exists:suppliers,id',
-            'form.warehouse_id' => [
-                'required',
-                'exists:warehouses,id',
-                function ($attribute, $value, $fail) {
-                    if (!$this->canAccessWarehouse($value)) {
-                        $fail('You do not have permission to access this warehouse.');
-                    }
-                }
-            ],
+            'form.branch_id' => ['required','exists:branches,id'],
             'form.payment_method' => ['required', Rule::enum(PaymentMethod::class)],
             'form.tax' => 'nullable|numeric|min:0|max:100',
             'items' => 'required|array|min:1',
@@ -69,7 +62,7 @@ class Create extends Component
 
     protected $messages = [
         'form.supplier_id.required' => 'Please select a supplier.',
-        'form.warehouse_id.required' => 'Please select a warehouse.',
+        'form.branch_id.required' => 'Please select a branch.',
         'items.required' => 'Please add at least one item to the purchase.',
         'items.min' => 'Please add at least one item to the purchase.',
     ];
@@ -77,7 +70,7 @@ class Create extends Component
     public $form = [
         'reference_no' => '',
         'supplier_id' => '',
-        'warehouse_id' => '',
+        'branch_id' => '',
         'purchase_date' => '',
         'payment_method' => 'cash',
         'payment_status' => 'paid',
@@ -94,7 +87,7 @@ class Create extends Component
 
     public $items = [];
     public $suppliers = [];
-    public $warehouses = [];
+    public $branches = [];
     public $bankAccounts = [];
 
     // Item being added
@@ -136,7 +129,7 @@ class Create extends Component
             'purchase_date' => date('Y-m-d'),
             'reference_no' => $this->getDefaultReferenceNumber(),
             'supplier_id' => '',
-            'warehouse_id' => '',
+            'branch_id' => '',
             'payment_method' => PaymentMethod::defaultForPurchases()->value,
             'payment_status' => PaymentStatus::PAID->value,
             'tax' => 0,
@@ -148,19 +141,17 @@ class Create extends Component
 
         $this->loadItems();
         $this->suppliers = Supplier::where('is_active', true)->orderBy('name')->get();
-        
-        // Load warehouses based on user's role and assignment
-        $this->warehouses = $this->getAccessibleWarehouses();
-        
+        // Load accessible branches (branch-only mode)
+        $this->branches = $this->getAccessibleBranches();
+
         $this->bankAccounts = BankAccount::where('is_active', true)->orderBy('account_name')->get();
         
-        // Auto-select warehouse based on user assignment
+        // Auto-select branch based on user assignment
         $user = auth()->user();
-        if ($user && $user->warehouse_id) {
-            $this->form['warehouse_id'] = $user->warehouse_id;
-        } elseif ($user && $user->branch_id && $this->warehouses->count() === 1) {
-            // If user is assigned to a branch and there's only one warehouse, auto-select it
-            $this->form['warehouse_id'] = $this->warehouses->first()->id;
+        if ($user && $user->branch_id) {
+            $this->form['branch_id'] = $user->branch_id;
+        } elseif ($this->branches->count() >= 1) {
+            $this->form['branch_id'] = $this->branches->first()->id;
         }
 
         // Auto-select supplier if supplier_id is provided in URL
@@ -207,10 +198,16 @@ class Create extends Component
     /**
      * Get warehouses that the current user can access based on their role and assignment
      */
-    private function getAccessibleWarehouses()
+    private function getAccessibleBranches()
     {
-        // Centralized user-aware warehouse access
-        return UserHelper::allowedWarehouses();
+        $user = auth()->user();
+        if ($user->isSuperAdmin() || $user->isBranchManager()) {
+            return Branch::where('is_active', true)->orderBy('name')->get();
+        }
+        if ($user->branch_id) {
+            return Branch::where('id', $user->branch_id)->where('is_active', true)->get();
+        }
+        return collect();
     }
 
     /**
@@ -310,15 +307,19 @@ class Create extends Component
     // Helper method to get stock for an item
     private function getItemStock($itemId)
     {
-        if (empty($itemId) || empty($this->form['warehouse_id'])) {
+        if (empty($itemId)) {
             return 0;
         }
-
-        $stock = Stock::where('item_id', $itemId)
-            ->where('warehouse_id', $this->form['warehouse_id'])
-            ->first();
-
-        return $stock ? $stock->quantity : 0;
+        // Optional: show aggregate stock for the selected branch
+        if (!empty($this->form['branch_id'])) {
+            $branch = Branch::with('warehouses')->find($this->form['branch_id']);
+            if ($branch && $branch->warehouses->isNotEmpty()) {
+                return Stock::whereIn('warehouse_id', $branch->warehouses->pluck('id'))
+                    ->where('item_id', $itemId)
+                    ->sum('quantity');
+            }
+        }
+        return 0;
     }
 
     // Properly reset item fields without losing important values
@@ -558,8 +559,8 @@ class Create extends Component
             $validationErrors['form.supplier_id'] = 'Please select a supplier.';
         }
 
-        if (empty($this->form['warehouse_id'])) {
-            $validationErrors['form.warehouse_id'] = 'Please select a warehouse.';
+        if (empty($this->form['branch_id'])) {
+            $validationErrors['form.branch_id'] = 'Please select a branch.';
         }
 
         // Check payment method specific validations
@@ -615,20 +616,23 @@ class Create extends Component
                 'items_count' => count($this->items),
                 'total_amount' => $this->totalAmount,
                 'supplier_id' => $this->form['supplier_id'],
-                'warehouse_id' => $this->form['warehouse_id']
+                'branch_id' => $this->form['branch_id']
             ]);
 
             // Create the purchase record
-            // Get the warehouse's primary branch for purchase record (audit purposes)
-            $warehouse = \App\Models\Warehouse::with('branches')->find($this->form['warehouse_id']);
-            $warehouseBranchId = $warehouse->branches->first()->id ?? 1; // Default to branch 1 if no relationship
+            $branchId = (int)($this->form['branch_id'] ?? 0);
+            if ($branchId <= 0) {
+                $branchId = auth()->user()->branch_id ?? (Branch::value('id') ?? 1);
+            }
+            // Resolve internal warehouse for branch
+            $warehouseId = $this->resolveWarehouseIdForBranch($branchId);
             
             $purchase = new Purchase();
             $purchase->reference_no = $referenceNo;
             $purchase->user_id = auth()->id();
-            $purchase->branch_id = $warehouseBranchId; // Set to warehouse's branch for audit purposes
+            $purchase->branch_id = $branchId;
             $purchase->supplier_id = $this->form['supplier_id'];
-            $purchase->warehouse_id = $this->form['warehouse_id'];
+            $purchase->warehouse_id = $warehouseId; // internal detail
             $purchase->purchase_date = $this->form['purchase_date'];
             $purchase->payment_method = $this->form['payment_method'];
             $purchase->payment_status = $this->form['payment_status'];
@@ -741,7 +745,7 @@ class Create extends Component
                         'due_date' => now()->addDays(30), // Default 30-day term
                         'status' => 'active',
                         'user_id' => auth()->id(),
-                        'branch_id' => $warehouseBranchId,
+                        'branch_id' => $branchId,
                         'warehouse_id' => $purchase->warehouse_id,
                     ]);
                     
@@ -990,33 +994,33 @@ class Create extends Component
         }
     }
 
-    // Add explicit listener for warehouse ID changes
-    public function updatedFormWarehouseId($value)
+    // Branch change handler (branch-only mode)
+    public function updatedFormBranchId($value)
     {
-        \Log::info('Warehouse ID updated in component', [
+        \Log::info('Branch ID updated in component', [
             'new_value' => $value,
             'parsed_value' => (int)$value
         ]);
         
         // Ensure it's an integer
-        $this->form['warehouse_id'] = (int)$value;
+        $this->form['branch_id'] = (int)$value;
         
-        // If a warehouse has been selected and we have a current item selected
+        // If branch has been selected and we have a current item selected
         // update the stock information for that item
-        if (!empty($this->form['warehouse_id']) && !empty($this->newItem['item_id'])) {
+        if (!empty($this->form['branch_id']) && !empty($this->newItem['item_id'])) {
             // Get updated stock for the selected item
             $this->current_stock = $this->getItemStock($this->newItem['item_id']);
             
-            \Log::debug('Updated stock for item after warehouse change', [
+            \Log::debug('Updated stock for item after branch change', [
                 'item_id' => $this->newItem['item_id'],
-                'warehouse_id' => $this->form['warehouse_id'],
+                'branch_id' => $this->form['branch_id'],
                 'new_stock' => $this->current_stock
             ]);
         }
         
-        // If we have items in the items array, notify the user about the warehouse change
+        // If we have items in the items array, notify the user about the branch change
         if (count($this->items) > 0) {
-            $this->notify('Warehouse changed. Please verify items and quantities for the new warehouse.', 'warning');
+            $this->notify('Branch changed. Please verify items and quantities for the new branch.', 'warning');
         }
     }
 
@@ -1169,8 +1173,8 @@ class Create extends Component
                 $this->form = array_merge($this->form, $params['form']);
                 
                 // Type conversion for numeric fields
-                $this->form['supplier_id'] = (int)$this->form['supplier_id'];
-                $this->form['warehouse_id'] = (int)$this->form['warehouse_id'];
+            $this->form['supplier_id'] = (int)$this->form['supplier_id'];
+            $this->form['branch_id'] = (int)($this->form['branch_id'] ?? 0);
                 $this->form['discount'] = (float)$this->form['discount'];
                 $this->form['tax'] = (float)$this->form['tax'];
                 $this->form['advance_amount'] = (float)$this->form['advance_amount'];
@@ -1228,14 +1232,14 @@ class Create extends Component
         \Log::info('Form values for validation:', [
             'supplier_id' => $this->form['supplier_id'] ?? 'not set',
             'supplier_id_type' => isset($this->form['supplier_id']) ? gettype($this->form['supplier_id']) : 'n/a',
-            'warehouse_id' => $this->form['warehouse_id'] ?? 'not set',
-            'warehouse_id_type' => isset($this->form['warehouse_id']) ? gettype($this->form['warehouse_id']) : 'n/a',
+            'branch_id' => $this->form['branch_id'] ?? 'not set',
+            'branch_id_type' => isset($this->form['branch_id']) ? gettype($this->form['branch_id']) : 'n/a',
             'items_count' => count($this->items),
         ]);
 
         // Ensure values are properly converted to their intended types
         $supplierId = isset($this->form['supplier_id']) ? (int)$this->form['supplier_id'] : null;
-        $warehouseId = isset($this->form['warehouse_id']) ? (int)$this->form['warehouse_id'] : null;
+        $branchIdForValidation = isset($this->form['branch_id']) ? (int)$this->form['branch_id'] : null;
 
         // Check supplier_id - consider 0 as invalid but handle both empty string and null
         if (empty($supplierId) && $supplierId !== 0) {
@@ -1243,13 +1247,10 @@ class Create extends Component
             \Log::warning('Supplier validation failed', ['value' => $supplierId]);
         }
 
-        // Check warehouse_id - consider 0 as invalid but handle both empty string and null
-        if (empty($warehouseId) && $warehouseId !== 0) {
-            $validationErrors['form.warehouse_id'] = 'Warehouse is required';
-            \Log::warning('Warehouse validation failed', ['value' => $warehouseId]);
-        } elseif ($warehouseId && !$this->canAccessWarehouse($warehouseId)) {
-            $validationErrors['form.warehouse_id'] = 'You do not have permission to access this warehouse';
-            \Log::warning('Warehouse access denied', ['user_id' => auth()->id(), 'warehouse_id' => $warehouseId]);
+        // Check branch_id
+        if (empty($branchIdForValidation) && $branchIdForValidation !== 0) {
+            $validationErrors['form.branch_id'] = 'Branch is required';
+            \Log::warning('Branch validation failed', ['value' => $branchIdForValidation]);
         }
 
         // Check items array - be explicit about the check
@@ -1325,7 +1326,7 @@ class Create extends Component
             // Skip the unique reference number validation since we just generated a unique one
             $this->validate([
                 'form.supplier_id' => 'required|exists:suppliers,id',
-                'form.warehouse_id' => 'required|exists:warehouses,id',
+                'form.branch_id' => 'required|exists:branches,id',
                 'form.purchase_date' => 'required|date',
                 'form.payment_method' => ['required', Rule::enum(PaymentMethod::class)],
             ]);
@@ -1542,6 +1543,26 @@ class Create extends Component
         }
     }
 
+    private function resolveWarehouseIdForBranch(int $branchId): int
+    {
+        $branch = Branch::with('warehouses')->find($branchId);
+        if ($branch && $branch->warehouses->isNotEmpty()) {
+            return (int)$branch->warehouses->first()->id;
+        }
+        // Create default warehouse and attach
+        $code = 'WH-BR-' . $branchId;
+        $name = 'Default Warehouse - ' . ($branch?->name ?? ('Branch ' . $branchId));
+        $warehouse = Warehouse::firstOrCreate(
+            ['code' => $code],
+            [
+                'name' => $name,
+                'address' => $branch?->address,
+            ]
+        );
+        $warehouse->branches()->syncWithoutDetaching([$branchId]);
+        return (int)$warehouse->id;
+    }
+
     /**
      * Special handler for cash payments which are simpler to process
      */
@@ -1561,7 +1582,7 @@ class Create extends Component
             // Always generate a new reference number, don't use any provided one
             $this->form['reference_no'] = $this->generateUniqueReferenceNumber();
             $this->form['supplier_id'] = (int)($params['form']['supplier_id'] ?? 0);
-            $this->form['warehouse_id'] = (int)($params['form']['warehouse_id'] ?? 0);
+            $this->form['branch_id'] = (int)($params['form']['branch_id'] ?? 0);
             $this->form['payment_method'] = PaymentMethod::CASH->value;
             $this->form['payment_status'] = PaymentStatus::PAID->value;
             $this->form['tax'] = (float)($params['form']['tax'] ?? 0);
@@ -1592,7 +1613,7 @@ class Create extends Component
         \Log::info('Proceeding with cash payment save', [
             'items_count' => count($this->items),
             'supplier' => $this->form['supplier_id'],
-            'warehouse' => $this->form['warehouse_id']
+            'branch' => $this->form['branch_id']
         ]);
         
         return $this->save();
@@ -1880,10 +1901,8 @@ class Create extends Component
             $validationErrors['form.supplier_id'] = 'Please select a supplier.';
         }
 
-        if (empty($this->form['warehouse_id'])) {
-            $validationErrors['form.warehouse_id'] = 'Please select a warehouse.';
-        } elseif (!$this->canAccessWarehouse($this->form['warehouse_id'])) {
-            $validationErrors['form.warehouse_id'] = 'You do not have permission to access this warehouse.';
+        if (empty($this->form['branch_id'])) {
+            $validationErrors['form.branch_id'] = 'Please select a branch.';
         }
 
         // Check payment method specific validations
@@ -1942,10 +1961,8 @@ class Create extends Component
             $validationErrors['form.supplier_id'] = 'Cannot create purchase: Please select a supplier';
         }
 
-        if (empty($this->form['warehouse_id'])) {
-            $validationErrors['form.warehouse_id'] = 'Cannot create purchase: Please select a warehouse';
-        } elseif (!$this->canAccessWarehouse($this->form['warehouse_id'])) {
-            $validationErrors['form.warehouse_id'] = 'You do not have permission to access this warehouse';
+        if (empty($this->form['branch_id'])) {
+            $validationErrors['form.branch_id'] = 'Cannot create purchase: Please select a branch';
         }
 
         // Check payment method specific validations
