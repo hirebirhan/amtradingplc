@@ -29,6 +29,8 @@ class Import extends Component
     public $previewErrors = [];
     public $defaultCategory = '';
     public $categories = [];
+    public $warehouses = [];
+    public $branchQuantities = [];
     public $importResults = [];
     public $allItemsExist = false;
 
@@ -46,6 +48,8 @@ class Import extends Component
             ->orderBy('name')
             ->pluck('name', 'id')
             ->toArray();
+
+        $this->warehouses = Warehouse::where('is_active', true)->orderBy('name')->get();
         
         if (!empty($this->categories)) {
             $this->defaultCategory = reset($this->categories);
@@ -181,12 +185,21 @@ class Import extends Component
                     }
 
                     $finalCategoryName = $categoryName;
-                    if (empty($categoryName) || !in_array($categoryName, $categories)) {
-                        if (!empty($this->defaultCategory)) {
-                            $finalCategoryName = $this->defaultCategory;
-                        } else {
-                            $errors[] = 'Category not found and no default set - please select a valid category or set a default';
+                    $finalCategoryId = null;
+
+                    $categoryModel = Category::where('name', $categoryName)->first();
+                    if ($categoryModel) {
+                        $finalCategoryId = $categoryModel->id;
+                    } elseif (!empty($this->defaultCategory)) {
+                        $defaultCategoryModel = Category::where('name', $this->defaultCategory)->first();
+                        if ($defaultCategoryModel) {
+                            $finalCategoryName = $defaultCategoryModel->name;
+                            $finalCategoryId = $defaultCategoryModel->id;
                         }
+                    }
+
+                    if (empty($finalCategoryName)) {
+                        $errors[] = 'Category not found and no default set - please select a valid category or set a default';
                     }
 
                     if (strlen($unit) > 50) {
@@ -229,9 +242,16 @@ class Import extends Component
                         'reorder_level' => $reorderLevel,
                         'brand' => $brand,
                         'description' => $description,
+                        'category_id' => $finalCategoryId,
                         'errors' => $errors,
                         'is_valid' => empty($errors)
                     ];
+
+                    if (empty($errors)) {
+                        foreach ($this->warehouses as $warehouse) {
+                            $this->branchQuantities[$rowNumber][$warehouse->id] = 0;
+                        }
+                    }
 
                     if (!empty($errors)) {
                         $this->previewErrors[] = "Row {$rowNumber}: " . implode(', ', $errors);
@@ -264,20 +284,13 @@ class Import extends Component
 
             if ($allItemsExist) {
                 $this->allItemsExist = true;
-                $this->showPreview = false;
+                $this->showPreview = true;
                 $this->dispatch('notify', type: 'info', message: 'All items in your Excel file already exist in the system. No new items to import.');
                 return;
             }
-
+            
             $this->allItemsExist = false;
             $this->showPreview = true;
-
-        } catch (\Exception $e) {
-            Log::error('Fatal error in import preview', [
-                'user_id' => Auth::id(),
-                'error' => $e->getMessage()
-            ]);
-            $this->dispatch('notify', type: 'error', message: 'Error reading file: ' . $e->getMessage());
         }
     }
 
@@ -340,7 +353,7 @@ class Import extends Component
                     $name = $itemData['name'];
                     $sku = $itemData['sku'];
                     $barcode = $itemData['barcode'];
-                    $categoryName = $itemData['category'];
+                    $categoryId = $itemData['category_id'];
 
                     if (in_array(strtolower($name), array_map('strtolower', $processedNames))) {
                         $this->importResults['errors']++;
@@ -364,11 +377,6 @@ class Import extends Component
                         $this->importResults['errors']++;
                         $this->importResults['error_details'][] = "Row {$itemData['row']}: Barcode already exists";
                         continue;
-                    }
-
-                    $categoryId = null;
-                    if ($categories->has($categoryName)) {
-                        $categoryId = $categories[$categoryName]->id;
                     }
 
                     if (empty($sku)) {
@@ -397,12 +405,16 @@ class Import extends Component
 
                     $item = Item::create($itemDataToSave);
 
-                    foreach ($warehouses as $warehouse) {
-                        Stock::create([
-                            'item_id' => $item->id,
-                            'warehouse_id' => $warehouse->id,
-                            'quantity' => 0,
-                        ]);
+                    if (isset($this->branchQuantities[$itemData['row']])) {
+                        foreach ($this->branchQuantities[$itemData['row']] as $warehouseId => $quantity) {
+                            if ($quantity > 0) {
+                                Stock::create([
+                                    'item_id' => $item->id,
+                                    'warehouse_id' => $warehouseId,
+                                    'quantity' => $quantity,
+                                ]);
+                            }
+                        }
                     }
 
                     $this->importResults['imported']++;
@@ -442,8 +454,10 @@ class Import extends Component
                 $message = $this->buildSuccessMessage();
                 $this->dispatch('notify', type: 'success', message: $message);
                 
-                $this->reset(['importFile', 'previewData', 'showPreview', 'previewErrors']);
-                return redirect()->route('admin.items.index')->with('success', 'Items imported successfully!');
+                $this->reset(['importFile', 'previewData', 'showPreview', 'previewErrors', 'branchQuantities']);
+                // Use dispatch to handle redirects through JavaScript instead of direct redirect
+                $this->dispatch('itemsImportedSuccessfully', []);
+                // Add script in the blade file to handle the redirect event
             } else {
                 $this->dispatch('notify', type: 'error', message: 'No items were imported. Please check the validation errors and try again.');
             }
