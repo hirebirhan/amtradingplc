@@ -46,6 +46,51 @@
             
             // Store customer ID for deletion
             customerIdToDelete = customerId;
+            console.log('Stored customer ID from window event:', customerIdToDelete);
+            
+            // Set customer name
+            const customerNameElement = document.getElementById('customerName');
+            if (customerNameElement) {
+                customerNameElement.textContent = customerName || 'Unknown Customer';
+            }
+            
+            // Clear and populate warnings
+            const warningsContainer = document.getElementById('customerWarnings');
+            if (warningsContainer) {
+                warningsContainer.innerHTML = '';
+                
+                if (hasSales || hasBalance) {
+                    const warningDiv = document.createElement('div');
+                    warningDiv.className = 'alert alert-warning';
+                    
+                    let warningText = '<strong>Warning:</strong> This customer has ';
+                    const warnings = [];
+                    
+                    if (hasSales) warnings.push(`<strong>${hasSales}</strong> related sales`);
+                    if (hasBalance) warnings.push(`an outstanding balance of <strong>ETB ${hasBalance}</strong>`);
+                    
+                    warningText += warnings.join(' and ') + '.';
+                    warningDiv.innerHTML = warningText;
+                    
+                    warningsContainer.appendChild(warningDiv);
+                }
+            }
+            
+            // Show the modal
+            deleteModal.show();
+        });
+        
+        // Also listen for Livewire dispatch events
+        Livewire.on('showDeleteWarnings', (event) => {
+            console.log('Livewire showDeleteWarnings event received:', event);
+            
+            // Handle both array and object formats
+            const data = Array.isArray(event) ? event[0] : event;
+            const { customerName, customerId, hasSales, hasBalance } = data;
+            
+            // Store customer ID for deletion
+            customerIdToDelete = customerId;
+            console.log('Stored customer ID:', customerIdToDelete);
             
             // Set customer name
             const customerNameElement = document.getElementById('customerName');
@@ -86,6 +131,13 @@
             customerIdToDelete = null;
         });
         
+        // Also listen for Livewire dispatch events
+        Livewire.on('customerDeleted', () => {
+            console.log('Livewire customerDeleted event received');
+            deleteModal.hide();
+            customerIdToDelete = null;
+        });
+        
         // Handle confirm delete button click
         const confirmDeleteBtn = document.getElementById('confirmDelete');
         if (confirmDeleteBtn) {
@@ -94,23 +146,26 @@
                 console.log('Delete confirmed for customer ID:', customerIdToDelete);
                 
                 if (customerIdToDelete) {
-                    // Try multiple approaches to ensure deletion works
+                    // Call the delete method on the Livewire component
                     try {
-                        // Approach 1: Call Livewire method directly
-                        if (window.Livewire) {
-                            const component = Livewire.find(document.querySelector('[wire\\:id]').getAttribute('wire:id'));
+                        // Find the Livewire component and call delete method
+                        const wireElement = document.querySelector('[wire\\:id]');
+                        if (wireElement) {
+                            const componentId = wireElement.getAttribute('wire:id');
+                            const component = Livewire.find(componentId);
                             if (component) {
                                 component.call('delete', customerIdToDelete);
                             } else {
-                                // Fallback: Use global Livewire dispatch
+                                // Fallback to dispatch event
                                 Livewire.dispatch('deleteConfirmed', { customerId: customerIdToDelete });
                             }
                         } else {
-                            console.error('Livewire not available');
+                            // Final fallback
+                            Livewire.dispatch('deleteConfirmed', { customerId: customerIdToDelete });
                         }
                     } catch (error) {
                         console.error('Error calling delete method:', error);
-                        // Final fallback
+                        // Emergency fallback
                         Livewire.dispatch('deleteConfirmed', { customerId: customerIdToDelete });
                     }
                 } else {
@@ -124,5 +179,10 @@
             customerIdToDelete = null;
         });
     });
+    
+    // Additional error handling for modal initialization
+    if (!deleteModal) {
+        console.error('Failed to initialize delete modal');
+    }
 </script>
 @endpush 

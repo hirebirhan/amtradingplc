@@ -187,8 +187,7 @@
                                         @endcan
                                         @can('customers.delete')
                                         <button type="button" class="btn btn-outline-danger" title="Delete"
-                                            wire:click="confirmDelete({{ $customer->id }})"
-                                            wire:confirm="Are you sure you want to delete {{ $customer->name }}? This action cannot be undone.">
+                                            wire:click="validateDelete({{ $customer->id }})">
                                             <i class="bi bi-trash"></i>
                                         </button>
                                         @endcan
@@ -259,4 +258,7 @@
         </div>
     </div>
     @endcan
+
+    <!-- Delete Modal -->
+    <x-customers.delete-modal />
 </div>
