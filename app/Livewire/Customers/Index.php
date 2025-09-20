@@ -82,12 +82,12 @@ class Index extends Component
     {
         $customer = Customer::withCount(['sales'])->findOrFail($id);
         
-        $this->dispatch('showDeleteWarnings', [
-            'customerName' => $customer->name,
-            'customerId' => $customer->id,
-            'hasSales' => $customer->sales_count > 0 ? $customer->sales_count : false,
-            'hasBalance' => $customer->balance > 0 ? number_format($customer->balance, 2) : false
-        ]);
+        $this->dispatch('showDeleteWarnings', 
+            customerName: $customer->name,
+            customerId: $customer->id,
+            hasSales: $customer->sales_count > 0 ? $customer->sales_count : false,
+            hasBalance: $customer->balance > 0 ? number_format($customer->balance, 2) : false
+        );
     }
 
     /**
@@ -159,7 +159,7 @@ class Index extends Component
             } else if (is_numeric($data)) {
                 $customerId = $data;
             } else {
-                $this->dispatch('toast', [
+                $this->dispatch('notify', [
                     'type' => 'error',
                     'message' => 'Customer ID not provided for deletion'
                 ]);
@@ -169,7 +169,7 @@ class Index extends Component
             $customer = Customer::find($customerId);
 
             if (!$customer) {
-                $this->dispatch('toast', [
+                $this->dispatch('notify', [
                     'type' => 'error',
                     'message' => 'Customer not found'
                 ]);
@@ -178,7 +178,7 @@ class Index extends Component
 
             // Check if customer has related sales
             if ($customer->sales()->count() > 0) {
-                $this->dispatch('toast', [
+                $this->dispatch('notify', [
                     'type' => 'error',
                     'message' => 'Cannot delete customer with related sales'
                 ]);
@@ -187,7 +187,7 @@ class Index extends Component
 
             // Check permissions
             if (!auth()->user()->can('delete', $customer)) {
-                $this->dispatch('toast', [
+                $this->dispatch('notify', [
                     'type' => 'error',
                     'message' => 'You are not authorized to delete this customer.'
                 ]);
@@ -197,7 +197,7 @@ class Index extends Component
             $customerName = $customer->name;
             $customer->delete();
             
-            $this->dispatch('toast', [
+            $this->dispatch('notify', [
                 'type' => 'success',
                 'message' => "Customer '{$customerName}' deleted successfully."
             ]);
@@ -210,7 +210,7 @@ class Index extends Component
                 'user_id' => auth()->id(),
             ]);
             
-            $this->dispatch('toast', [
+            $this->dispatch('notify', [
                 'type' => 'error',
                 'message' => 'An error occurred while deleting the customer.'
             ]);
@@ -227,35 +227,38 @@ class Index extends Component
             $customer = Customer::find($customerId);
 
             if (!$customer) {
-                $this->dispatch('toast', [
+                $this->dispatch('notify', [
                     'type' => 'error',
                     'message' => 'Customer not found'
                 ]);
+                $this->dispatch('customerDeleted');
                 return;
             }
 
             // Check if customer has related sales
             if ($customer->sales()->count() > 0) {
-                $this->dispatch('toast', [
+                $this->dispatch('notify', [
                     'type' => 'error',
                     'message' => 'Cannot delete customer with related sales'
                 ]);
+                $this->dispatch('customerDeleted');
                 return;
             }
 
             // Check permissions
             if (!auth()->user()->can('delete', $customer)) {
-                $this->dispatch('toast', [
+                $this->dispatch('notify', [
                     'type' => 'error',
                     'message' => 'You are not authorized to delete this customer.'
                 ]);
+                $this->dispatch('customerDeleted');
                 return;
             }
 
             $customerName = $customer->name;
             $customer->delete();
             
-            $this->dispatch('toast', [
+            $this->dispatch('notify', [
                 'type' => 'success',
                 'message' => "Customer '{$customerName}' deleted successfully."
             ]);
@@ -268,17 +271,15 @@ class Index extends Component
                 'user_id' => auth()->id(),
             ]);
             
-            $this->dispatch('toast', [
+            $this->dispatch('notify', [
                 'type' => 'error',
                 'message' => 'An error occurred while deleting the customer.'
             ]);
+            $this->dispatch('customerDeleted');
         }
     }
     
-    public function confirmDelete($customerId)
-    {
-        $this->dispatch('confirmCustomerDeletion', $customerId);
-    }
+
 
     /**
      * Clear all filters
@@ -290,27 +291,11 @@ class Index extends Component
         $this->typeFilter = '';
         $this->resetPage();
         
-        $this->dispatch('toast', [
+        $this->dispatch('notify', [
             'type' => 'info',
             'message' => 'All filters cleared. Showing active customers only.'
         ]);
     }
 
-    public function deleteCustomer(Customer $customer)
-    {
-        $this->authorize('delete', $customer);
 
-        try {
-            if ($customer->credits()->exists()) {
-                $this->dispatch('notify', type: 'error', message: 'Customer cannot be deleted because they have credit records.');
-                return;
-            }
-
-            $customer->delete();
-            $this->dispatch('notify', type: 'success', message: 'Customer deleted successfully.');
-        } catch (\Exception $e) {
-            $this->dispatch('notify', type: 'error', message: 'An error occurred while deleting the customer.');
-            Log::error('Customer Deletion Failed: ' . $e->getMessage());
-        }
-    }
 }

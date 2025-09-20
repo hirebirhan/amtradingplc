@@ -215,13 +215,14 @@ class Form extends Component
                 'action' => 'cancel-category-creation'
             ]);
         } else {
-            $this->redirect(route('admin.categories.index'));
+            $this->redirect('/admin/categories', navigate: true);
+            return;
         }
     }
 
     public function confirmCancel(): void
     {
-        $this->redirect(route('admin.categories.index'));
+        $this->redirect('/admin/categories', navigate: true);
     }
 
     protected function getCategoryAndChildrenIds(Category $category)
