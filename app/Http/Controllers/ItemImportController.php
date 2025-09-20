@@ -17,6 +17,7 @@ use App\Models\Branch;
 use App\Models\Stock;
 use App\Models\StockHistory;
 use App\Services\StockMovementService;
+use Illuminate\Support\Facades\DB;
 
 class ItemImportController extends Controller
 {
@@ -239,17 +240,45 @@ class ItemImportController extends Controller
             $highestColumn = $sheet->getHighestColumn();
             $highestColumnIndex = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($highestColumn);
 
-            // Read header row (1)
+            // Skip the first row as it might be a title or empty row
+            // Read the second row (row 2) as the actual header row with debug information
             $headers = [];
+            
+            Log::info('Reading header row from Excel (row 2)');
+            
             for ($col = 1; $col <= $highestColumnIndex; $col++) {
-                $value = (string) $sheet->getCellByColumnAndRow($col, 1)->getValue();
+                
+                $cell = $sheet->getCellByColumnAndRow($col, 2); // Use row 2 instead of row 1
+                $value = (string) $cell->getValue();
+                
+                $formattedValue = $cell->getFormattedValue();
+                
+                
+                // Log detailed information about the header
+                
+                Log::debug("Header at column {$col}: raw value='{$value}', formatted value='{$formattedValue}'");
+                // Store the header value
+                
                 $headers[] = trim($value);
+            
             }
+            
+            
+            // Log the full header row for debugging
+            
+            Log::info('Header row parsed from row 2', ['headers' => $headers]);
 
-            // Read first 10 data rows starting at row 2
+            
+            // log headers 
+            
+            Log::info('Headers from row 2: ' . json_encode($headers));
+
+            
+            // Read sample data rows starting at row 3 (since row 2 is now headers)
             $sample = [];
-            $endRow = min($highestRow, 11);
-            for ($row = 2; $row <= $endRow; $row++) {
+            
+            $endRow = min($highestRow, 12); // Read up to row 12 to get 10 rows of data
+            for ($row = 3; $row <= $endRow; $row++) { // Start from row 3
                 $rowData = [];
                 for ($col = 1; $col <= $highestColumnIndex; $col++) {
                     $rowData[] = $sheet->getCellByColumnAndRow($col, $row)->getFormattedValue();
@@ -259,6 +288,12 @@ class ItemImportController extends Controller
                     $sample[] = $rowData;
                 }
             }
+
+            // 
+            Log::info('Sample data rows from row 3: ' . json_encode($sample));
+            
+            // Read all items for JSON format
+            $allItems = $this->getAllItemsAsJson($sheet, $highestRow, $highestColumnIndex, $headers);
 
             // Basic mapping suggestions based on common headers
             $suggestions = $this->suggestMappings($headers);
@@ -273,6 +308,7 @@ class ItemImportController extends Controller
                     'headers' => $headers,
                     'sample' => $sample,
                     'suggestions' => $suggestions,
+                    'allItems' => $allItems, // Add the full list of items
                 ],
             ]);
         } catch (\Throwable $e) {
@@ -287,7 +323,15 @@ class ItemImportController extends Controller
     public function apply(Request $request)
     {
         $defaultCategoryId = (int)$request->input('default_category_id', 0);
+        $isJsonImport = $request->boolean('json_import', false);
+        
         try {
+            // Handle JSON-based import if it's set
+            if ($isJsonImport && $request->has('item_data')) {
+                return $this->processJsonImport($request);
+            }
+            
+            // Traditional file-based import
             $path = null;
             if ($request->hasFile('file')) {
                 $path = $request->file('file')->getRealPath();
@@ -454,6 +498,374 @@ class ItemImportController extends Controller
         } catch (\Throwable $e) {
             Log::error('Import apply failed', ['error' => $e->getMessage()]);
             return back()->withErrors(['file' => 'Failed to import: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Get all items from the Excel sheet and format them as JSON objects
+     *
+     * @param \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet
+     * @param int $highestRow
+     * @param int $highestColumnIndex
+     * @param array $headers
+     * @return array
+     */
+    private function getAllItemsAsJson($sheet, $highestRow, $highestColumnIndex, $headers)
+    {
+        $items = [];
+
+
+        
+        // Special handling for this specific Excel file structure where most headers are empty
+        Log::warning("Excel file has unusual header structure with many empty headers", ['headers' => $headers]);
+        
+        // Find branch columns and U.COST column by name since those headers should exist
+        $branchColumns = [];
+        $costIndex = null;
+        
+        foreach ($headers as $index => $header) {
+            $headerLower = strtolower(trim($header));
+            
+            // Find branch columns
+            if (in_array($headerLower, ['bicha', 'kemer', 'furi'])) {
+                $branchColumns[$headerLower] = $index;
+                Log::info("Found branch column: {$header} at index {$index}");
+            }
+            
+            // Find U.COST column
+            if ($headerLower === 'u.cost' || $headerLower === 'ucost' || $headerLower === 'cost') {
+                $costIndex = $index;
+                Log::info("Found cost column: {$header} at index {$index}");
+            }
+        }
+        
+        // Process all data rows from row 3 to the end (since row 2 is now the header row)
+        for ($row = 3; $row <= $highestRow; $row++) {
+            // Read the row data
+            $rowData = [];
+            for ($col = 1; $col <= $highestColumnIndex; $col++) {
+                $rowData[] = $sheet->getCellByColumnAndRow($col, $row)->getFormattedValue();
+            }
+            
+            // Skip empty rows
+            if (count(array_filter($rowData, fn($v) => $v !== null && $v !== '')) === 0) {
+                continue;
+            }
+            
+            // Debug row data
+            Log::debug("Processing row data at row {$row}:", $rowData);
+            
+            // Since most headers are empty, we'll assume a fixed column structure based on observation
+            // This is custom handling for this specific Excel format
+            // We'll use the row data to determine item properties
+            
+            // Find columns by their exact header names
+            $nameIndex = null;
+            $codeIndex = null;
+            
+            // Look for exact header matches
+            foreach ($headers as $index => $header) {
+                $headerUpper = strtoupper(trim($header));
+                
+                if ($headerUpper === 'ITEM') {
+                    $nameIndex = $index;
+                    Log::info("Found ITEM (name) column at index {$index}");
+                }
+                
+                if ($headerUpper === 'CODE') {
+                    $codeIndex = $index;
+                    Log::info("Found CODE (sku) column at index {$index}");
+                }
+            }
+            
+            // Extract values from the identified columns
+            $name = '';
+            if ($nameIndex !== null && isset($rowData[$nameIndex]) && !empty(trim($rowData[$nameIndex]))) {
+                $name = trim($rowData[$nameIndex]);
+                Log::debug("Found name: {$name} from ITEM column at index {$nameIndex}");
+            }
+            
+            $code = '';
+            if ($codeIndex !== null && isset($rowData[$codeIndex]) && !empty(trim($rowData[$codeIndex]))) {
+                $code = trim($rowData[$codeIndex]);
+                Log::debug("Found code: {$code} from CODE column at index {$codeIndex}");
+            }
+            
+            // Process branch quantities using the branch columns we identified earlier
+            $branchData = [];
+            foreach ($branchColumns as $branch => $idx) {
+                // Get quantity from the specified column
+                $qty = isset($rowData[$idx]) && is_numeric($rowData[$idx]) ? floatval($rowData[$idx]) : 0;
+                $branchData[$branch] = $qty;
+                Log::debug("Branch {$branch} quantity: {$qty} at index {$idx} for row {$row}");
+            }
+            
+            // Set default values for other item properties
+            $um = 1;  // Default unit quantity is 1
+            
+            // Find U.M and U.COST columns by their exact header names
+            $umIndex = null;
+            $costIndex = null;
+            
+            // Look for exact header matches
+            foreach ($headers as $index => $header) {
+                $headerUpper = strtoupper(trim($header));
+                
+                if ($headerUpper === 'U.M' || $headerUpper === 'UM') {
+                    $umIndex = $index;
+                    Log::info("Found U.M (unit_quantity) column at index {$index}");
+                }
+                
+                if ($headerUpper === 'U.COST' || $headerUpper === 'UCOST' || $headerUpper === 'COST') {
+                    $costIndex = $index;
+                    Log::info("Found U.COST (cost per item) column at index {$index}");
+                }
+            }
+            
+            // Extract U.M value (unit_quantity) if found
+            $um = 1;  // Default unit quantity is 1
+            if ($umIndex !== null && isset($rowData[$umIndex])) {
+                $umValue = trim($rowData[$umIndex]);
+                if (is_numeric($umValue) && floatval($umValue) > 0) {
+                    $um = floatval($umValue);
+                    Log::info("Found U.M value: {$um} at index {$umIndex} for row {$row}");
+                }
+            }
+            
+            // Extract cost from U.COST column (cost per item) if found
+            $cost = 0;    // Default cost
+            $price = 0;   // Default price (will be set to same as cost)
+            
+            if ($costIndex !== null && isset($rowData[$costIndex])) {
+                $costValue = trim($rowData[$costIndex]);
+                if (is_numeric($costValue)) {
+                    $cost = floatval($costValue);
+                    $price = $cost;  // Use the same value for both cost and price
+                    Log::info("Found U.COST value: {$cost} at index {$costIndex} for row {$row}");
+                }
+            }
+            
+            // Fallback for item name if empty - use row number
+            if (empty($name)) {
+                $name = "Item #{$row}";
+                Log::debug("Using fallback name: {$name}");
+            }
+            
+            // Fallback for code if empty - use name
+            if (empty($code) && !empty($name)) {
+                $code = str_replace(' ', '-', strtoupper(substr($name, 0, 10))) . '-' . $row;
+                Log::debug("Using fallback code: {$code}");
+            }
+            
+            // Always ensure price equals cost - force this relationship
+            $price = $cost;
+
+        // U.M is number of items per piece (unit_quantity)
+        // Cost is the price of one ITEM (not piece)
+        // Price is the price of one ITEM (not piece)
+        
+        // The cost_price_per_unit should be the cost of a single item (which is already in $cost)
+        $cost_price_per_unit = $cost;
+        $selling_price_per_unit = $price;
+        
+        // The cost_price should be cost * unit_quantity (cost of entire piece)
+        $total_cost = $um && is_numeric($um) && floatval($um) > 0 ? $cost * floatval($um) : $cost;
+        $total_price = $um && is_numeric($um) && floatval($um) > 0 ? $price * floatval($um) : $price;
+        
+        // log the values
+        Log::info("UM (unit_quantity): {$um}");
+        Log::info("Cost per item: {$cost}");
+        Log::info("Price per item: {$price}");
+        Log::info("Cost per unit (per item): {$cost_price_per_unit}");
+        Log::info("Selling price per unit (per item): {$selling_price_per_unit}");
+        Log::info("Total cost (per piece): {$total_cost}");
+        Log::info("Total price (per piece): {$total_price}");
+            
+            // Create a complete item object with all fields from the Item model
+            $item = [
+                // Required fields
+                'name' => $name,
+                'sku' => $code,  // Use code as SKU
+                'barcode' => $code, // Use code as barcode too for now
+                'category_id' => 1,  // Default category ID, will be updated from form
+                
+                // Pricing fields
+                'cost_price' => $total_cost,  // Total cost per piece (cost * unit_quantity)
+                'selling_price' => $total_price,  // Total price per piece (price * unit_quantity)
+                'cost_price_per_unit' => $cost_price_per_unit,  // Cost per item
+                'selling_price_per_unit' => $selling_price_per_unit,  // Price per item
+                
+                // Inventory fields
+                'reorder_level' => 10, // Default reorder level
+                'unit' => 'pcs',  // Unit of measurement (always pcs)
+                'unit_quantity' => $um && is_numeric($um) && floatval($um) > 0 ? floatval($um) : 1,  // U.M maps to unit_quantity
+                'item_unit' => 'piece',  // Individual item unit
+                
+                // Additional fields
+                'brand' => '',
+                'description' => '',
+                'image_path' => null,
+                'is_active' => true,
+                
+                // Audit fields will be filled automatically
+                'created_by' => auth()->id() ?? 1,
+                'updated_by' => null,
+                'deleted_by' => null,
+            ];
+            
+            // Store branch quantities separately
+            $branchQuantities = $branchData;
+            
+            Log::info("Created item object for row {$row}", $item);
+            
+            // Add the item to our collection
+            $items[] = $item;
+        }
+        
+        return $items;
+    }
+    
+    /**
+     * Process JSON-based import data.
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\RedirectResponse
+     */
+    protected function processJsonImport(Request $request)
+    {
+        $defaultCategoryId = (int)$request->input('default_category_id', 0);
+        $itemData = $request->input('item_data', []);
+        
+        // Check if we have any data
+        if (empty($itemData)) {
+            return redirect()->route('admin.items.import')->withErrors(['file' => 'No item data provided for import.']);
+        }
+        
+        // Initialize counters
+        $created = 0;
+        $updated = 0;
+        $stockAdjusted = 0;
+        $errors = [];
+        
+        // Begin transaction
+        DB::beginTransaction();
+        
+        try {
+            // Process each item
+            foreach ($itemData as $jsonItem) {
+                $data = json_decode($jsonItem, true);
+                
+                // Skip invalid data
+                if (!is_array($data) || empty($data['name'])) {
+                    $errors[] = 'Invalid item data found in JSON';
+                    continue;
+                }
+                
+                // Extract branch quantities if present, but remove from main item data
+                $branches = [];
+                if (isset($data['branches'])) {
+                    $branches = $data['branches'];
+                    unset($data['branches']); // Remove branches from item data
+                }
+                
+                // Use the item data as-is since it now contains all required fields
+                // Just ensure we have the minimum required fields
+                if (empty($data['name'])) {
+                    $data['name'] = 'Unknown Item';
+                }
+                
+                if (empty($data['sku'])) {
+                    $data['sku'] = str_replace(' ', '-', strtoupper(substr($data['name'], 0, 10))) . '-' . rand(1000, 9999);
+                }
+                
+                // Find or create item based on SKU or name
+                $item = null;
+                if (!empty($data['sku'])) {
+                    $item = Item::firstOrNew(['sku' => $data['sku']]);
+                } else {
+                    $item = Item::firstOrNew(['name' => $data['name']]);
+                }
+                
+                $isNew = !$item->exists;
+                
+                // Update item with all provided data
+                foreach ($data as $field => $value) {
+                    // Skip fields that don't exist in the model
+                    if (in_array($field, $item->getFillable())) {
+                        $item->{$field} = $value;
+                    }
+                }
+                
+                // Override category if provided in form
+                if ($defaultCategoryId > 0) {
+                    $item->category_id = $defaultCategoryId;
+                }
+                
+                // Ensure is_active is set
+                $item->is_active = true;
+                
+                // Save the item
+                $item->save();
+                
+                // Count created/updated items
+                $isNew ? $created++ : $updated++;
+                
+                // Process branch quantities
+                if (!empty($branches)) {
+                    $stockService = new StockMovementService();
+                    
+                    foreach ($branches as $branchName => $quantity) {
+                        // Skip empty quantities
+                        if (empty($quantity)) continue;
+                        
+                        // Find branch by name
+                        $branch = Branch::whereRaw('LOWER(name) = ?', [strtolower($branchName)])->first();
+                        if (!$branch) continue;
+                        
+                        // Get default warehouse
+                        $warehouse = $stockService->ensureBranchWarehouse($branch->id);
+                        
+                        // Create/update stock
+                        $stock = Stock::firstOrNew(['warehouse_id' => $warehouse->id, 'item_id' => $item->id]);
+                        $oldQuantity = $stock->exists ? $stock->quantity : 0;
+                        $stock->quantity = $quantity;
+                        $stock->save();
+                        
+                        // Create stock history record
+                        if ($oldQuantity != $quantity) {
+                            StockHistory::create([
+                                'warehouse_id' => $warehouse->id,
+                                'item_id' => $item->id,
+                                'quantity_before' => $oldQuantity,
+                                'quantity_after' => $quantity,
+                                'quantity_change' => $quantity - $oldQuantity,
+                                'reference_type' => 'import',
+                                'reference_id' => 0,
+                                'description' => 'JSON import stock adjustment',
+                                'user_id' => auth()->id() ?? 0,
+                            ]);
+                            
+                            $stockAdjusted++;
+                        }
+                    }
+                }
+            }
+            
+            // Commit transaction
+            DB::commit();
+            
+            $msg = "Imported items: created {$created}, updated {$updated}. Stock rows adjusted: {$stockAdjusted}.";
+            if (!empty($errors)) {
+                return redirect()->route('admin.items.import')->with('info', $msg)->withErrors(['file' => implode("\n", array_slice($errors, 0, 10))]);
+            }
+            return redirect()->route('admin.items.import')->with('success', $msg);
+            
+        } catch (\Exception $e) {
+            // Rollback transaction
+            DB::rollBack();
+            
+            Log::error('JSON import failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            return redirect()->route('admin.items.import')->withErrors(['file' => 'Import failed: ' . $e->getMessage()]);
         }
     }
 

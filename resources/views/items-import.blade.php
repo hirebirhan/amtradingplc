@@ -75,197 +75,285 @@
                             <div class="small text-secondary mb-2">
                                 Sheet: <span class="fw-medium">{{ $preview['sheetTitle'] }}</span> • Rows detected: <span class="fw-medium">{{ $preview['rowCount'] }}</span>
                             </div>
-                            <!-- Item Details Table -->
-                            <h6 class="fw-semibold mb-2">Item Details</h6>
-                            <div class="table-responsive border rounded mb-4">
-                                <table class="table table-sm align-middle mb-0">
-                                    <thead class="table-light">
-                                        <tr>
-                                            @foreach($preview['headers'] as $index => $h)
-                                                <th class="text-nowrap">
-                                                    {{ $h ?: '—' }}
-                                                    @if(strtolower($h) == 'sku' || strtolower($h) == 'code')
-                                                        (Code)
-                                                    @elseif(strtolower($h) == 'unit' || strtolower($h) == 'u.m')
-                                                        (U.M)
-                                                    @elseif(strpos(strtolower($h), 'cost') !== false)
-                                                        (U.COST)
-                                                    @elseif(strpos(strtolower($h), 'sell') !== false || strpos(strtolower($h), 'price') !== false)
-                                                        (U.COST)
-                                                    @endif
-                                                </th>
-                                            @endforeach
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        @forelse($preview['sample'] as $row)
-                                            <tr>
-                                                @foreach($preview['headers'] as $index => $h)
-                                                    <td class="text-nowrap">{{ isset($row[$index]) && is_scalar($row[$index]) ? $row[$index] : '' }}</td>
-                                                @endforeach
-                                            </tr>
-                                        @empty
-                                            <tr>
-                                                <td colspan="{{ count($preview['headers']) }}" class="text-center text-secondary py-4">No sample rows found.</td>
-                                            </tr>
-                                        @endforelse
-                                    </tbody>
-                                </table>
-                            </div>
-
-                            <!-- Branch Quantities Table -->
-                            <h6 class="fw-semibold mb-2">Branch Quantities</h6>
-                            <div class="table-responsive border rounded">
-                                <table class="table table-sm align-middle mb-0">
-                                    <thead class="table-light">
-                                        <tr>
-                                            <th>Item Name</th>
-                                            @php
-                                                // Find branch/quantity columns for the branch quantities table
-                                                $branchColumns = [];
-                                                foreach($preview['headers'] as $index => $h) {
-                                                    $lower = strtolower($h);
-                                                    if (in_array($lower, ['bicha', 'kemer', 'furi']) || 
-                                                        str_contains($lower, 'quantity') || 
-                                                        str_contains($lower, 'branch')) {
-                                                        $branchColumns[$index] = $h;
+                            <!-- JSON Data Display -->
+                            <h5 class="fw-semibold mb-3">JSON Data Preview</h5>
+                            
+                            <div class="row mb-4">
+                                <div class="col-12">
+                                    @php
+                                        // Prepare the JSON data structures
+                                        $itemsJsonData = [];
+                                        $branchQuantitiesJsonData = [];
+                                        
+                                        foreach($preview['sample'] as $rowIndex => $row) {
+                                            // Find column indices based on headers
+                                            $headers = $preview['headers'];
+                                            $findCol = function($candidates) use ($headers) {
+                                                foreach($candidates as $candidate) {
+                                                    foreach($headers as $index => $header) {
+                                                        $headerLower = strtolower($header);
+                                                        if (strpos($headerLower, strtolower($candidate)) !== false) {
+                                                            return $index;
+                                                        }
                                                     }
                                                 }
-                                            @endphp
-                                            @foreach($branchColumns as $h)
-                                                <th class="text-center">{{ $h ?: '—' }}</th>
-                                            @endforeach
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        @forelse($preview['sample'] as $row)
-                                            <tr>
-                                                @php
-                                                    // Find name column
-                                                    $nameIndex = array_search('Name', $preview['headers']) ?? array_search('name', $preview['headers']);
-                                                    $itemName = $nameIndex !== false ? ($row[$nameIndex] ?? 'Unknown Item') : 'Unknown Item';
-                                                @endphp
-                                                <td>{{ $itemName }}</td>
-                                                @foreach($branchColumns as $index => $h)
-                                                    <td class="text-center">{{ is_scalar($row[$index] ?? '') ? $row[$index] : '0' }}</td>
-                                                @endforeach
-                                            </tr>
-                                        @empty
-                                            <tr>
-                                                <td colspan="{{ count($branchColumns) + 1 }}" class="text-center text-secondary py-4">No sample rows found.</td>
-                                            </tr>
-                                        @endforelse
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-
-                        <div class="border rounded p-3">
-                            <h6 class="fw-semibold mb-2">Proposed Field Mapping</h6>
-                            <div class="row g-3">
-                                @php
-                                    $targets = [
-                                        'name' => 'Item Name',
-                                        'sku' => 'Code',
-                                        'barcode' => 'Barcode',
-                                        'category' => 'Category',
-                                        'unit' => 'U.M',
-                                        'unit_quantity' => 'Unit Quantity',
-                                        'cost_price' => 'U.COST',
-                                        'selling_price' => 'U.COST',
-                                        'reorder_level' => 'Reorder Level',
-                                        'brand' => 'Brand',
-                                        'description' => 'Description',
-                                    ];
-                                @endphp
-                                @foreach($targets as $key => $label)
-                                <div class="col-12 col-md-6">
-                                    <label class="form-label small text-muted">{{ $label }}</label>
-                                    <select class="form-select form-select-sm" disabled>
-                                        <option value="">— Not mapped —</option>
-                                        @foreach($preview['headers'] as $h)
-                                            <option value="{{ $h }}" @selected(($preview['suggestions'][$key] ?? null) === $h)>{{ $h }}</option>
-                                        @endforeach
-                                    </select>
+                                                return null;
+                                            };
+                                            
+                                            // Map columns
+                                            $codeIndex = $findCol(['sku', 'code']);
+                                            $nameIndex = $findCol(['name', 'item', 'designation']);
+                                            $umIndex = $findCol(['u.m', 'unit', 'um']);
+                                            $costIndex = $findCol(['cost', 'u.cost', 'ucost']);
+                                            $priceIndex = $findCol(['selling', 'price', 'sell']);
+                                            
+                                            // Create item data
+                                            $itemData = [
+                                                'code' => isset($codeIndex, $row[$codeIndex]) ? $row[$codeIndex] : '',
+                                                'name' => isset($nameIndex, $row[$nameIndex]) ? $row[$nameIndex] : '',
+                                                'um' => isset($umIndex, $row[$umIndex]) ? $row[$umIndex] : 'pcs',
+                                                'cost' => isset($costIndex, $row[$costIndex]) && is_numeric($row[$costIndex]) ? floatval($row[$costIndex]) : 0,
+                                                'price' => isset($priceIndex, $row[$priceIndex]) && is_numeric($row[$priceIndex]) ? floatval($row[$priceIndex]) : 0,
+                                            ];
+                                            
+                                            // Create branch quantities data
+                                            $branchData = [];
+                                            $branches = ['bicha', 'kemer', 'furi'];
+                                            foreach($branches as $branch) {
+                                                $idx = $findCol([$branch]);
+                                                if ($idx !== null) {
+                                                    $qty = isset($row[$idx]) && is_numeric($row[$idx]) ? floatval($row[$idx]) : 0;
+                                                    $branchData[$branch] = $qty;
+                                                }
+                                            }
+                                            
+                                            // Combine them for the combined JSON
+                                            $combinedData = $itemData;
+                                            $combinedData['branches'] = $branchData;
+                                            
+                                            // Add to collections
+                                            $itemsJsonData[] = $itemData;
+                                            $branchQuantitiesJsonData[] = [
+                                                'item_name' => $itemData['name'],
+                                                'item_code' => $itemData['code'],
+                                                'quantities' => $branchData
+                                            ];
+                                            
+                                            // Add hidden input for form submission
+                                            echo '<input type="hidden" name="item_data[]" value=\'' . htmlspecialchars(json_encode($combinedData), ENT_QUOTES, 'UTF-8') . '\' />';
+                                        }
+                                        
+                                        // All items from Excel (all items)
+                                        $allItemsJson = isset($preview['allItems']) ? json_encode($preview['allItems'], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : '[]';
+                                    @endphp
+                                    
+                                    <!-- Complete Items JSON -->
+                                    <div class="card shadow-sm border-0 mb-4">
+                                        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center py-3">
+                                            <h5 class="card-title mb-0 d-flex align-items-center">
+                                                <i class="bi bi-braces-asterisk me-2"></i>
+                                                Complete Items JSON (All {{ count(isset($preview['allItems']) ? $preview['allItems'] : []) }} Items)
+                                            </h5>
+                                            <button type="button" class="btn btn-light" onclick="copyToClipboard('allItemsJson')">
+                                                <i class="bi bi-clipboard me-1"></i> Copy JSON
+                                            </button>
+                                        </div>
+                                        <div class="card-body p-0">
+                                            <pre id="allItemsJson" class="language-json mb-0 overflow-auto p-3" style="max-height: 550px;"><code>{{ $allItemsJson }}</code></pre>
+                                        </div>
+                                        <div class="card-footer bg-light">
+                                            <div class="d-flex justify-content-between align-items-center">
+                                                <small class="text-muted">
+                                                    <strong>Format:</strong> JSON with item details
+                                                </small>
+                                                <small class="text-muted">
+                                                    <i class="bi bi-info-circle me-1"></i> 
+                                                    Price equals cost as requested
+                                                </small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    </div>
                                 </div>
-                                @endforeach
                             </div>
-                            <div class="small text-secondary mt-2">These are initial guesses. We’ll finalize mapping and rules next.</div>
+                            
+                            <!-- Add syntax highlighting -->
+                            <script>
+                                document.addEventListener('DOMContentLoaded', function() {
+                                    document.querySelectorAll('pre code').forEach(function(block) {
+                                        // Simple highlighting
+                                        const html = block.innerHTML
+                                            .replace(/"([^"]+)":/g, '<span style="color: #9c27b0">"$1"</span>:')  // Keys
+                                            .replace(/: "([^"]+)"/g, ': <span style="color: #2196f3">"$1"</span>')  // String values
+                                            .replace(/: ([0-9]+(?:\.[0-9]+)?)/g, ': <span style="color: #ff5722">$1</span>'); // Numbers
+                                        
+                                        block.innerHTML = html;
+                                    });
+                                });
+                                
+                                // Add a function to copy JSON to clipboard
+                                function copyToClipboard(elementId) {
+                                    const element = document.getElementById(elementId);
+                                    const textarea = document.createElement('textarea');
+                                    textarea.value = element.textContent;
+                                    document.body.appendChild(textarea);
+                                    textarea.select();
+                                    document.execCommand('copy');
+                                    document.body.removeChild(textarea);
+                                    
+                                    // Show a temporary success message
+                                    const btn = event.target.closest('button');
+                                    const originalText = btn.innerHTML;
+                                    btn.innerHTML = '<i class="bi bi-check-circle"></i> Copied!';
+                                    btn.classList.remove('btn-outline-light');
+                                    btn.classList.add('btn-success');
+                                    
+                                    setTimeout(() => {
+                                        btn.innerHTML = originalText;
+                                        btn.classList.remove('btn-success');
+                                        btn.classList.add('btn-outline-light');
+                                    }, 2000);
+                                }
+                            </script>
+                            
+                            <!-- Branch Quantities Summary -->
+                            <h6 class="fw-semibold mb-2">Branch Quantities Summary</h6>
+                            <div class="card border mb-4">
+                                <div class="card-body">
+                                    @php
+                                        // Calculate branch totals
+                                        $branchTotals = [];
+                                        $branchNames = ['bicha', 'kemer', 'furi'];
+                                        $totalItems = 0;
+                                        $totalValue = 0;
+                                        
+                                        foreach($preview['sample'] as $row) {
+                                            $headers = $preview['headers'];
+                                            $findCol = function($candidates) use ($headers) {
+                                                foreach($candidates as $candidate) {
+                                                    foreach($headers as $index => $header) {
+                                                        $headerLower = strtolower($header);
+                                                        if (strpos($headerLower, strtolower($candidate)) !== false) {
+                                                            return $index;
+                                                        }
+                                                    }
+                                                }
+                                                return null;
+                                            };
+                                            
+                                            // Get cost index
+                                            $costIndex = $findCol(['cost', 'u.cost', 'ucost']);
+                                            $cost = isset($costIndex, $row[$costIndex]) && is_numeric($row[$costIndex]) ? floatval($row[$costIndex]) : 0;
+                                            
+                                            // Process each branch
+                                            foreach($branchNames as $branch) {
+                                                $branchIndex = $findCol([$branch]);
+                                                if ($branchIndex !== null) {
+                                                    $qty = isset($row[$branchIndex]) && is_numeric($row[$branchIndex]) ? floatval($row[$branchIndex]) : 0;
+                                                    if (!isset($branchTotals[$branch])) {
+                                                        $branchTotals[$branch] = [
+                                                            'qty' => 0,
+                                                            'value' => 0
+                                                        ];
+                                                    }
+                                                    $branchTotals[$branch]['qty'] += $qty;
+                                                    $branchTotals[$branch]['value'] += ($qty * $cost);
+                                                    $totalItems += $qty;
+                                                    $totalValue += ($qty * $cost);
+                                                }
+                                            }
+                                        }
+                                    @endphp
+                                    
+                                    <div class="row">
+                                        <div class="col-md-8">
+                                            <div class="table-responsive">
+                                                <table class="table table-sm table-bordered">
+                                                    <thead class="table-light">
+                                                        <tr>
+                                                            <th>Branch</th>
+                                                            <th class="text-end">Quantity</th>
+                                                            <th class="text-end">Value (ETB)</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        @foreach($branchTotals as $branch => $totals)
+                                                            <tr>
+                                                                <td>{{ ucfirst($branch) }}</td>
+                                                                <td class="text-end">{{ number_format($totals['qty']) }}</td>
+                                                                <td class="text-end">{{ number_format($totals['value'], 2) }}</td>
+                                                            </tr>
+                                                        @endforeach
+                                                        <tr class="table-secondary fw-bold">
+                                                            <td>Total</td>
+                                                            <td class="text-end">{{ number_format($totalItems) }}</td>
+                                                            <td class="text-end">{{ number_format($totalValue, 2) }}</td>
+                                                        </tr>
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                       
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
-                        <form method="POST" action="{{ route('admin.items.import.apply') }}" enctype="multipart/form-data" class="mt-3">
+
+                        <form method="POST" action="{{ route('admin.items.import.apply') }}" enctype="multipart/form-data" class="mt-4">
                             @csrf
                             <input type="hidden" name="default_category_id" value="{{ $default_category_id ?? '' }}">
                             <input type="hidden" name="use_default" value="{{ request()->boolean('use_default', false) ? 1 : 0 }}">
                             
-                            @if(isset($preview) && !request()->boolean('use_default', false))
-                                <!-- Include the original file as hidden input -->
-                                <input type="hidden" name="file_already_uploaded" value="1">
-                                <div class="mb-3">
-                                    <div class="alert alert-light border">
-                                        <i class="bi bi-info-circle me-2"></i>
-                                        The preview file will be used for import. If you need to upload a different file, go back to the previous step.
+                            <!-- Item data from JSON -->
+                            <input type="hidden" name="json_import" value="1">
+                            
+                            <div class="card border">
+                                <div class="card-header bg-primary text-white">
+                                    <h6 class="mb-0">Apply Import</h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-md-7">
+                                            @if(isset($preview) && !request()->boolean('use_default', false))
+                                                <!-- Include the original file as hidden input -->
+                                                <input type="hidden" name="file_already_uploaded" value="1">
+                                                <div class="mb-3">
+                                                    <div class="alert alert-light border">
+                                                        <i class="bi bi-info-circle me-2"></i>
+                                                        The preview file will be used for import. If you need to upload a different file, go back to the previous step.
+                                                    </div>
+                                                </div>
+                                            @else
+                                                <!-- Allow uploading a new file for import -->
+                                                <div class="mb-3">
+                                                    <label for="apply_file" class="form-label fw-bold">Upload Excel File</label>
+                                                    <input type="file" name="file" id="apply_file" class="form-control" accept=".xlsx,.xls" required>
+                                                    <div class="form-text">Please select a file to import, or check 'Use Default' to use the system default file.</div>
+                                                </div>
+                                            @endif
+                                            
+                                            <div class="form-check mb-3">
+                                                <input class="form-check-input" type="checkbox" id="use_default_checkbox" name="use_default" value="1" 
+                                                    @if(request()->boolean('use_default', false)) checked @endif>
+                                                <label class="form-check-label fw-medium" for="use_default_checkbox">
+                                                    Use default file (amtradingstock.xlsx)
+                                                </label>
+                                            </div>
+                                        </div>
+                                       
+                                    </div>
+                                    <hr>
+                                    <div class="d-flex justify-content-between align-items-center">
+                                       
+                                        <button type="submit" class="btn btn-lg btn-success">
+                                            <i class="bi bi-cloud-upload me-1"></i> Process Import
+                                        </button>
                                     </div>
                                 </div>
-                            @else
-                                <!-- Allow uploading a new file for import -->
-                                <div class="mb-3">
-                                    <label for="apply_file" class="form-label">Upload Excel File</label>
-                                    <input type="file" name="file" id="apply_file" class="form-control" accept=".xlsx,.xls" required>
-                                    <div class="form-text">Please select a file to import, or check 'Use Default' to use the system default file.</div>
-                                </div>
-                            @endif
-                            
-                            <div class="d-flex justify-content-between">
-                                <div>
-                                    <button type="submit" class="btn btn-success">
-                                        <i class="bi bi-upload me-1"></i> Apply Import
-                                    </button>
-                                </div>
-                                
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" id="use_default_checkbox" name="use_default" value="1" 
-                                        @if(request()->boolean('use_default', false)) checked @endif>
-                                    <label class="form-check-label" for="use_default_checkbox">
-                                        Use default file (amtradingstock.xlsx)
-                                    </label>
-                                </div>
-                            </div>
-                            
-                            <div class="form-text mt-2">
-                                <i class="bi bi-info-circle me-1"></i>
-                                Note: You must either upload a file or check "Use Default" to proceed with the import.
                             </div>
                         </form>
                     @endisset
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Next Steps Section in its own row -->
-    <div class="row mt-4">
-        <div class="col-12">
-            <div class="card border-0 shadow-sm">
-                <div class="card-header bg-body border-0">
-                    <h6 class="mb-0">Next Steps</h6>
-                </div>
-                <div class="card-body">
-                    <div class="row">
-                        <div class="col-md-6">
-                            <ol class="mb-3">
-                                <li>Confirm which columns map to item fields.</li>
-                                <li>Define defaults for missing values.</li>
-                                <li>Choose duplicate handling strategy.</li>
-                                <li>Confirm rounding and pricing rules.</li>
-                            </ol>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="alert alert-info">
-                                Once you confirm the details, we'll enable the import button and create items accordingly.
-                            </div>
-                        </div>
-                    </div>
                 </div>
             </div>
         </div>
