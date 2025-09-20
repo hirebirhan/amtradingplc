@@ -98,8 +98,19 @@ Route::prefix('admin')->middleware(['auth', 'active'])->group(function () {
 
         // Add import page route (best practice)
         Route::get('/import', function() {
-            return view('items-import');
+            return view('items-import', [
+                'defaultFileExists' => file_exists(base_path('amtradingstock.xlsx')),
+                'categories' => \App\Models\Category::orderBy('name')->get(['id','name']),
+            ]);
         })->middleware('permission:items.create')->name('import');
+
+        // Import handlers
+        Route::post('/import/preview', [App\Http\Controllers\ItemImportController::class, 'preview'])
+            ->middleware('permission:items.create')
+            ->name('import.preview');
+        Route::post('/import/apply', [App\Http\Controllers\ItemImportController::class, 'apply'])
+            ->middleware('permission:items.create')
+            ->name('import.apply');
 
         Route::get('/{item}', function(Item $item) {
             return view('items-show', ['item' => $item]);
@@ -518,5 +529,3 @@ Route::prefix('admin')->middleware(['auth', 'active'])->group(function () {
 // Stock Card Routes
 Route::get('/stock-card', [App\Http\Controllers\StockCardController::class, 'index'])->name('stock-card.index');
 Route::get('/stock-card/print', [App\Http\Controllers\StockCardController::class, 'print'])->name('stock-card.print');
-
-

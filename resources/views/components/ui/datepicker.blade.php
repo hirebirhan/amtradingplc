@@ -130,10 +130,10 @@
 
 @once
     @push('styles')
-    <link href="https://cdn.jsdelivr.net/npm/@eonasdan/tempus-dominus@6.7.13/dist/css/tempus-dominus.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/@eonasdan/tempus-dominus@6.7.13/dist/css/tempus-dominus.min.css" rel="stylesheet" media="print" onload="this.media='all'" crossorigin="anonymous" referrerpolicy="no-referrer">
     @endpush
 
     @push('scripts')
-    <script src="https://cdn.jsdelivr.net/npm/@eonasdan/tempus-dominus@6.7.13/dist/js/tempus-dominus.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@eonasdan/tempus-dominus@6.7.13/dist/js/tempus-dominus.min.js" defer crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     @endpush
 @endonce 

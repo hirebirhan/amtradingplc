@@ -3,11 +3,20 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Response;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Style\Border;
+use PhpOffice\PhpSpreadsheet\IOFactory;
+use App\Models\Item;
+use App\Models\Category;
+use App\Models\Branch;
+use App\Models\Stock;
+use App\Models\StockHistory;
+use App\Services\StockMovementService;
 
 class ItemImportController extends Controller
 {
@@ -196,5 +205,285 @@ class ItemImportController extends Controller
         return response()->download($tempFile, $fileName, [
             'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         ])->deleteFileAfterSend(true);
+    }
+
+    /**
+     * Preview an import file: either uploaded or default amtradingstock.xlsx
+     */
+    public function preview(Request $request)
+    {
+        try {
+            $defaultCategoryId = (int)$request->input('default_category_id', 0);
+            $path = null;
+
+            if ($request->hasFile('file')) {
+                $uploaded = $request->file('file');
+                $path = $uploaded->getRealPath();
+            } elseif ($request->boolean('use_default', false)) {
+                $defaultPath = base_path('amtradingstock.xlsx');
+                if (!file_exists($defaultPath)) {
+                    return back()->withErrors(['file' => 'Default file amtradingstock.xlsx was not found at project root.']);
+                }
+                $path = $defaultPath;
+            } else {
+                return back()->withErrors(['file' => 'Please upload a file or choose the default file.']);
+            }
+
+            // Load spreadsheet read-only
+            $reader = IOFactory::createReaderForFile($path);
+            $reader->setReadDataOnly(true);
+            $spreadsheet = $reader->load($path);
+            $sheet = $spreadsheet->getActiveSheet();
+
+            $highestRow = (int) $sheet->getHighestRow();
+            $highestColumn = $sheet->getHighestColumn();
+            $highestColumnIndex = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($highestColumn);
+
+            // Read header row (1)
+            $headers = [];
+            for ($col = 1; $col <= $highestColumnIndex; $col++) {
+                $value = (string) $sheet->getCellByColumnAndRow($col, 1)->getValue();
+                $headers[] = trim($value);
+            }
+
+            // Read first 10 data rows starting at row 2
+            $sample = [];
+            $endRow = min($highestRow, 11);
+            for ($row = 2; $row <= $endRow; $row++) {
+                $rowData = [];
+                for ($col = 1; $col <= $highestColumnIndex; $col++) {
+                    $rowData[] = $sheet->getCellByColumnAndRow($col, $row)->getFormattedValue();
+                }
+                // Skip entirely empty rows
+                if (count(array_filter($rowData, fn($v) => $v !== null && $v !== '')) > 0) {
+                    $sample[] = $rowData;
+                }
+            }
+
+            // Basic mapping suggestions based on common headers
+            $suggestions = $this->suggestMappings($headers);
+
+            return view('items-import', [
+                'defaultFileExists' => file_exists(base_path('amtradingstock.xlsx')),
+                'categories' => \App\Models\Category::orderBy('name')->get(['id','name']),
+                'default_category_id' => $defaultCategoryId,
+                'preview' => [
+                    'sheetTitle' => $sheet->getTitle(),
+                    'rowCount' => $highestRow - 1, // excluding header
+                    'headers' => $headers,
+                    'sample' => $sample,
+                    'suggestions' => $suggestions,
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Import preview failed', ['error' => $e->getMessage()]);
+            return back()->withErrors(['file' => 'Failed to read the spreadsheet: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Placeholder for applying an import once mapping/business rules are confirmed.
+     */
+    public function apply(Request $request)
+    {
+        $defaultCategoryId = (int)$request->input('default_category_id', 0);
+        try {
+            $path = null;
+            if ($request->hasFile('file')) {
+                $path = $request->file('file')->getRealPath();
+            } elseif ($request->boolean('use_default', false)) {
+                $defaultPath = base_path('amtradingstock.xlsx');
+                if (!file_exists($defaultPath)) {
+                    return back()->withErrors(['file' => 'Default file amtradingstock.xlsx was not found at project root.']);
+                }
+                $path = $defaultPath;
+            } else {
+                return back()->withErrors(['file' => 'Please upload a file or choose the default file.']);
+            }
+
+            $reader = IOFactory::createReaderForFile($path);
+            $reader->setReadDataOnly(true);
+            $spreadsheet = $reader->load($path);
+            $sheet = $spreadsheet->getActiveSheet();
+
+            $highestRow = (int)$sheet->getHighestRow();
+            $highestColumn = $sheet->getHighestColumn();
+            $highestColumnIndex = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($highestColumn);
+
+            // Build header map
+            $headers = [];
+            for ($c=1; $c <= $highestColumnIndex; $c++) {
+                $h = trim((string)$sheet->getCellByColumnAndRow($c, 1)->getValue());
+                $headers[$c] = $h;
+            }
+            $findCol = function(array $candidates) use ($headers) {
+                foreach ($headers as $idx => $h) {
+                    $hn = strtolower(preg_replace('/[^a-z0-9]+/i','', $h));
+                    foreach ($candidates as $cand) {
+                        $cn = strtolower(preg_replace('/[^a-z0-9]+/i','', $cand));
+                        if ($hn === $cn || str_contains($hn, $cn)) {
+                            return $idx;
+                        }
+                    }
+                }
+                return null;
+            };
+
+            $colName = $findCol(['name','item','designation']);
+            $colSku = $findCol(['code','sku']);
+            $colBarcode = $findCol(['barcode']);
+            $colCategory = $findCol(['category']);
+            $colUM = $findCol(['um','u.m']);
+            $colUCost = $findCol(['ucost','u.cost','unitcost','cost']);
+            $colBicha = $findCol(['bicha']);
+            $colKemer = $findCol(['kemer']);
+            $colFuri = $findCol(['furi']);
+
+            $created = 0; $updated = 0; $stockAdjusted = 0; $errors = [];
+            $stockService = new StockMovementService();
+
+            // Resolve branches by name
+            $branchMap = [];
+            $branchNames = ['bicha' => 'BICHA', 'kemer' => 'Kemer', 'furi' => 'Furi'];
+            foreach ($branchNames as $key => $display) {
+                $b = Branch::whereRaw('LOWER(name) = ?', [strtolower($display)])->first();
+                if ($b) { $branchMap[$key] = $b->id; }
+            }
+
+            for ($row=2; $row <= $highestRow; $row++) {
+                try {
+                    $get = function($col) use ($sheet,$row) {
+                        if (!$col) return null;
+                        return $sheet->getCellByColumnAndRow($col, $row)->getValue();
+                    };
+
+                    $name = trim((string)($get($colName) ?? ''));
+                    if ($name === '') { continue; }
+
+                    $sku = trim((string)($get($colSku) ?? ''));
+                    $barcode = trim((string)($get($colBarcode) ?? ''));
+                    $categoryName = trim((string)($get($colCategory) ?? ''));
+                    $unitQuantity = (int)preg_replace('/[^0-9]/','', (string)($get($colUM) ?? '1'));
+                    if ($unitQuantity <= 0) $unitQuantity = 1;
+                    $costPrice = (float)str_replace([',',' '],['',''], (string)($get($colUCost) ?? '0'));
+                    if ($costPrice < 0) $costPrice = 0;
+
+                    // Find or default category
+                    $categoryId = null;
+                    if ($categoryName !== '') {
+                        $cat = Category::whereRaw('LOWER(name)=?', [strtolower($categoryName)])->first();
+                        if ($cat) { $categoryId = $cat->id; }
+                    }
+                    if (!$categoryId && $defaultCategoryId > 0) {
+                        $categoryId = $defaultCategoryId;
+                    }
+                    if (!$categoryId) {
+                        // fallback to first category if exists (optional)
+                        $categoryId = Category::value('id');
+                    }
+
+                    // Upsert item: prefer SKU=code; barcode optional; fallback to name
+                    $item = null;
+                    if ($sku !== '') {
+                        $item = Item::firstOrNew(['sku' => $sku]);
+                    } elseif ($barcode !== '') {
+                        $item = Item::firstOrNew(['barcode' => $barcode]);
+                    } else {
+                        $item = Item::firstOrNew(['name' => $name]);
+                    }
+
+                    $isNew = !$item->exists;
+                    $item->name = $name;
+                    if ($sku !== '') $item->sku = $sku;
+                    if ($barcode !== '') $item->barcode = $barcode; // optional
+                    if ($categoryId) $item->category_id = $categoryId;
+                    $item->unit = $item->unit ?: 'pcs';
+                    $item->unit_quantity = $unitQuantity;
+                    $item->cost_price = round($costPrice, 2);
+                    $item->selling_price = round($costPrice, 2); // selling = cost
+                    $item->cost_price_per_unit = round($unitQuantity > 0 ? $costPrice / $unitQuantity : 0, 2);
+                    $item->selling_price_per_unit = $item->cost_price_per_unit;
+                    $item->is_active = true;
+                    $item->save();
+                    $isNew ? $created++ : $updated++;
+
+                    // For each branch, set absolute quantity to sheet value
+                    $branchQtys = [
+                        'bicha' => (float)($get($colBicha) ?? 0),
+                        'kemer' => (float)($get($colKemer) ?? 0),
+                        'furi'  => (float)($get($colFuri) ?? 0),
+                    ];
+
+                    foreach ($branchQtys as $key => $qty) {
+                        if (!isset($branchMap[$key])) continue; // branch not found
+                        $qty = max(0, (float)$qty);
+                        $branchId = $branchMap[$key];
+                        // Ensure default warehouse for branch
+                        $warehouse = $stockService->ensureBranchWarehouse($branchId);
+                        // Fetch existing stock (we set absolute on default warehouse)
+                        $stock = Stock::firstOrNew(['warehouse_id' => $warehouse->id, 'item_id' => $item->id]);
+                        $old = (float)($stock->exists ? $stock->quantity : 0);
+                        if ($old != $qty) {
+                            $stock->quantity = $qty;
+                            $stock->save();
+                            $delta = $qty - $old;
+                            StockHistory::create([
+                                'warehouse_id' => $warehouse->id,
+                                'item_id' => $item->id,
+                                'quantity_before' => $old,
+                                'quantity_after' => $qty,
+                                'quantity_change' => $delta,
+                                'reference_type' => 'import',
+                                'reference_id' => 0,
+                                'description' => 'Absolute sync from amtradingstock.xlsx',
+                                'user_id' => auth()->id() ?? 0,
+                            ]);
+                            $stockAdjusted++;
+                        }
+                    }
+                } catch (\Throwable $rowEx) {
+                    $errors[] = 'Row '.$row.': '.$rowEx->getMessage();
+                }
+            }
+
+            $msg = "Imported items: created {$created}, updated {$updated}. Stock rows adjusted: {$stockAdjusted}.";
+            if (!empty($errors)) {
+                return redirect()->route('admin.items.import')->with('info', $msg)->withErrors(['file' => implode("\n", array_slice($errors, 0, 10))]);
+            }
+            return redirect()->route('admin.items.import')->with('success', $msg);
+        } catch (\Throwable $e) {
+            Log::error('Import apply failed', ['error' => $e->getMessage()]);
+            return back()->withErrors(['file' => 'Failed to import: ' . $e->getMessage()]);
+        }
+    }
+
+    private function suggestMappings(array $headers): array
+    {
+        $map = [];
+        $find = function(array $candidates) use ($headers) {
+            foreach ($headers as $h) {
+                $hn = strtolower(trim($h));
+                foreach ($candidates as $c) {
+                    if (str_contains($hn, $c)) {
+                        return $h;
+                    }
+                }
+            }
+            return null;
+        };
+
+        $map['name'] = $find(['name', 'item']);
+        $map['sku'] = $find(['sku', 'code']);
+        $map['barcode'] = $find(['barcode', 'bar code']);
+        $map['category'] = $find(['category']);
+        $map['unit'] = $find(['unit']);
+        $map['unit_quantity'] = $find(['unit quantity', 'unit qty', 'qty per', 'pack']);
+        $map['cost_price'] = $find(['cost', 'purchase']);
+        $map['selling_price'] = $find(['sell', 'price', 'retail']);
+        $map['reorder_level'] = $find(['reorder', 'min']);
+        $map['brand'] = $find(['brand']);
+        $map['description'] = $find(['description', 'desc']);
+
+        return $map;
     }
 }
