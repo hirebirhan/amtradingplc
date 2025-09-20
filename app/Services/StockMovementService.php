@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\Log;
 
 class StockMovementService
 {
-    private function ensureBranchWarehouse(int $branchId): Warehouse
+    public function ensureBranchWarehouse(int $branchId): Warehouse
     {
         $branch = Branch::with('warehouses')->find($branchId);
         if (!$branch) {
