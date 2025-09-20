@@ -13,19 +13,40 @@ class BranchSeeder extends Seeder
      */
     public function run(): void
     {
-        // Create a main branch
-        Branch::create([
-            'name' => 'Main Branch',
-            'code' => 'BR-MAIN',
-            'address' => 'Addis Ababa, Ethiopia',
-            'phone' => '+251-11-123-4567',
-            'email' => 'main@stock360.com',
-            'is_active' => true,
-        ]);
+        // Idempotent: create or update fixed branches
+        Branch::updateOrCreate(
+            ['code' => 'BR-BFOK'],
+            [
+                'name' => 'Bicha Fok Branch',
+                'address' => 'Addis Ababa, Ethiopia',
+                'phone' => '+251-11-123-4567',
+                'email' => 'main@amtradingplc.com',
+                'is_active' => true,
+            ]
+        );
 
-        // Create demo branches if needed
-        if (app()->environment('local', 'development', 'testing')) {
-            Branch::factory()->count(2)->create();
-        }
+        Branch::updateOrCreate(
+            ['code' => 'BR-MERC'],
+            [
+                'name' => 'Mercato Branch',
+                'address' => 'Mercato, Addis Ababa, Ethiopia',
+                'phone' => '+251-11-234-5678',
+                'email' => 'mercato@amtradingplc.com',
+                'is_active' => true,
+            ]
+        );
+
+        Branch::updateOrCreate(
+            ['code' => 'BR-FURI'],
+            [
+                'name' => 'Furi Branch',
+                'address' => 'Furi, Addis Ababa, Ethiopia',
+                'phone' => '+251-11-345-6789',
+                'email' => 'furi@amtradingplc.com',
+                'is_active' => true,
+            ]
+        );
+
+        // Optional demo branches are not auto-created to avoid duplicates
     }
 }

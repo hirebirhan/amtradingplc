@@ -13,15 +13,17 @@ class SuperAdminSeeder extends Seeder
      */
     public function run(): void
     {
-        // Create SuperAdmin user
-        $superAdmin = User::create([
-            'name' => 'System Administrator',
-            'email' => 'superadmin@amtradingplc.com',
-            'password' => Hash::make('password'),
-            'email_verified_at' => now(),
-            'position' => 'System Administrator',
-            'is_active' => true,
-        ]);
+        // Create or update SuperAdmin user (idempotent by email)
+        $superAdmin = User::updateOrCreate(
+            ['email' => 'superadmin@amtradingplc.com'],
+            [
+                'name' => 'System Administrator',
+                'password' => Hash::make('password'),
+                'email_verified_at' => now(),
+                'position' => 'System Administrator',
+                'is_active' => true,
+            ]
+        );
 
         // Assign SuperAdmin role
         $superAdmin->assignRole('SuperAdmin');

@@ -46,8 +46,16 @@ class CategorySeeder extends Seeder
             ],
         ];
 
-        foreach ($categories as $category) {
-            Category::create($category);
+        foreach ($categories as $data) {
+            // Idempotent: ensure unique by code
+            Category::updateOrCreate(
+                ['code' => $data['code']],
+                [
+                    'name' => $data['name'],
+                    'description' => $data['description'],
+                    'is_active' => $data['is_active'],
+                ]
+            );
         }
     }
 }

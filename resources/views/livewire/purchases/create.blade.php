@@ -125,39 +125,33 @@
                                 <div class="invalid-feedback d-block">{{ $message }}</div> 
                             @enderror
                         </div>
-                        <!-- Destination Selection -->
+                        <!-- Branch Selection (branch-only mode) -->
                         <div class="col-12 col-md-4">
                             <div class="d-flex align-items-center gap-2 mb-1">
-                                <label for="warehouse_id" class="form-label fw-medium mb-0">
-                                    Destination <span class="text-primary">*</span>
+                                <label for="branch_id" class="form-label fw-medium mb-0">
+                                    Branch <span class="text-primary">*</span>
                                 </label>
-                                @if(count($items) > 0 && $form['warehouse_id'])
+                                @if(count($items) > 0 && $form['branch_id'])
                                     <small class="text-secondary"><i class="bi bi-lock me-1"></i>Locked</small>
-                                @elseif($warehouses->count() === 1)
+                                @elseif(($branches->count() ?? 0) === 1)
                                     <small class="text-info"><i class="bi bi-info-circle me-1"></i>Auto-selected</small>
-                                @elseif($warehouses->count() === 0)
+                                @elseif(($branches->count() ?? 0) === 0)
                                     <small class="text-danger"><i class="bi bi-exclamation-triangle me-1"></i>None available</small>
                                 @endif
                             </div>
                             <select 
-                                wire:model.live="form.warehouse_id" 
-                                id="warehouse_id" 
-                                class="form-select @error('form.warehouse_id') is-invalid @enderror" 
-                                {{ count($items) > 0 && $form['warehouse_id'] ? 'disabled' : '' }} 
+                                wire:model.live="form.branch_id" 
+                                id="branch_id" 
+                                class="form-select @error('form.branch_id') is-invalid @enderror" 
+                                {{ count($items) > 0 && $form['branch_id'] ? 'disabled' : '' }} 
                                 required 
                             >
-                                <option value="">Select destination...</option>
-                                @foreach($warehouses as $warehouse)
-                                    <option value="{{ $warehouse->id }}">
-                                        @if($warehouse->branch)
-                                            {{ $warehouse->branch->name }} - {{ $warehouse->name }}
-                                        @else
-                                            {{ $warehouse->name }}
-                                        @endif
-                                    </option>
+                                <option value="">Select branch...</option>
+                                @foreach(($branches ?? collect()) as $branch)
+                                    <option value="{{ $branch->id }}">{{ $branch->name }}</option>
                                 @endforeach
                             </select>
-                            @error('form.warehouse_id') 
+                            @error('form.branch_id') 
                                 <div class="invalid-feedback">{{ $message }}</div> 
                             @enderror
                         </div>
@@ -534,17 +528,13 @@
                                 </span>
                             </div>
                             <div class="mb-2">
-                                <span class="text-muted small">Destination:</span>
+                                <span class="text-muted small">Branch:</span>
                                 <span class="fw-semibold ms-1">
                                     @php
-                                        $selectedWarehouse = $warehouses->firstWhere('id', $form['warehouse_id']);
+                                        $selectedBranch = ($branches ?? collect())->firstWhere('id', $form['branch_id'] ?? null);
                                     @endphp
-                                    @if($selectedWarehouse)
-                                        @if($selectedWarehouse->branch)
-                                            {{ $selectedWarehouse->branch->name }} - {{ $selectedWarehouse->name }}
-                                        @else
-                                            {{ $selectedWarehouse->name }}
-                                        @endif
+                                    @if($selectedBranch)
+                                        {{ $selectedBranch->name }}
                                     @else
                                         <span class="text-muted">Not selected</span>
                                     @endif

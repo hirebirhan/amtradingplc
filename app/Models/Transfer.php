@@ -50,6 +50,13 @@ class Transfer extends Model
             if (empty($transfer->date_initiated)) {
                 $transfer->date_initiated = now();
             }
+            // Branch-only default types
+            if (empty($transfer->source_type)) {
+                $transfer->source_type = 'branch';
+            }
+            if (empty($transfer->destination_type)) {
+                $transfer->destination_type = 'branch';
+            }
             if (empty($transfer->status)) {
                 $transfer->status = 'pending';
             }
