@@ -62,7 +62,7 @@
                 <div class="row g-3">
                     <!-- Item Name -->
                     <div class="col-12 col-md-6">
-                        <label for="name" class="form-label fw-medium">Item Name <span class="text-primary">*</span></label>
+                        <label for="name" class="form-label fw-medium">Item Name <span class="text-danger">*</span></label>
                         <input type="text" 
                                class="form-control @error('form.name') is-invalid @enderror" 
                                id="name" 
@@ -75,7 +75,7 @@
 
                     <!-- Category Selection -->
                     <div class="col-12 col-md-6">
-                        <label for="category_id" class="form-label fw-medium">Category <span class="text-primary">*</span></label>
+                        <label for="category_id" class="form-label fw-medium">Category <span class="text-danger">*</span></label>
                         <select class="form-select @error('form.category_id') is-invalid @enderror" 
                                 wire:model.live="form.category_id" 
                                 id="category_id">
@@ -91,7 +91,7 @@
 
                     <!-- Unit Quantity -->
                     <div class="col-12 col-md-4">
-                        <label for="unit_quantity" class="form-label fw-medium">Items per Piece <span class="text-primary">*</span></label>
+                        <label for="unit_quantity" class="form-label fw-medium">Items per Piece <span class="text-danger">*</span></label>
                         <input type="number" 
                                class="form-control @error('form.unit_quantity') is-invalid @enderror" 
                                id="unit_quantity" 
@@ -105,7 +105,7 @@
 
                     <!-- Item Unit -->
                     <div class="col-12 col-md-4">
-                        <label for="item_unit" class="form-label fw-medium">Item Unit <span class="text-primary">*</span></label>
+                        <label for="item_unit" class="form-label fw-medium">Item Unit <span class="text-danger">*</span></label>
                         <select class="form-select @error('form.item_unit') is-invalid @enderror" 
                                 wire:model.live="form.item_unit" 
                                 id="item_unit">
@@ -155,7 +155,7 @@
 
                     <!-- Cost Price per Unit -->
                     <div class="col-12 col-md-6">
-                        <label for="cost_price_per_unit" class="form-label fw-medium">Cost Price per {{ $form['item_unit'] ?: 'item' }} <span class="text-primary">*</span></label>
+                        <label for="cost_price_per_unit" class="form-label fw-medium">Cost Price per {{ $form['item_unit'] ?: 'item' }} <span class="text-danger">*</span></label>
                         <div class="input-group">
                             <span class="input-group-text">ETB</span>
                             <input type="number" 
@@ -174,7 +174,7 @@
 
                     <!-- Selling Price per Unit -->
                     <div class="col-12 col-md-6">
-                        <label for="selling_price_per_unit" class="form-label fw-medium">Selling Price per {{ $form['item_unit'] ?: 'item' }} <span class="text-primary">*</span></label>
+                        <label for="selling_price_per_unit" class="form-label fw-medium">Selling Price per {{ $form['item_unit'] ?: 'item' }} <span class="text-danger">*</span></label>
                         <div class="input-group">
                             <span class="input-group-text">ETB</span>
                             <input type="number" 
@@ -273,7 +273,7 @@
         <div class="card-footer border-top-0 px-4 py-3">
             <div class="d-flex justify-content-between align-items-center">
                 <small class="text-muted">
-                    Fields marked with <span class="text-primary">*</span> are required
+                    Fields marked with <span class="text-danger">*</span> are required
                 </small>
                 <div class="d-flex gap-2">
                     <a href="{{ route('admin.items.index') }}" class="btn btn-outline-secondary">

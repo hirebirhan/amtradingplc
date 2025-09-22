@@ -3,7 +3,7 @@
     'subtitle' => null,
     'createRoute' => null,
     'createText' => 'Create New',
-    'createIcon' => 'fa-plus',
+    'createIcon' => 'bi-plus-lg',
     'icon' => null,
     'iconBg' => 'primary',
     'headerClass' => '',
@@ -17,7 +17,7 @@
                 <div class="d-flex align-items-center">
                     @if($icon)
                         <div class="rounded-circle bg-{{ $iconBg }} bg-opacity-10 p-2 me-3 d-flex align-items-center justify-content-center shadow-sm" style="width: 48px; height: 48px;">
-                            <i class="bi bi-{{ $icon }} text-{{ $iconBg }} fs-5"></i>
+                            <i class="bi {{ $icon }} text-{{ $iconBg }} fs-5"></i>
                         </div>
                     @endif
                     

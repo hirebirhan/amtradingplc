@@ -13,23 +13,22 @@
                    
                        <!-- Time Range Selector -->
                        <div class="position-relative" x-data="{ open: false }">
-                            <button @click="open = !open" class="btn d-flex align-items-center gap-2 px-3 py-2 small">
-                                <i class="bi bi-calendar3"></i>
-                                <span id="selectedRange">Last 30 Days</span>
-                                <i class="bi bi-chevron-down small"></i>
-                            </button>
-                            <div x-show="open" @click.away="open = false" 
-                                 class="position-absolute end-0 mt-2 bg-body-tertiary rounded shadow-lg border dropdown-menu show py-1">
-                                <a href="#" class="dropdown-item small" data-range="today">Today</a>
-                                <a href="#" class="dropdown-item small" data-range="yesterday">Yesterday</a>
-                                <a href="#" class="dropdown-item small" data-range="week">Last 7 Days</a>
-                                <a href="#" class="dropdown-item small active" data-range="month">Last 30 Days</a>
-                                <a href="#" class="dropdown-item small" data-range="this_month">This Month</a>
-                                <li><hr class="dropdown-divider"></li>
-                                <a href="#" class="dropdown-item small" data-range="year">This Year</a>
-                            </div>
-                        </div>
-                </div>
+    <button @click="open = !open" class="btn btn-light d-flex align-items-center gap-2 px-3 py-2 small">
+        <i class="bi bi-calendar3"></i>
+        <span id="selectedRange">Last 30 Days</span>
+        <i class="bi bi-chevron-down small"></i>
+    </button>
+    <div x-show="open" @click.away="open = false" 
+         class="position-absolute end-0 mt-2 bg-white rounded shadow dropdown-menu show py-1">
+        <a href="#" class="dropdown-item small" data-range="today">Today</a>
+        <a href="#" class="dropdown-item small" data-range="yesterday">Yesterday</a>
+        <a href="#" class="dropdown-item small" data-range="week">Last 7 Days</a>
+        <a href="#" class="dropdown-item small active bg-primary text-white" data-range="month">Last 30 Days</a>
+        <a href="#" class="dropdown-item small" data-range="this_month">This Month</a>
+        <li><hr class="dropdown-divider"></li>
+        <a href="#" class="dropdown-item small" data-range="year">This Year</a>
+    </div>
+</div>                </div>
             </div>
         </div>
 
@@ -46,41 +45,7 @@
                     </div>
                 </div>
             @endif
-
-            <!-- Activity Filters -->
-            @if($show_filters && isset($available_branches))
-                <div class="card mb-4">
-                    <div class="card-body">
-                        <form method="GET" action="{{ route('admin.dashboard') }}" class="d-flex flex-column flex-md-row align-items-stretch gap-2 gap-md-3 flex-wrap">
-                            <div class="d-flex align-items-center gap-2">
-                                <i class="fas fa-filter text-muted"></i>
-                                <span class="small fw-medium text-muted">Filter Activities:</span>
-                            </div>
-                            <select name="branch_id" class="form-select form-select-sm w-100 w-md-auto">
-                                <option value="">All Branches</option>
-                                @foreach($available_branches as $branch)
-                                    <option value="{{ $branch->id }}" {{ request('branch_id') == $branch->id ? 'selected' : '' }}>
-                                        {{ $branch->name }}
-                                    </option>
-                                @endforeach
-                            </select>
-                            <select name="warehouse_id" class="form-select form-select-sm w-100 w-md-auto">
-                                <option value="">All Warehouses</option>
-                                @foreach($available_warehouses as $warehouse)
-                                    <option value="{{ $warehouse->id }}" {{ request('warehouse_id') == $warehouse->id ? 'selected' : '' }}>
-                                        {{ $warehouse->name }}
-                                    </option>
-                                @endforeach
-                            </select>
-                            <button type="submit" class="btn btn-primary btn-sm w-100 w-md-auto">Apply Filter</button>
-                            @if(request('branch_id') || request('warehouse_id'))
-                                <a href="{{ route('admin.dashboard') }}" class="btn btn-outline-secondary btn-sm w-100 w-md-auto">Clear</a>
-                            @endif
-                        </form>
-                    </div>
-                </div>
-            @endif
-
+            
             <!-- Stats Grid -->
             <div class="row g-3 mb-4">
                 <x-ui.dashboard-stats-cards

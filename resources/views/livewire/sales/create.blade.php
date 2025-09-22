@@ -87,7 +87,7 @@
                         <!-- Sale Date -->
                         <div class="col-12 col-md-4">
                             <label for="sale_date" class="form-label fw-medium">
-                                Sale Date <span class="text-primary">*</span>
+                                Sale Date <span class="text-danger">*</span>
                             </label>
                             <input 
                                 type="date" 
@@ -102,7 +102,7 @@
                         <!-- Customer Selection -->
                         <div class="col-12 col-md-4">
                             <label for="customer_id" class="form-label fw-medium">
-                                Customer <span class="text-primary">*</span>
+                                Customer <span class="text-danger">*</span>
                             </label>
                             @if($selectedCustomer)
                                 <div class="input-group">
@@ -132,7 +132,7 @@
                         <div class="col-12 col-md-4">
                             <div class="d-flex align-items-center gap-2 mb-1">
                                 <label for="warehouse_id" class="form-label fw-medium mb-0">
-                                    Selling From <span class="text-primary">*</span>
+                                    Selling From <span class="text-danger">*</span>
                                 </label>
                                 @php
                                     $itemCount = is_countable($items) ? count($items) : 0;
@@ -176,7 +176,7 @@
                         <!-- Payment Method -->
                         <div class="col-12 col-md-4">
                             <label for="payment_method" class="form-label fw-medium">
-                                Payment Method <span class="text-primary">*</span>
+                                Payment Method <span class="text-danger">*</span>
                             </label>
                             <select 
                                 wire:model.live="form.payment_method" 
@@ -216,7 +216,7 @@
                         @if($form['payment_method'] === 'telebirr')
                             <div class="col-12 col-md-4">
                                 <label for="transaction_number" class="form-label fw-medium">
-                                    Transaction Number <span class="text-primary">*</span>
+                                    Transaction Number <span class="text-danger">*</span>
                                 </label>
                                 <input 
                                     type="text" 
@@ -234,7 +234,7 @@
                         @if($form['payment_method'] === 'bank_transfer')
                             <div class="col-12 col-md-4">
                                 <label for="bank_account_id" class="form-label fw-medium">
-                                    Bank Account <span class="text-primary">*</span>
+                                    Bank Account <span class="text-danger">*</span>
                                 </label>
                                 <select 
                                     wire:model="form.bank_account_id" 
@@ -298,7 +298,7 @@
                         @if($form['payment_method'] === 'credit_advance')
                             <div class="col-12 col-md-4">
                                 <label for="advance_amount" class="form-label fw-medium">
-                                    Advance Amount <span class="text-primary">*</span>
+                                    Advance Amount <span class="text-danger">*</span>
                                 </label>
                                 <input 
                                     type="number" 
@@ -357,7 +357,7 @@
                             <!-- Item Selection -->
                             <div class="col-12 col-md-4">
                                 <label class="form-label fw-medium">
-                                    Item <span class="text-primary">*</span>
+                                    Item <span class="text-danger">*</span>
                                 </label>
                                 @if($selectedItem)
                                     <div class="input-group">

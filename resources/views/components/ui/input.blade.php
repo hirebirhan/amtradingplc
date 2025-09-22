@@ -43,7 +43,7 @@
     <div class="input-group">
         @if($icon && $iconPosition === 'left')
             <span class="input-group-text">
-                <i class="fas {{ $icon }}"></i>
+                <i class="bi {{ $icon }}"></i>
             </span>
         @endif
         
@@ -63,7 +63,7 @@
         
         @if($icon && $iconPosition === 'right')
             <span class="input-group-text">
-                <i class="fas {{ $icon }}"></i>
+                <i class="bi {{ $icon }}"></i>
             </span>
         @endif
         

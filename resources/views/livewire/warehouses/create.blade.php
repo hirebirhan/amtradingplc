@@ -52,7 +52,7 @@
                 <div class="row g-3 mb-4">
                     <div class="col-12 col-md-6">
                         <label for="name" class="form-label fw-medium">
-                            Warehouse Name <span class="text-primary">*</span>
+                            Warehouse Name <span class="text-danger">*</span>
                         </label>
                         <input type="text" 
                                id="name" 

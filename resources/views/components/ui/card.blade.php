@@ -36,7 +36,7 @@
         <div class="{{ $headerClass }}">
             <div class="d-flex align-items-center">
                 @if($icon)
-                    <i class="fas {{ $icon }} me-2"></i>
+                    <i class="bi {{ $icon }} me-2"></i>
                 @endif
                 
                 @if($title)
@@ -49,7 +49,7 @@
                 
                 @if($collapsible)
                     <button class="btn btn-link ms-auto" type="button" data-bs-toggle="collapse" data-bs-target="#{{ $cardId }}-body" aria-expanded="{{ $collapsed ? 'false' : 'true' }}">
-                        <i class="fas fa-chevron-{{ $collapsed ? 'down' : 'up' }}"></i>
+                        <i class="bi bi-chevron-{{ $collapsed ? 'down' : 'up' }}"></i>
                     </button>
                 @endif
             </div>

@@ -43,13 +43,13 @@
     
     <span class="{{ $loading ? 'opacity-50' : '' }}">
         @if($icon && $iconPosition === 'left')
-            <i class="fas {{ $icon }} {{ $slot->isEmpty() ? '' : 'me-2' }}"></i>
+            <i class="bi {{ $icon }} {{ $slot->isEmpty() ? '' : 'me-2' }}"></i>
         @endif
         
         {{ $slot }}
         
         @if($icon && $iconPosition === 'right')
-            <i class="fas {{ $icon }} {{ $slot->isEmpty() ? '' : 'ms-2' }}"></i>
+            <i class="bi {{ $icon }} {{ $slot->isEmpty() ? '' : 'ms-2' }}"></i>
         @endif
     </span>
 </button>

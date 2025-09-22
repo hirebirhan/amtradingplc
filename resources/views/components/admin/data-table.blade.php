@@ -1,52 +1,63 @@
 @props([
     'responsive' => true,
     'hover' => true,
-    'striped' => true,
+    'striped' => false,
     'withPagination' => true,
     'emptyText' => 'No records found',
-    'emptyIcon' => 'fa-folder-open',
+    'emptyIcon' => 'bi-folder-x',
     'emptyActionText' => null,
     'emptyActionRoute' => null,
-    'emptyActionIcon' => 'fa-plus',
+    'emptyActionIcon' => 'bi-plus-lg',
     'paginationItemName' => 'records',
     'paginationData' => null,
     'actions' => null,
-    'tableClasses' => '',
+    'tableClasses' => 'align-middle mb-0',
+    'cardWrapper' => true,
 ])
 
-<div>
-    <!-- Table Container -->
-    @if($responsive)
-        <div class="table-responsive">
-    @endif
-    
-    <table class="table {{ $hover ? 'table-hover' : '' }} {{ $striped ? 'table-striped' : '' }} {{ $tableClasses }}">
-        {{ $header }}
+@if($cardWrapper)
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+@endif
+
+        <!-- Table Container -->
+        @if($responsive)
+            <div class="table-responsive">
+        @endif
         
-        <tbody>
-            {{ $slot }}
-        </tbody>
-    </table>
-    
-    @if($responsive)
-        </div>
-    @endif
-    
-    <!-- Empty State -->
-    @if(isset($empty))
-        {{ $empty }}
-    @endif
-    
-    <!-- Pagination -->
-    @if($withPagination && $paginationData && $paginationData->hasPages())
-        <div class="d-flex justify-content-between align-items-center p-3 border-top">
-            <div class="text-muted small">
-                Showing {{ $paginationData->firstItem() ?? 0 }} to {{ $paginationData->lastItem() ?? 0 }} 
-                of {{ $paginationData->total() }} {{ $paginationItemName }}
+        <table class="table {{ $hover ? 'table-hover' : '' }} {{ $striped ? 'table-striped' : '' }} {{ $tableClasses }}">
+            {{ $header }}
+            
+            <tbody>
+                {{ $slot }}
+            </tbody>
+        </table>
+        
+        @if($responsive)
             </div>
-            <div>
-                {{ $paginationData->links() }}
+        @endif
+        
+        <!-- Empty State -->
+        @if(isset($empty))
+            {{ $empty }}
+        @endif
+        
+        <!-- Pagination -->
+        @if($withPagination && $paginationData && $paginationData->hasPages())
+            <div class="border-top px-4 py-3">
+                <div class="d-flex flex-column flex-md-row justify-content-between align-items-center gap-3">
+                    <div class="small text-secondary">
+                        Showing {{ $paginationData->firstItem() ?? 0 }} to {{ $paginationData->lastItem() ?? 0 }} 
+                        of {{ $paginationData->total() }} {{ $paginationItemName }}
+                    </div>
+                    <div>
+                        {{ $paginationData->links() }}
+                    </div>
+                </div>
             </div>
-        </div>
-    @endif
-</div> 
+        @endif
+
+@if($cardWrapper)
+    </div>
+</div>
+@endif 

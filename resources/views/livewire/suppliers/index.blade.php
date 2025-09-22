@@ -66,7 +66,7 @@
             <!-- Table Section -->
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
-                    <thead class="table-light">
+                    <thead>
                         <tr>
                             <th class="px-4 py-3 cursor-pointer fw-semibold text-dark" wire:click="sortBy('name')">
                                 <div class="d-flex align-items-center gap-2">

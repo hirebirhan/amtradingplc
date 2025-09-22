@@ -51,7 +51,7 @@
                 <div class="row g-3 mb-4">
                     <div class="col-12 col-md-6">
                         <label for="name" class="form-label fw-medium">
-                            Branch Name <span class="text-primary">*</span>
+                            Branch Name <span class="text-danger">*</span>
                         </label>
                         <input type="text" 
                                class="form-control @error('name') is-invalid @enderror"
@@ -91,7 +91,7 @@
 
                     <div class="col-12 col-md-6">
                         <label for="address" class="form-label fw-medium">
-                            Address <span class="text-primary">*</span>
+                            Address <span class="text-danger">*</span>
                         </label>
                         <textarea class="form-control @error('address') is-invalid @enderror"
                                   id="address" 
