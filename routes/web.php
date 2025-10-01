@@ -97,20 +97,16 @@ Route::prefix('admin')->middleware(['auth', 'active'])->group(function () {
             ->name('import-template.download');
 
         // Add import page route (best practice)
-        Route::get('/import', function() {
-            return view('items-import', [
-                'defaultFileExists' => file_exists(base_path('amtradingstock.xlsx')),
-                'categories' => \App\Models\Category::orderBy('name')->get(['id','name']),
-            ]);
-        })->middleware('permission:items.create')->name('import');
+        Route::get('/import', App\Livewire\Admin\Items\ImportItems::class)
+            ->middleware('permission:items.create')->name('import');
 
-        // Import handlers
-        Route::post('/import/preview', [App\Http\Controllers\ItemImportController::class, 'preview'])
-            ->middleware('permission:items.create')
-            ->name('import.preview');
-        Route::post('/import/apply', [App\Http\Controllers\ItemImportController::class, 'apply'])
-            ->middleware('permission:items.create')
-            ->name('import.apply');
+        // Import handlers - These are now handled by the Livewire component
+        // Route::post('/import/preview', [App\Http\Controllers\ItemImportController::class, 'preview'])
+        //     ->middleware('permission:items.create')
+        //     ->name('import.preview');
+        // Route::post('/import/apply', [App\Http\Controllers\ItemImportController::class, 'apply'])
+        //     ->middleware('permission:items.create')
+        //     ->name('import.apply');
 
         Route::get('/{item}', function(Item $item) {
             return view('items-show', ['item' => $item]);
