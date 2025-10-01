@@ -6,7 +6,7 @@
                     <div class="card-header bg-body border-0 d-flex justify-content-between align-items-center">
                         <h5 class="mb-0">Import Items</h5>
                         <a href="{{ route('admin.items.import-template.download') }}" class="btn btn-outline-secondary btn-sm">
-                            <i class="bi bi-download me-1"></i> Template
+                            <i class="bi bi-download me-1"></i> Download Template
                         </a>
                     </div>
                     <div class="card-body">
@@ -44,9 +44,9 @@
                                         @endforeach
                                     </select>
                                 </div>
-                                <div class="col-12 col-md-2 d-flex gap-2">
-                                    <button type="submit" class="btn btn-primary flex-grow-1">
-                                        <i class="bi bi-search me-1"></i> Preview Upload
+                                <div class="col-12 col-md-2 d-flex align-items-end">
+                                    <button type="submit" class="btn btn-primary w-100">
+                                        <i class="bi bi-search me-1"></i> Preview
                                     </button>
                                 </div>
                             </div>

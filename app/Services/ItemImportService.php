@@ -24,15 +24,8 @@ class ItemImportService
         $highestColumn = $sheet->getHighestColumn();
         $highestColumnIndex = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($highestColumn);
 
-        $branchHeaders = [];
-        for ($col = 1; $col <= $highestColumnIndex; $col++) {
-            $branchHeaders[$col] = trim((string) $sheet->getCellByColumnAndRow($col, 1)->getValue());
-        }
-
-        $itemHeaders = [];
-        for ($col = 1; $col <= $highestColumnIndex; $col++) {
-            $itemHeaders[] = trim((string) $sheet->getCellByColumnAndRow($col, 2)->getValue());
-        }
+        $branchHeaders = $sheet->rangeToArray('A1:' . $highestColumn . '1', null, true, false)[0];
+        $itemHeaders = $sheet->rangeToArray('A2:' . $highestColumn . '2', null, true, false)[0];
 
         $allItems = $this->getAllItemsAsJson($sheet, $highestRow, $highestColumnIndex, $itemHeaders, $branchHeaders);
 
@@ -58,6 +51,9 @@ class ItemImportService
         DB::beginTransaction();
 
         try {
+            $allBranches = Branch::all()->keyBy(fn($branch) => strtolower($branch->name));
+            $stockService = new StockMovementService();
+
             foreach ($itemData as $data) {
                 if (!is_array($data) || empty($data['name'])) {
                     $errors[] = 'Invalid item data found in JSON';
@@ -88,11 +84,10 @@ class ItemImportService
                 $isNew ? $created++ : $updated++;
 
                 if (!empty($branches)) {
-                    $stockService = new StockMovementService();
                     foreach ($branches as $branchName => $quantity) {
                         if (empty($quantity)) continue;
 
-                        $branch = Branch::whereRaw('LOWER(name) = ?', [strtolower($branchName)])->first();
+                        $branch = $allBranches[strtolower($branchName)] ?? null;
                         if (!$branch) continue;
 
                         $warehouse = $stockService->ensureBranchWarehouse($branch->id);
@@ -111,7 +106,7 @@ class ItemImportService
                                 'quantity_change' => $quantity - $oldQuantity,
                                 'reference_type' => 'import',
                                 'reference_id' => 0,
-                                'description' => 'JSON import stock adjustment',
+                                'description' => 'Initial stock from import',
                                 'user_id' => auth()->id() ?? 0,
                             ]);
                             $stockAdjusted++;
@@ -137,12 +132,12 @@ class ItemImportService
 
         $branchColumns = [];
         $currentBranch = '';
-        foreach ($branchHeaders as $col => $header) {
+        foreach ($branchHeaders as $colIndex => $header) {
             if (!empty($header)) {
                 $currentBranch = strtolower(trim($header));
             }
             if (!empty($currentBranch)) {
-                $branchColumns[$col] = $currentBranch;
+                $branchColumns[$colIndex + 1] = $currentBranch;
             }
         }
 
@@ -221,9 +216,6 @@ class ItemImportService
             'reorder_level' => ['reorder level'],
             'brand' => ['brand'],
             'description' => ['description'],
-            'bicha' => ['bicha'],
-            'kemer' => ['kemer'],
-            'furi' => ['furi'],
         ];
 
         foreach ($headers as $index => $header) {
