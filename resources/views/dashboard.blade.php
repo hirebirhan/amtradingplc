@@ -47,39 +47,7 @@
                 </div>
             @endif
 
-            <!-- Activity Filters -->
-            @if($show_filters && isset($available_branches))
-                <div class="card mb-4">
-                    <div class="card-body">
-                        <form method="GET" action="{{ route('admin.dashboard') }}" class="d-flex flex-column flex-md-row align-items-stretch gap-2 gap-md-3 flex-wrap">
-                            <div class="d-flex align-items-center gap-2">
-                                <i class="fas fa-filter text-muted"></i>
-                                <span class="small fw-medium text-muted">Filter Activities:</span>
-                            </div>
-                            <select name="branch_id" class="form-select form-select-sm w-100 w-md-auto">
-                                <option value="">All Branches</option>
-                                @foreach($available_branches as $branch)
-                                    <option value="{{ $branch->id }}" {{ request('branch_id') == $branch->id ? 'selected' : '' }}>
-                                        {{ $branch->name }}
-                                    </option>
-                                @endforeach
-                            </select>
-                            <select name="warehouse_id" class="form-select form-select-sm w-100 w-md-auto">
-                                <option value="">All Warehouses</option>
-                                @foreach($available_warehouses as $warehouse)
-                                    <option value="{{ $warehouse->id }}" {{ request('warehouse_id') == $warehouse->id ? 'selected' : '' }}>
-                                        {{ $warehouse->name }}
-                                    </option>
-                                @endforeach
-                            </select>
-                            <button type="submit" class="btn btn-primary btn-sm w-100 w-md-auto">Apply Filter</button>
-                            @if(request('branch_id') || request('warehouse_id'))
-                                <a href="{{ route('admin.dashboard') }}" class="btn btn-outline-secondary btn-sm w-100 w-md-auto">Clear</a>
-                            @endif
-                        </form>
-                    </div>
-                </div>
-            @endif
+        
 
             <!-- Stats Grid -->
             <div class="row g-3 mb-4">
