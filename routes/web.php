@@ -525,3 +525,8 @@ Route::prefix('admin')->middleware(['auth', 'active'])->group(function () {
 // Stock Card Routes
 Route::get('/stock-card', [App\Http\Controllers\StockCardController::class, 'index'])->name('stock-card.index');
 Route::get('/stock-card/print', [App\Http\Controllers\StockCardController::class, 'print'])->name('stock-card.print');
+
+// Test route for phone input validation (remove in production)
+Route::get('/test-phone', function () {
+    return view('test-phone');
+})->name('test-phone');

@@ -1,9 +1,12 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Database\Seeders;
 
 use App\Models\User;
 use App\Models\Branch;
+use App\Enums\UserRole;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
@@ -33,15 +36,15 @@ class UserSeeder extends Seeder
         );
 
         // Create a new role for General Manager with all permissions
-        $generalManagerRole = Role::firstOrCreate(['name' => 'GeneralManager']);
+        $generalManagerRole = Role::firstOrCreate(['name' => UserRole::GENERAL_MANAGER->value]);
 
         // If it's a new role, give it all permissions like SuperAdmin
         if ($generalManagerRole->wasRecentlyCreated) {
-            $superAdminRole = Role::findByName('SuperAdmin');
+            $superAdminRole = Role::findByName(UserRole::SUPER_ADMIN->value);
             $generalManagerRole->syncPermissions($superAdminRole->permissions);
         }
 
-        $generalManager->assignRole('GeneralManager');
+        $generalManager->assignRole(UserRole::GENERAL_MANAGER->value);
 
         // Create Branch Managers for each branch
         foreach ($branches as $index => $branch) {
@@ -57,7 +60,7 @@ class UserSeeder extends Seeder
                     'is_active' => true,
                 ]
             );
-            $branchManager->assignRole('BranchManager');
+            $branchManager->assignRole(UserRole::BRANCH_MANAGER->value);
 
             // Create a Sales User for each branch
             $salesUser = User::updateOrCreate(
@@ -72,7 +75,7 @@ class UserSeeder extends Seeder
                     'is_active' => true,
                 ]
             );
-            $salesUser->assignRole('Sales');
+            $salesUser->assignRole(UserRole::SALES->value);
         }
 
     }

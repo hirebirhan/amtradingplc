@@ -1,9 +1,12 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Http\Controllers;
 
 use App\Models\StockHistory;
 use App\Models\Item;
+use App\Enums\UserRole;
 use Illuminate\Http\Request;
 use Illuminate\Database\Eloquent\Builder;
 use UserHelper;
@@ -18,7 +21,7 @@ class StockCardController extends Controller
         $purchasesQuery = \App\Models\Purchase::with('purchaseItems.item');
         
         // Apply warehouse access control if user doesn't have global access
-        if (!UserHelper::hasRole('SystemAdmin')) {
+        if (!UserHelper::hasRole(UserRole::SYSTEM_ADMIN)) {
             $warehouseIds = UserHelper::getAccessibleWarehouseIds();
             
             // Filter items by accessible warehouses
@@ -67,7 +70,7 @@ class StockCardController extends Controller
         $query = StockHistory::with(['item', 'warehouse', 'user']);
         
         // Apply warehouse access control if user doesn't have global access
-        if (!UserHelper::hasRole('SystemAdmin')) {
+        if (!UserHelper::hasRole(UserRole::SYSTEM_ADMIN)) {
             $warehouseIds = UserHelper::getAccessibleWarehouseIds();
             $query->whereIn('warehouse_id', $warehouseIds);
         }
@@ -104,4 +107,4 @@ class StockCardController extends Controller
 
         return view('stock-card.print', compact('stockMovements', 'filters', 'selectedItem'));
     }
-} 
+}

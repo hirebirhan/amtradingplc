@@ -83,13 +83,10 @@ class UserHelper
 
     /**
      * Check if current user is a general manager
-     * 
-     * @deprecated This role doesn't exist in the system anymore
-     * @return bool Always returns false
      */
     public static function isGeneralManager(): bool
     {
-        return false;
+        return self::hasRole(UserRole::GENERAL_MANAGER);
     }
 
     /**

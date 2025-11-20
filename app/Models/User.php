@@ -93,13 +93,10 @@ class User extends Authenticatable
 
     /**
      * Determine if the user is a general manager.
-     * 
-     * @deprecated This role doesn't exist in the system anymore
-     * @return bool Always returns false
      */
     public function isGeneralManager(): bool
     {
-        return false;
+        return $this->hasRole(UserRole::GENERAL_MANAGER->value);
     }
 
     /**
@@ -216,7 +213,7 @@ class User extends Authenticatable
         }
 
         // Branch managers have access to warehouses in their branch
-        if ($this->hasRole('BranchManager') && $this->branch) {
+        if ($this->hasRole(UserRole::BRANCH_MANAGER->value) && $this->branch) {
             return $this->branch->warehouses->contains('id', $warehouseId);
         }
 
