@@ -84,6 +84,10 @@ class Create extends Component
     // UI state
     public $editingItemIndex = null;
     public $showConfirmModal = false;
+    public $showStockWarning = false;
+    public $stockWarningType = null; // 'out_of_stock' or 'insufficient'
+    public $stockWarningItem = null;
+    public $requestedQuantity = 0;
 
     // Add a property to track the user's location type
     public $userLocationType = null;
@@ -179,6 +183,12 @@ class Create extends Component
         
         // Auto-set location based on user assignment
         $user = auth()->user();
+        \Log::info('User location info', [
+            'user_id' => $user->id,
+            'branch_id' => $user->branch_id,
+            'warehouse_id' => $user->warehouse_id
+        ]);
+        
         if ($user->branch_id) {
             $this->form['branch_id'] = $user->branch_id;
             $this->userLocationType = 'branch';
@@ -189,6 +199,14 @@ class Create extends Component
             $this->userLocationType = 'warehouse';
             $this->userLocationId = $user->warehouse_id;
             $this->loadItemsForLocation();
+        } else {
+            // If no specific assignment, auto-select first available warehouse
+            $firstWarehouse = Warehouse::first();
+            if ($firstWarehouse) {
+                $this->form['warehouse_id'] = $firstWarehouse->id;
+                $this->loadItemsForLocation();
+                \Log::info('Auto-selected first warehouse', ['warehouse_id' => $firstWarehouse->id]);
+            }
         }
     }
 
@@ -231,19 +249,34 @@ class Create extends Component
         }
         
         if ($this->form['warehouse_id']) {
-            // Load items with stock in the selected warehouse
-            $this->itemOptions = Item::where('is_active', true)
+            \Log::info('Loading items for warehouse', ['warehouse_id' => $this->form['warehouse_id']]);
+            
+            // First check if there are any items at all
+            $totalItems = Item::where('is_active', true)->count();
+            $totalStocks = Stock::where('warehouse_id', $this->form['warehouse_id'])->count();
+            $stocksWithQuantity = Stock::where('warehouse_id', $this->form['warehouse_id'])->where('quantity', '>', 0)->count();
+            
+            \Log::info('Database check', [
+                'total_items' => $totalItems,
+                'total_stocks_in_warehouse' => $totalStocks,
+                'stocks_with_quantity' => $stocksWithQuantity
+            ]);
+            
+            // Load all items that have stock records in the warehouse (including 0 stock)
+            $items = Item::where('is_active', true)
                 ->whereNotIn('id', $addedItemIds)
                 ->whereHas('stocks', function ($query) {
-                    $query->where('warehouse_id', $this->form['warehouse_id'])
-                          ->where('quantity', '>', 0);
+                    $query->where('warehouse_id', $this->form['warehouse_id']);
                 })
                 ->with(['stocks' => function ($query) {
                     $query->where('warehouse_id', $this->form['warehouse_id']);
                 }])
                 ->orderBy('name')
-                ->get()
-                ->map(function ($item) {
+                ->get();
+                
+            \Log::info('Items found', ['count' => $items->count()]);
+            
+            $this->itemOptions = $items->map(function ($item) {
                     $stock = $item->stocks->first();
                     return [
                         'id' => $item->id,
@@ -257,10 +290,19 @@ class Create extends Component
                         'unit' => $item->unit ?? '',
                     ];
                 })
-                ->filter(function ($item) {
-                    return $item['quantity'] > 0;
-                })
                 ->values();
+                
+            \Log::info('Final item options', [
+                'count' => count($this->itemOptions),
+                'items' => $this->itemOptions
+            ]);
+            
+            // Also check if there are ANY items in the database
+            $allItems = Item::where('is_active', true)->get(['id', 'name', 'sku']);
+            \Log::info('All active items in database', [
+                'count' => $allItems->count(),
+                'items' => $allItems->toArray()
+            ]);
                 
         } elseif ($this->form['branch_id']) {
             // Load items available in warehouses serving this branch
@@ -284,12 +326,10 @@ class Create extends Component
                 $this->itemOptions = Item::where('is_active', true)
                     ->whereNotIn('id', $addedItemIds)
                     ->whereHas('stocks', function ($query) use ($warehouseIds) {
-                        $query->whereIn('warehouse_id', $warehouseIds)
-                              ->where('quantity', '>', 0);
+                        $query->whereIn('warehouse_id', $warehouseIds);
                     })
                     ->with(['stocks' => function ($query) use ($warehouseIds) {
-                        $query->whereIn('warehouse_id', $warehouseIds)
-                              ->where('quantity', '>', 0);
+                        $query->whereIn('warehouse_id', $warehouseIds);
                     }])
                     ->orderBy('name')
                     ->get()
@@ -306,9 +346,6 @@ class Create extends Component
                             'quantity' => $totalStock,
                             'unit' => $item->unit ?? '',
                         ];
-                    })
-                    ->filter(function ($item) {
-                        return $item['quantity'] > 0;
                     })
                     ->values();
             }
@@ -374,19 +411,52 @@ class Create extends Component
 
     public function updatedItemSearch()
     {
-        // Item search is handled by the computed property
+        \Log::info('Item search updated', [
+            'search' => $this->itemSearch,
+            'warehouse_id' => $this->form['warehouse_id'],
+            'branch_id' => $this->form['branch_id'],
+            'itemOptions_count' => count($this->itemOptions)
+        ]);
+        
+        // Force reload items if search is not empty and no items loaded
+        if (!empty($this->itemSearch) && empty($this->itemOptions)) {
+            $this->loadItemsForLocation();
+        }
     }
 
     public function selectItem($itemId)
     {
-        $itemOption = collect($this->itemOptions)->firstWhere('id', $itemId);
-        if ($itemOption) {
-            $this->newItem['item_id'] = $itemOption['id'];
-            $this->newItem['unit_price'] = $itemOption['selling_price_per_unit'] ?? 0;
-            $this->newItem['price'] = ($itemOption['selling_price_per_unit'] ?? 0) * ($itemOption['unit_quantity'] ?? 1);
-            $this->selectedItem = $itemOption;
-            $this->availableStock = $itemOption['quantity'];
+        $item = Item::with(['stocks' => function ($query) {
+            $query->where('warehouse_id', $this->form['warehouse_id']);
+        }])->find($itemId);
+        
+        if ($item) {
+            $stock = $item->stocks->first();
+            $this->selectedItem = [
+                'id' => $item->id,
+                'name' => $item->name,
+                'sku' => $item->sku,
+                'unit_quantity' => $item->unit_quantity ?? 1,
+                'item_unit' => $item->item_unit ?? 'piece',
+            ];
+            $this->newItem['item_id'] = $item->id;
+            $this->newItem['unit_price'] = $item->selling_price_per_unit ?? 0;
+            $this->newItem['price'] = ($item->selling_price_per_unit ?? 0) * ($item->unit_quantity ?? 1);
+            $this->availableStock = $stock ? $stock->quantity : 0;
             $this->itemSearch = '';
+            
+            // Show warning if out of stock - don't set selected item fields yet
+            if ($this->availableStock <= 0) {
+                $this->stockWarningType = 'out_of_stock';
+                $this->stockWarningItem = [
+                    'name' => $item->name,
+                    'price' => $this->newItem['price'],
+                    'stock' => $this->availableStock
+                ];
+                // Clear selected item to hide quantity fields
+                $this->selectedItem = null;
+                return;
+            }
         }
     }
 
@@ -406,23 +476,120 @@ class Create extends Component
 
     public function addItem()
     {
-        // Validate item data
-            $this->validate([
-                'newItem.item_id' => 'required|exists:items,id',
-            'newItem.quantity' => 'required|numeric|min:1|max:' . $this->availableStock,
-                'newItem.price' => 'required|numeric|min:0.01',
-            ], [
-                'newItem.item_id.required' => 'Please select an item',
-                'newItem.quantity.required' => 'Please enter quantity',
+        // Basic validation
+        $this->validate([
+            'newItem.item_id' => 'required|exists:items,id',
+            'newItem.quantity' => 'required|numeric|min:1',
+            'newItem.price' => 'required|numeric|min:0.01',
+        ], [
+            'newItem.item_id.required' => 'Please select an item',
+            'newItem.quantity.required' => 'Please enter quantity',
             'newItem.quantity.min' => 'Quantity must be at least 1',
-            'newItem.quantity.max' => 'Quantity exceeds available stock',
-                'newItem.price.required' => 'Please enter price',
-                'newItem.price.min' => 'Price must be greater than zero',
-            ]);
-            
+            'newItem.price.required' => 'Please enter price',
+            'newItem.price.min' => 'Price must be greater than zero',
+        ]);
+        
+        $requestedQty = floatval($this->newItem['quantity']);
+        
+        // Check stock levels and show warnings if needed
+        \Log::info('Checking stock levels', [
+            'available_stock' => $this->availableStock,
+            'requested_qty' => $requestedQty
+        ]);
+        
+        // Check for insufficient stock and show warning
+        if ($requestedQty > $this->availableStock) {
+            $this->stockWarningType = 'insufficient';
+            $item = Item::find($this->newItem['item_id']);
+            $this->stockWarningItem = [
+                'name' => $item->name,
+                'available' => $this->availableStock,
+                'requested' => $requestedQty,
+                'deficit' => $requestedQty - $this->availableStock
+            ];
+            return;
+        }
+        
+        \Log::info('No stock warnings needed, proceeding with add item');
+        
+        $this->processAddItem();
+    }
+    
+    private function showOutOfStockWarning()
+    {
+        $item = Item::find($this->newItem['item_id']);
+        $this->stockWarningType = 'out_of_stock';
+        $this->stockWarningItem = [
+            'name' => $item->name,
+            'price' => $this->newItem['price'],
+            'stock' => $this->availableStock
+        ];
+        $this->showStockWarning = true;
+        
+        \Log::info('Showing out of stock warning', [
+            'item' => $this->stockWarningItem,
+            'available_stock' => $this->availableStock
+        ]);
+        
+        $this->dispatch('showStockWarningModal');
+    }
+    
+    private function showInsufficientStockWarning($requestedQty)
+    {
+        $item = Item::find($this->newItem['item_id']);
+        $this->stockWarningType = 'insufficient';
+        $this->stockWarningItem = [
+            'name' => $item->name,
+            'available' => $this->availableStock,
+            'requested' => $requestedQty,
+            'deficit' => $requestedQty - $this->availableStock
+        ];
+        $this->requestedQuantity = $requestedQty;
+        $this->showStockWarning = true;
+        $this->dispatch('showStockWarningModal');
+    }
+    
+    public function proceedWithWarning()
+    {
+        // Restore selected item to show quantity fields
+        if (!empty($this->newItem['item_id'])) {
+            $item = Item::find($this->newItem['item_id']);
+            if ($item) {
+                $this->selectedItem = [
+                    'id' => $item->id,
+                    'name' => $item->name,
+                    'sku' => $item->sku,
+                    'unit_quantity' => $item->unit_quantity ?? 1,
+                    'item_unit' => $item->item_unit ?? 'piece',
+                ];
+            }
+        }
+        
+        $this->stockWarningType = null;
+        $this->stockWarningItem = null;
+    }
+    
+    public function cancelStockWarning()
+    {
+        $this->stockWarningType = null;
+        $this->stockWarningItem = null;
+        $this->requestedQuantity = 0;
+    }
+    
+    private function processAddItem()
+    {
+        if (empty($this->newItem['item_id'])) {
+            return;
+        }
+        
+        $item = Item::find($this->newItem['item_id']);
+        if (!$item) {
+            return;
+        }
+        
         // Check if item already exists in cart
-        $existingIndex = collect($this->items)->search(function ($item) {
-            return $item['item_id'] == $this->newItem['item_id'];
+        $existingIndex = collect($this->items)->search(function ($cartItem) {
+            return $cartItem['item_id'] == $this->newItem['item_id'];
         });
 
         if ($existingIndex !== false && $this->editingItemIndex === null) {
@@ -430,7 +597,6 @@ class Create extends Component
             return;
         }
 
-        $item = Item::find($this->newItem['item_id']);
         $quantity = floatval($this->newItem['quantity']);
         $price = floatval($this->newItem['price']);
         $subtotal = $quantity * $price;
@@ -448,17 +614,14 @@ class Create extends Component
         ];
 
         if ($this->editingItemIndex !== null) {
-            // Update existing item
             $this->items[$this->editingItemIndex] = $itemData;
             $this->editingItemIndex = null;
             $this->notify('Item updated successfully', 'success');
         } else {
-            // Add new item
             $this->items[] = $itemData;
             $this->notify('Item added successfully', 'success');
         }
 
-        // Update totals and reset form
         $this->updateTotals();
         $this->clearSelectedItem();
         $this->loadItemsForLocation();
@@ -1059,30 +1222,62 @@ class Create extends Component
 
     public function getFilteredItemOptionsProperty()
     {
-        if (empty($this->itemSearch) || !is_array($this->itemOptions)) {
-            return is_array($this->itemOptions) ? $this->itemOptions : [];
-        }
-
-        try {
-            $collection = collect($this->itemOptions);
-            if (method_exists($collection, 'filter') && method_exists($collection, 'values')) {
-                return $collection->filter(function ($item) {
-                    if (!is_array($item) || !isset($item['name'], $item['sku'])) {
-                        return false;
-                    }
-                    $searchTerm = strtolower($this->itemSearch);
-                    return str_contains(strtolower($item['name']), $searchTerm) ||
-                           str_contains(strtolower($item['sku']), $searchTerm);
-                })->values()->all();
-            }
-        } catch (\Exception $e) {
-            \Log::error('Error filtering item options', [
-                'error' => $e->getMessage(),
-                'itemOptions' => is_array($this->itemOptions) ? count($this->itemOptions) : 'not_array'
-            ]);
+        if (empty($this->itemSearch) || strlen($this->itemSearch) < 2) {
+            return [];
         }
         
-        return [];
+        $warehouseId = $this->form['warehouse_id'];
+        if (empty($warehouseId)) {
+            \Log::info('No warehouse selected for search');
+            return [];
+        }
+        
+        $searchTerm = strtolower($this->itemSearch);
+        
+        // Debug: Check if there are any items at all
+        $totalItems = Item::where('is_active', true)->count();
+        $itemsWithSearch = Item::where('is_active', true)
+            ->where(function ($query) use ($searchTerm) {
+                $query->whereRaw('LOWER(name) LIKE ?', ["%{$searchTerm}%"])
+                      ->orWhereRaw('LOWER(sku) LIKE ?', ["%{$searchTerm}%"]);
+            })->count();
+        $stocksInWarehouse = Stock::where('warehouse_id', $warehouseId)->count();
+        
+        \Log::info('Search debug', [
+            'search_term' => $searchTerm,
+            'warehouse_id' => $warehouseId,
+            'total_items' => $totalItems,
+            'items_matching_search' => $itemsWithSearch,
+            'stocks_in_warehouse' => $stocksInWarehouse
+        ]);
+        
+        $results = Item::where('is_active', true)
+            ->where(function ($query) use ($searchTerm) {
+                $query->whereRaw('LOWER(name) LIKE ?', ["%{$searchTerm}%"])
+                      ->orWhereRaw('LOWER(sku) LIKE ?', ["%{$searchTerm}%"]);
+            })
+            ->with(['stocks' => function ($query) use ($warehouseId) {
+                $query->where('warehouse_id', $warehouseId);
+            }])
+            ->limit(8)
+            ->get()
+            ->map(function ($item) {
+                $stock = $item->stocks->first();
+                return [
+                    'id' => $item->id,
+                    'name' => $item->name,
+                    'sku' => $item->sku,
+                    'quantity' => $stock ? $stock->quantity : 0,
+                    'selling_price_per_unit' => $item->selling_price_per_unit ?? 0,
+                    'unit_quantity' => $item->unit_quantity ?? 1,
+                    'item_unit' => $item->item_unit ?? 'piece',
+                ];
+            })
+            ->toArray();
+            
+        \Log::info('Search results', ['count' => count($results), 'results' => $results]);
+        
+        return $results;
     }
 
     public function isFormReady()

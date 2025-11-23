@@ -113,6 +113,12 @@ class Create extends Component
     public $editingItemIndex = null;
     public $itemSearch = '';
 
+    // Stock warning properties
+    public $stockWarningType = null;
+    public $stockWarningItem = null;
+    public $stockWarningQuantity = 0;
+    public $stockWarningAvailable = 0;
+
     public function __construct()
     {
         // Enable query logging to debug database issues
@@ -412,38 +418,17 @@ class Create extends Component
         // Convert values to proper floating point numbers
         $cost = round(floatval($this->newItem['cost']), 2);
         $quantity = floatval($this->newItem['quantity']);
-
-        // Calculate subtotal
-        $subtotal = $cost * $quantity;
-
-            // Add as a new item
-            $this->items[] = [
-                'item_id' => $item->id,
-                'name' => $item->name,
-                'sku' => $item->sku,
-                'unit' => $item->unit ?? '',
-            'unit_quantity' => $item->unit_quantity ?? 1,
-                'quantity' => $quantity,
-                'cost' => $cost,
-                'subtotal' => $subtotal,
-                'notes' => $this->newItem['notes'] ?? null,
-            ];
-
-        // Dispatch event that item was added
-        $this->dispatch('itemAdded', [
-            'itemId' => $item->id,
-            'itemName' => $item->name,
-            'quantity' => $quantity,
-            'cost' => $cost
-        ]);
-
-        // Update totals
-        $this->updateTotals();
         
-        // Reset form for next item (this will show success message)
-        $this->resetItemFields();
-        
-        return true;
+        // Check for stock warnings
+        if ($this->current_stock <= 0) {
+            $this->showStockWarning('out_of_stock', $item, $quantity, $this->current_stock);
+            return false;
+        } elseif ($quantity > $this->current_stock) {
+            $this->showStockWarning('insufficient_stock', $item, $quantity, $this->current_stock);
+            return false;
+        }
+
+        return $this->processAddItem();
     }
 
     public function removeItem($index)
@@ -1864,6 +1849,11 @@ class Create extends Component
             $this->newItem['unit'] = $item['unit'] ?? '';
             $this->current_stock = $this->getItemStock($itemId);
             $this->itemSearch = '';
+            
+            // Check for out of stock warning
+            if ($this->current_stock <= 0) {
+                $this->showStockWarning('out_of_stock', $item, 0, 0);
+            }
         }
     }
 
@@ -2110,5 +2100,97 @@ class Create extends Component
         if ($this->selectedItem && $value > 0) {
             $this->newItem['cost'] = (float)$value;
         }
+    }
+    
+    /**
+     * Show stock warning modal
+     */
+    private function showStockWarning($type, $item, $quantity, $available)
+    {
+        $this->stockWarningType = $type;
+        $this->stockWarningItem = [
+            'id' => $item['id'] ?? $item->id,
+            'name' => $item['name'] ?? $item->name,
+            'sku' => $item['sku'] ?? $item->sku,
+        ];
+        $this->stockWarningQuantity = $quantity;
+        $this->stockWarningAvailable = $available;
+    }
+    
+    /**
+     * Close stock warning modal
+     */
+    public function closeStockWarning()
+    {
+        $this->stockWarningType = null;
+        $this->stockWarningItem = null;
+        $this->stockWarningQuantity = 0;
+        $this->stockWarningAvailable = 0;
+    }
+    
+    /**
+     * Proceed with warning (add item despite stock issues)
+     */
+    public function proceedWithWarning()
+    {
+        // Validate basic requirements before proceeding
+        if (empty($this->newItem['item_id']) || empty($this->newItem['quantity']) || empty($this->newItem['cost'])) {
+            $this->notify('❌ Please fill in all item details', 'error');
+            $this->closeStockWarning();
+            return false;
+        }
+        
+        $this->closeStockWarning();
+        return $this->processAddItem();
+    }
+    
+    /**
+     * Process adding item to cart (extracted from addItem)
+     */
+    private function processAddItem()
+    {
+        $item = Item::find($this->newItem['item_id']);
+        if (!$item) {
+            $this->notify('❌ Item not found in database', 'error');
+            return false;
+        }
+        
+        // Check if item is already in cart
+        $existingIndex = collect($this->items)->search(function ($existingItem) use ($item) {
+            return $existingItem['item_id'] == $item->id;
+        });
+
+        if ($existingIndex !== false) {
+            $this->notify('⚠️ Item already in cart. Use edit to modify quantity or cost.', 'warning');
+            return false;
+        }
+        
+        // Convert values to proper floating point numbers
+        $cost = round(floatval($this->newItem['cost']), 2);
+        $quantity = floatval($this->newItem['quantity']);
+
+        // Calculate subtotal
+        $subtotal = $cost * $quantity;
+
+        // Add as a new item
+        $this->items[] = [
+            'item_id' => $item->id,
+            'name' => $item->name,
+            'sku' => $item->sku,
+            'unit' => $item->unit ?? '',
+            'unit_quantity' => $item->unit_quantity ?? 1,
+            'quantity' => $quantity,
+            'cost' => $cost,
+            'subtotal' => $subtotal,
+            'notes' => $this->newItem['notes'] ?? null,
+        ];
+
+        // Update totals
+        $this->updateTotals();
+        
+        // Reset form for next item (this will show success message)
+        $this->resetItemFields();
+        
+        return true;
     }
 }

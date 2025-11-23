@@ -355,7 +355,7 @@
                     <div class="border rounded p-3">
                         <div class="row g-2 align-items-end">
                             <!-- Item Selection -->
-                            <div class="col-12 col-md-4">
+                            <div class="col-12 {{ $selectedItem ? 'col-md-4' : 'col-md-10' }}">
                                 <label class="form-label fw-medium">
                                     Item <span class="text-primary">*</span>
                                 </label>
@@ -367,14 +367,53 @@
                                         </button>
                                     </div>
                                 @else
-                                    <select wire:change="selectItem($event.target.value)" class="form-select">
-                                        <option value="">Select an item...</option>
-                                        @foreach($this->filteredItemOptions as $item)
-                                            <option value="{{ $item['id'] }}">{{ $item['name'] }}</option>
-                                        @endforeach
-                                    </select>
+                                    <div class="position-relative">
+                                        <input type="text" 
+                                               wire:model.live.debounce.300ms="itemSearch" 
+                                               class="form-control" 
+                                               placeholder="Search items..."
+                                               autocomplete="off">
+                                        @if(strlen($itemSearch) >= 2)
+                                            <div class="dropdown-menu show w-100" style="max-height: 200px; overflow-y: auto;">
+                                                @if(count($this->filteredItemOptions) > 0)
+                                                    @foreach($this->filteredItemOptions as $item)
+                                                        <button type="button" 
+                                                                class="dropdown-item" 
+                                                                wire:click="selectItem({{ $item['id'] }})">
+                                                            <div class="d-flex justify-content-between align-items-center">
+                                                                <div>
+                                                                    <div class="fw-medium">{{ $item['name'] }}</div>
+                                                                    <small class="text-muted">{{ $item['sku'] }}</small>
+                                                                </div>
+                                                                <div class="text-end">
+                                                                    @if($item['quantity'] <= 0)
+                                                                        <span class="badge bg-danger">Out of Stock</span>
+                                                                    @elseif($item['quantity'] <= 5)
+                                                                        <span class="badge bg-warning">Low Stock: {{ $item['quantity'] }}</span>
+                                                                    @else
+                                                                        <span class="badge bg-success">Stock: {{ $item['quantity'] }}</span>
+                                                                    @endif
+                                                                </div>
+                                                            </div>
+                                                        </button>
+                                                    @endforeach
+                                                @else
+                                                    <div class="dropdown-item-text text-muted">
+                                                        <small>No items found for "{{ $itemSearch }}"</small>
+                                                    </div>
+                                                @endif
+                                            </div>
+                                        @elseif(strlen($itemSearch) > 0)
+                                            <div class="dropdown-menu show w-100">
+                                                <div class="dropdown-item-text text-muted">
+                                                    <small>Type at least 2 characters to search...</small>
+                                                </div>
+                                            </div>
+                                        @endif
+                                    </div>
                                 @endif
                             </div>
+                            @if($selectedItem)
                             <!-- Quantity -->
                             <div class="col-6 col-md-2">
                                 <label class="form-label fw-medium">Qty</label>
@@ -385,7 +424,7 @@
                             </div>
                             <!-- Unit Price Input -->
                             <div class="col-6 col-md-2">
-                                <label class="form-label fw-medium">Price/{{ $selectedItem && isset($selectedItem['item_unit']) ? $selectedItem['item_unit'] : 'unit' }}</label>
+                                <label class="form-label fw-medium">Price/{{ $selectedItem['item_unit'] ?? 'unit' }}</label>
                                 <input type="number" wire:model.live="newItem.unit_price" class="form-control" min="0" step="0.01" placeholder="0.00">
                             </div>
                             <!-- Calculated Piece Price -->
@@ -413,7 +452,10 @@
                                     </button>
                                 @endif
                             </div>
+                            @endif
                         </div>
+                        
+
                     </div>
                 </div>
 
@@ -669,48 +711,82 @@
         </div>
     </div>
 
-    <!-- JavaScript for Modal Handling -->
+    @if($stockWarningType)
+    <!-- Stock Warning Modal -->
+    <div class="modal fade show" id="stockWarningModal" tabindex="-1" style="display: block; background: rgba(0,0,0,0.5);" wire:ignore.self>
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                @if($stockWarningType === 'out_of_stock')
+                    <div class="modal-header bg-danger text-white">
+                        <h5 class="modal-title">
+                            <i class="bi bi-exclamation-triangle me-2"></i>Out of Stock Warning
+                        </h5>
+                    </div>
+                    <div class="modal-body">
+                        <p><strong>{{ $stockWarningItem['name'] ?? '' }}</strong> is out of stock.</p>
+                        
+                        <div class="row mb-3">
+                            <div class="col-6">
+                                <strong>Price:</strong> ETB {{ number_format($stockWarningItem['price'] ?? 0, 2) }}
+                            </div>
+                            <div class="col-6">
+                                <strong>Stock:</strong> {{ $stockWarningItem['stock'] ?? 0 }}
+                            </div>
+                        </div>
+                        
+                        <p class="text-warning">
+                            <i class="bi bi-exclamation-triangle me-1"></i>
+                            Adding this item will cause negative inventory. Please restock soon.
+                        </p>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" wire:click="cancelStockWarning">
+                            Cancel
+                        </button>
+                        <button type="button" class="btn btn-warning" wire:click="proceedWithWarning">
+                            Add Anyway
+                        </button>
+                    </div>
+                @else
+                    <div class="modal-header bg-warning text-dark">
+                        <h5 class="modal-title">
+                            <i class="bi bi-exclamation-triangle me-2"></i>Stock Warning
+                        </h5>
+                    </div>
+                    <div class="modal-body">
+                        <div class="alert alert-warning">
+                            <strong>{{ $stockWarningItem['name'] ?? '' }}</strong> has insufficient stock.
+                        </div>
+                        <p>Available: {{ $stockWarningItem['available'] ?? 0 }} | Requested: {{ $stockWarningItem['requested'] ?? 0 }}</p>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" wire:click="cancelStockWarning">
+                            Cancel
+                        </button>
+                        <button type="button" class="btn btn-warning" wire:click="proceedWithWarning">
+                            Proceed
+                        </button>
+                    </div>
+                @endif
+            </div>
+        </div>
+    </div>
+    @endif
+
     <script>
         document.addEventListener('livewire:init', () => {
-            // Handle modal events
             const confirmationModal = document.getElementById('confirmationModal');
             if (confirmationModal) {
                 const modal = new bootstrap.Modal(confirmationModal);
                 
-                // Listen for Livewire events to show modal
                 Livewire.on('showConfirmationModal', () => {
                     modal.show();
                 });
                 
-                // Listen for Livewire events to close modal
                 Livewire.on('closeSaleModal', () => {
                     modal.hide();
                 });
-                
-                // Listen for successful sale to close modal and redirect
-                Livewire.on('saleCompleted', () => {
-                    modal.hide();
-                });
             }
-            
-            // Handle scroll to first error
-            Livewire.on('scrollToFirstError', () => {
-                setTimeout(() => {
-                    const firstError = document.querySelector('.is-invalid');
-                    if (firstError) {
-                        firstError.scrollIntoView({ 
-                            behavior: 'smooth', 
-                            block: 'center' 
-                        });
-                        firstError.focus();
-                    }
-                }, 100);
-            });
-
-            // Handle validation errors in modal
-            Livewire.on('validationError', (errors) => {
-                console.log('Validation errors:', errors);
-            });
         });
     </script>
 </div>
