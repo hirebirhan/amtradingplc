@@ -69,13 +69,11 @@
                     <div class="col-md-6">
                         <label for="reference_no" class="form-label fw-medium">Reference Number</label>
                         <input type="text" 
-                               class="form-control @error('form.reference_no') is-invalid @enderror" 
+                               class="form-control" 
                                id="reference_no" 
                                wire:model="form.reference_no"
-                               placeholder="SUP-001">
-                        @error('form.reference_no')
-                            <div class="invalid-feedback">{{ $message }}</div>
-                        @enderror
+                               readonly>
+                        <small class="text-muted">Auto-generated reference number</small>
                     </div>
 
                     <!-- Address -->

@@ -15,7 +15,20 @@ class Create extends Component
         'name' => '',
         'phone' => '',
         'address' => '',
+        'reference_no' => '',
+        'email' => '',
+        'notes' => '',
     ];
+
+    public function mount()
+    {
+        $this->form['reference_no'] = $this->generateUniqueReferenceNumber();
+    }
+
+    private function generateUniqueReferenceNumber()
+    {
+        return 'SUP-' . date('Ymd') . '-' . str_pad(rand(1, 99999), 5, '0', STR_PAD_LEFT);
+    }
 
     protected $rules = [
         'form.name' => 'required|string|max:255|regex:/^[^0-9]+$/',
@@ -45,6 +58,9 @@ class Create extends Component
             'name' => $this->form['name'],
             'phone' => $this->form['phone'],
             'address' => $this->form['address'],
+            'reference_no' => $this->form['reference_no'],
+            'email' => $this->form['email'],
+            'notes' => $this->form['notes'],
             'is_active' => true,
         ]);
 

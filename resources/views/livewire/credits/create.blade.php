@@ -29,7 +29,8 @@
                     <div class="col-12 col-md-6 mb-2">
                         <div class="form-group">
                             <label for="reference_no" class="form-label fw-medium small">Reference Number</label>
-                            <input type="text" wire:model="form.reference_no" id="reference_no" class="form-control form-control-sm" required>
+                            <input type="text" wire:model="form.reference_no" id="reference_no" class="form-control form-control-sm" readonly>
+                            <small class="text-muted">Auto-generated reference number</small>
                             @error('form.reference_no') <div class="text-danger small mt-1">{{ $message }}</div> @enderror
                         </div>
                     </div>
