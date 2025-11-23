@@ -26,7 +26,8 @@ class Create extends Component
         'supplierSelected',
         'itemSelected',
         'setItemAndCost' => 'handleSetItemAndCost',
-        'setSupplierManually' => 'setSupplierManually'
+        'setSupplierManually' => 'setSupplierManually',
+        'itemCreated' => 'handleItemCreated'
     ];
 
     // Properties to store calculated totals
@@ -1820,15 +1821,46 @@ class Create extends Component
     }
 
     /**
+     * Handle item created from modal
+     */
+    public function handleItemCreated($itemData)
+    {
+        // Reload items to include the new item
+        $this->loadItems();
+        
+        // Auto-select the newly created item
+        $this->newItem['item_id'] = $itemData['id'];
+        $this->newItem['unit_cost'] = $itemData['cost_price_per_unit'];
+        $this->newItem['cost'] = $itemData['cost_price_per_unit'] * $itemData['unit_quantity'];
+        
+        $this->selectedItem = [
+            'id' => $itemData['id'],
+            'name' => $itemData['name'],
+            'sku' => $itemData['sku'],
+            'unit_quantity' => $itemData['unit_quantity'],
+            'item_unit' => $itemData['item_unit'],
+        ];
+        
+        $this->notify('✅ Item created and selected successfully!', 'success');
+    }
+
+    /**
      * Select an item for adding to the cart
      */
     public function selectItem($itemId)
     {
         $item = collect($this->itemOptions)->firstWhere('id', $itemId);
         if ($item) {
-            $this->selectedItem = $item;
+            $this->selectedItem = [
+                'id' => $item['id'],
+                'name' => $item['name'],
+                'sku' => $item['sku'],
+                'unit_quantity' => $item['unit_quantity'],
+                'item_unit' => $item['item_unit'],
+            ];
             $this->newItem['item_id'] = $itemId;
-            $this->newItem['cost'] = $item['cost'] ?? 0;
+            $this->newItem['unit_cost'] = $item['cost_price_per_unit'] ?? 0;
+            $this->newItem['cost'] = ($item['cost_price_per_unit'] ?? 0) * ($item['unit_quantity'] ?? 1);
             $this->newItem['unit'] = $item['unit'] ?? '';
             $this->current_stock = $this->getItemStock($itemId);
             $this->itemSearch = '';
@@ -1840,26 +1872,23 @@ class Create extends Component
      */
     public function getFilteredItemOptionsProperty()
     {
+        if (empty($this->itemSearch)) {
+            return [];
+        }
+        
         // Get items already in cart
         $addedItemIds = collect($this->items)->pluck('item_id')->toArray();
         
-        // Filter out added items from available options
-        $availableItems = collect($this->itemOptions)
+        $search = strtolower($this->itemSearch);
+        return collect($this->itemOptions)
             ->reject(function ($item) use ($addedItemIds) {
                 return in_array($item['id'], $addedItemIds);
-            });
-
-        if (empty($this->itemSearch)) {
-            return $availableItems->take(10)->toArray();
-        }
-        
-        $search = strtolower($this->itemSearch);
-        return $availableItems
+            })
             ->filter(function ($item) use ($search) {
                 return str_contains(strtolower($item['name']), $search) ||
                        str_contains(strtolower($item['sku'] ?? ''), $search);
             })
-            ->take(10)
+            ->take(8)
             ->toArray();
     }
 
