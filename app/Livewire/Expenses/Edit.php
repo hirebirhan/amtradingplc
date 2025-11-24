@@ -52,7 +52,7 @@ class Edit extends Component
     public function update()
     {
         $this->validate([
-            'form.reference_no' => 'required|string|unique:expenses,reference_no,' . $this->expense->id,
+            'form.reference_no' => 'required|string',
             'form.expense_type_id' => 'required|exists:expense_types,id',
             'form.amount' => 'required|numeric|min:0',
             'form.payment_method' => 'required|in:cash,bank_transfer,check,credit_card',
@@ -63,7 +63,11 @@ class Edit extends Component
             'form.recurring_end_date' => 'required_if:form.is_recurring,true|date|after:form.expense_date',
         ]);
 
-        $this->expense->update($this->form);
+        // Remove reference_no from update data since it should not be changed
+        $updateData = $this->form;
+        unset($updateData['reference_no']);
+        
+        $this->expense->update($updateData);
 
         session()->flash('success', 'Expense updated successfully.');
         return redirect()->route('admin.expenses.show', $this->expense);

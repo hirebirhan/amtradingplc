@@ -14,7 +14,7 @@ class Supplier extends Model
     use HasFactory, SoftDeletes;
 
     protected $fillable = [
-'name',
+        'name',
         'email',
         'phone',
         'address',
@@ -23,6 +23,7 @@ class Supplier extends Model
         'postal_code',
         'country',
         'tax_number',
+        'reference_no',
         'branch_id',
         'is_active',
         'notes',
@@ -34,6 +35,22 @@ class Supplier extends Model
     protected $casts = [
         'is_active' => 'boolean',
     ];
+
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::creating(function ($supplier) {
+            if (empty($supplier->reference_no)) {
+                $supplier->reference_no = self::generateUniqueReferenceNumber();
+            }
+        });
+    }
+
+    private static function generateUniqueReferenceNumber()
+    {
+        return 'SUP-' . date('Ymd') . '-' . str_pad(rand(1, 99999), 5, '0', STR_PAD_LEFT);
+    }
 
     /**
      * Get the branch that the supplier belongs to.

@@ -27,7 +27,20 @@ class Create extends Component
     {
         $this->form['credit_date'] = now()->format('Y-m-d');
         $this->form['due_date'] = now()->addDays(30)->format('Y-m-d');
-        $this->form['reference_no'] = 'CR-' . Str::random(8);
+        $this->form['reference_no'] = $this->generateUniqueReferenceNumber();
+    }
+
+    /**
+     * Generate a unique reference number for credits
+     */
+    private function generateUniqueReferenceNumber()
+    {
+        do {
+            $referenceNo = 'CR-' . now()->format('Ymd') . '-' . strtoupper(Str::random(6));
+            $exists = Credit::where('reference_no', $referenceNo)->exists();
+        } while ($exists);
+        
+        return $referenceNo;
     }
 
     public function getCustomersProperty()
@@ -44,7 +57,7 @@ class Create extends Component
     {
         $this->validate([
             'form.credit_type' => 'required|in:receivable,payable',
-            'form.reference_no' => 'required|string|unique:credits,reference_no',
+            'form.reference_no' => 'required|string',
             'form.party_id' => 'required|integer',
             'form.amount' => 'required|numeric|min:0',
             'form.credit_date' => 'required|date',
