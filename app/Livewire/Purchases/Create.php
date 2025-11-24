@@ -113,11 +113,7 @@ class Create extends Component
     public $editingItemIndex = null;
     public $itemSearch = '';
 
-    // Stock warning properties
-    public $stockWarningType = null;
-    public $stockWarningItem = null;
-    public $stockWarningQuantity = 0;
-    public $stockWarningAvailable = 0;
+
 
     public function __construct()
     {
@@ -419,15 +415,6 @@ class Create extends Component
         $cost = round(floatval($this->newItem['cost']), 2);
         $quantity = floatval($this->newItem['quantity']);
         
-        // Check for stock warnings
-        if ($this->current_stock <= 0) {
-            $this->showStockWarning('out_of_stock', $item, $quantity, $this->current_stock);
-            return false;
-        } elseif ($quantity > $this->current_stock) {
-            $this->showStockWarning('insufficient_stock', $item, $quantity, $this->current_stock);
-            return false;
-        }
-
         return $this->processAddItem();
     }
 
@@ -1849,11 +1836,6 @@ class Create extends Component
             $this->newItem['unit'] = $item['unit'] ?? '';
             $this->current_stock = $this->getItemStock($itemId);
             $this->itemSearch = '';
-            
-            // Check for out of stock warning
-            if ($this->current_stock <= 0) {
-                $this->showStockWarning('out_of_stock', $item, 0, 0);
-            }
         }
     }
 
@@ -1870,16 +1852,33 @@ class Create extends Component
         $addedItemIds = collect($this->items)->pluck('item_id')->toArray();
         
         $search = strtolower($this->itemSearch);
-        return collect($this->itemOptions)
-            ->reject(function ($item) use ($addedItemIds) {
-                return in_array($item['id'], $addedItemIds);
+        
+        // Get items from database with fresh stock calculation
+        $items = Item::where('is_active', true)
+            ->whereNotIn('id', $addedItemIds)
+            ->where(function ($query) use ($search) {
+                $query->where('name', 'like', '%' . $search . '%')
+                      ->orWhere('sku', 'like', '%' . $search . '%');
             })
-            ->filter(function ($item) use ($search) {
-                return str_contains(strtolower($item['name']), $search) ||
-                       str_contains(strtolower($item['sku'] ?? ''), $search);
-            })
+            ->orderBy('name')
             ->take(8)
+            ->get()
+            ->map(function ($item) {
+                return [
+                    'id' => $item->id,
+                    'name' => $item->name,
+                    'sku' => $item->sku,
+                    'cost_price' => $item->cost_price ?? 0,
+                    'cost_price_per_unit' => $item->cost_price_per_unit ?? 0,
+                    'unit' => $item->unit ?? '',
+                    'unit_quantity' => $item->unit_quantity ?? 1,
+                    'item_unit' => $item->item_unit ?? 'piece',
+                    'current_stock' => $this->getItemStock($item->id),
+                ];
+            })
             ->toArray();
+            
+        return $items;
     }
 
     /**
@@ -2102,47 +2101,7 @@ class Create extends Component
         }
     }
     
-    /**
-     * Show stock warning modal
-     */
-    private function showStockWarning($type, $item, $quantity, $available)
-    {
-        $this->stockWarningType = $type;
-        $this->stockWarningItem = [
-            'id' => $item['id'] ?? $item->id,
-            'name' => $item['name'] ?? $item->name,
-            'sku' => $item['sku'] ?? $item->sku,
-        ];
-        $this->stockWarningQuantity = $quantity;
-        $this->stockWarningAvailable = $available;
-    }
-    
-    /**
-     * Close stock warning modal
-     */
-    public function closeStockWarning()
-    {
-        $this->stockWarningType = null;
-        $this->stockWarningItem = null;
-        $this->stockWarningQuantity = 0;
-        $this->stockWarningAvailable = 0;
-    }
-    
-    /**
-     * Proceed with warning (add item despite stock issues)
-     */
-    public function proceedWithWarning()
-    {
-        // Validate basic requirements before proceeding
-        if (empty($this->newItem['item_id']) || empty($this->newItem['quantity']) || empty($this->newItem['cost'])) {
-            $this->notify('❌ Please fill in all item details', 'error');
-            $this->closeStockWarning();
-            return false;
-        }
-        
-        $this->closeStockWarning();
-        return $this->processAddItem();
-    }
+
     
     /**
      * Process adding item to cart (extracted from addItem)

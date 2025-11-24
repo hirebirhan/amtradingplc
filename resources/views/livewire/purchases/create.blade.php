@@ -333,11 +333,6 @@
                                 <div class="d-flex justify-content-between align-items-center mb-1">
                                     <label class="form-label fw-medium mb-0">
                                         Item <span class="text-primary">*</span>
-                                        @if($current_stock > 0)
-                                            <small class="text-info">
-                                                <i class="bi bi-info-circle me-1"></i>Current stock: {{ $current_stock }}
-                                            </small>
-                                        @endif
                                     </label>
                                     <button type="button" 
                                             class="btn btn-primary btn-sm" 
@@ -367,8 +362,21 @@
                                                     <button type="button" 
                                                             class="dropdown-item" 
                                                             wire:click="selectItem({{ $item['id'] }})">
-                                                        <div class="fw-medium">{{ $item['name'] }}</div>
-                                                        <small class="text-muted">{{ $item['sku'] }}</small>
+                                                        <div class="d-flex justify-content-between align-items-center">
+                                                            <div>
+                                                                <div class="fw-medium">{{ $item['name'] }}</div>
+                                                                <small class="text-muted">{{ $item['sku'] }}</small>
+                                                            </div>
+                                                            <div class="text-end">
+                                                                @if($item['current_stock'] <= 0)
+                                                                    <span class="badge bg-danger">Out of Stock</span>
+                                                                @elseif($item['current_stock'] <= 5)
+                                                                    <span class="badge bg-warning">Low Stock: {{ $item['current_stock'] }}</span>
+                                                                @else
+                                                                    <span class="badge bg-success">Stock: {{ $item['current_stock'] }}</span>
+                                                                @endif
+                                                            </div>
+                                                        </div>
                                                     </button>
                                                 @endforeach
                                             </div>
@@ -718,64 +726,7 @@
         });
     </script>
 
-    <!-- Stock Warning Modals -->
-    @if($stockWarningType === 'out_of_stock')
-        <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1050; display: flex; align-items: center; justify-content: center;">
-            <div class="modal-dialog">
-                <div class="modal-content">
-                    <div class="modal-header bg-warning text-dark">
-                        <h5 class="modal-title">
-                            <i class="bi bi-exclamation-triangle me-2"></i>Out of Stock
-                        </h5>
-                        <button type="button" class="btn-close" wire:click="closeStockWarning"></button>
-                    </div>
-                    <div class="modal-body">
-                        <div class="alert alert-warning">
-                            <strong>{{ $stockWarningItem['name'] ?? 'Item' }}</strong> is currently out of stock.
-                        </div>
-                        <p class="mb-0">This item has no available stock in the selected branch. You can still add it to create a purchase order.</p>
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" wire:click="closeStockWarning">Cancel</button>
-                        <button type="button" class="btn btn-warning" wire:click="proceedWithWarning">Proceed Anyway</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    @endif
 
-    @if($stockWarningType === 'insufficient_stock')
-        <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1050; display: flex; align-items: center; justify-content: center;">
-            <div class="modal-dialog">
-                <div class="modal-content">
-                    <div class="modal-header bg-danger text-white">
-                        <h5 class="modal-title">
-                            <i class="bi bi-exclamation-triangle me-2"></i>Insufficient Stock
-                        </h5>
-                        <button type="button" class="btn-close btn-close-white" wire:click="closeStockWarning"></button>
-                    </div>
-                    <div class="modal-body">
-                        <div class="alert alert-danger">
-                            <strong>{{ $stockWarningItem['name'] ?? 'Item' }}</strong> has insufficient stock.
-                        </div>
-                        <div class="row">
-                            <div class="col-6">
-                                <strong>Available:</strong> {{ $stockWarningAvailable }}
-                            </div>
-                            <div class="col-6">
-                                <strong>Requested:</strong> {{ $stockWarningQuantity }}
-                            </div>
-                        </div>
-                        <p class="mt-2 mb-0">You can still proceed to create the purchase order with this quantity.</p>
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" wire:click="closeStockWarning">Cancel</button>
-                        <button type="button" class="btn btn-danger" wire:click="proceedWithWarning">Proceed</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    @endif
 
     <!-- Create Item Modal -->
     <livewire:purchases.create-item-modal />
