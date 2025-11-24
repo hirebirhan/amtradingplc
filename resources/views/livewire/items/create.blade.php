@@ -14,9 +14,9 @@
                         </button>
                     </div>
                 </div>
-                <a href="{{ route('admin.items.index') }}" class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1">
+                <a href="{{ $fromPurchase ? route('admin.purchases.create') : route('admin.items.index') }}" class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1">
                     <i class="bi bi-arrow-left"></i>
-                    <span class="d-none d-sm-inline">Back to Items</span>
+                    <span class="d-none d-sm-inline">{{ $fromPurchase ? 'Back to Purchase' : 'Back to Items' }}</span>
                 </a>
             </div>
         </div>
@@ -119,19 +119,7 @@
                         @enderror
                     </div>
 
-                    <!-- Reorder Level -->
-                    <div class="col-12 col-md-4">
-                        <label for="reorder_level" class="form-label fw-medium">Reorder Level</label>
-                        <input type="number" 
-                               class="form-control @error('form.reorder_level') is-invalid @enderror" 
-                               id="reorder_level" 
-                               wire:model="form.reorder_level"
-                               placeholder="Min stock level"
-                               min="0">
-                        @error('form.reorder_level')
-                            <div class="invalid-feedback">{{ $message }}</div>
-                        @enderror
-                    </div>
+
 
                     <!-- Description -->
                     <div class="col-12">
@@ -147,125 +135,7 @@
                     </div>
                 </div>
 
-                                <!-- Pricing Section -->
-                <div class="row g-3 mt-4">
-                    <div class="col-12">
-                        <h6 class="fw-medium mb-3 text-secondary">Pricing</h6>
-                    </div>
 
-                    <!-- Cost Price per Unit -->
-                    <div class="col-12 col-md-6">
-                        <label for="cost_price_per_unit" class="form-label fw-medium">Cost Price per {{ $form['item_unit'] ?: 'item' }} <span class="text-primary">*</span></label>
-                        <div class="input-group">
-                            <span class="input-group-text">ETB</span>
-                            <input type="number" 
-                                   step="0.01" 
-                                   min="0"
-                                   max="999999.99"
-                                   class="form-control @error('form.cost_price_per_unit') is-invalid @enderror" 
-                                   id="cost_price_per_unit" 
-                                   wire:model.live.debounce.500ms="form.cost_price_per_unit"
-                                   placeholder="0.00">
-                        </div>
-                        @error('form.cost_price_per_unit')
-                            <div class="invalid-feedback">{{ $message }}</div>
-                        @enderror
-                    </div>
-
-                    <!-- Selling Price per Unit -->
-                    <div class="col-12 col-md-6">
-                        <label for="selling_price_per_unit" class="form-label fw-medium">Selling Price per {{ $form['item_unit'] ?: 'item' }} <span class="text-primary">*</span></label>
-                        <div class="input-group">
-                            <span class="input-group-text">ETB</span>
-                            <input type="number" 
-                                   step="0.01" 
-                                   min="0"
-                                   max="999999.99"
-                                   class="form-control @error('form.selling_price_per_unit') is-invalid @enderror" 
-                                   id="selling_price_per_unit" 
-                                   wire:model.live.debounce.500ms="form.selling_price_per_unit"
-                                   placeholder="0.00">
-                        </div>
-                        @error('form.selling_price_per_unit')
-                            <div class="invalid-feedback">{{ $message }}</div>
-                        @enderror
-                    </div>
-
-                    <!-- Total Cost Price (Calculated) -->
-                    <div class="col-12 col-md-6">
-                        <label class="form-label fw-medium text-muted">Total Cost per Piece</label>
-                        <div class="input-group">
-                            <span class="input-group-text">ETB</span>
-                            <input type="text" 
-                                   class="form-control" 
-                                   value="{{ number_format(((float)($form['cost_price_per_unit'] ?? 0)) * ((int)($form['unit_quantity'] ?? 1)), 2) }}"
-                                   readonly>
-                        </div>
-                    </div>
-
-                    <!-- Total Selling Price (Calculated) -->
-                    <div class="col-12 col-md-6">
-                        <label class="form-label fw-medium text-muted">Total Selling per Piece</label>
-                        <div class="input-group">
-                            <span class="input-group-text">ETB</span>
-                            <input type="text" 
-                                   class="form-control" 
-                                   value="{{ number_format(((float)($form['selling_price_per_unit'] ?? 0)) * ((int)($form['unit_quantity'] ?? 1)), 2) }}"
-                                   readonly>
-                        </div>
-                    </div>
-
-                    <!-- Profit Summary -->
-                    @if(!empty($form['cost_price_per_unit']) && !empty($form['selling_price_per_unit']))
-                        <div class="col-12">
-                            <div class="rounded p-3">
-                                @php
-                                    $costPricePerUnit = (float)($form['cost_price_per_unit'] ?? 0);
-                                    $sellingPricePerUnit = (float)($form['selling_price_per_unit'] ?? 0);
-                                    $profitPerUnit = $sellingPricePerUnit - $costPricePerUnit;
-                                    $profitMargin = $costPricePerUnit > 0 ? ($profitPerUnit / $costPricePerUnit) * 100 : 0;
-                                    $totalProfit = $profitPerUnit * ((int)($form['unit_quantity'] ?? 1));
-                                @endphp
-                                
-                                <div class="row g-3">
-                                    <div class="col-md-4">
-                                        <div class="text-center">
-                                            <div class="small text-muted">Profit per {{ $form['item_unit'] ?: 'item' }}</div>
-                                            <div class="fw-semibold {{ $profitPerUnit >= 0 ? 'text-success' : 'text-danger' }}">
-                                                ETB {{ number_format($profitPerUnit, 2) }}
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="col-md-4">
-                                        <div class="text-center">
-                                            <div class="small text-muted">Margin</div>
-                                            <div class="fw-semibold {{ $profitMargin >= 0 ? 'text-success' : 'text-danger' }}">
-                                                {{ number_format($profitMargin, 1) }}%
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="col-md-4">
-                                        <div class="text-center">
-                                            <div class="small text-muted">Profit per Piece</div>
-                                            <div class="fw-semibold {{ $totalProfit >= 0 ? 'text-success' : 'text-danger' }}">
-                                                ETB {{ number_format($totalProfit, 2) }}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                @if($profitPerUnit < 0)
-                                    <div class="alert alert-warning mt-3 mb-0 py-2 small">
-                                        <i class="bi bi-exclamation-triangle me-1"></i>
-                                        Selling price is below cost price
-                                    </div>
-                                @endif
-                            </div>
-                        </div>
-                    @endif
-
-
-                </div>
             </form>
         </div>
 
@@ -276,7 +146,7 @@
                     Fields marked with <span class="text-primary">*</span> are required
                 </small>
                 <div class="d-flex gap-2">
-                    <a href="{{ route('admin.items.index') }}" class="btn btn-outline-secondary">
+                    <a href="{{ $fromPurchase ? route('admin.purchases.create') : route('admin.items.index') }}" class="btn btn-outline-secondary">
                         <i class="bi bi-x-lg me-1"></i>Cancel
                     </a>
                     <button type="submit" 
