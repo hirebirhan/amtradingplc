@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Services\Dashboard;
 
 use App\Models\User;
@@ -9,6 +11,7 @@ use App\Models\Customer;
 use App\Models\Category;
 use App\Models\Item;
 use App\Models\Warehouse;
+use App\Enums\UserRole;
 use App\Services\Dashboard\Contracts\StatsServiceInterface;
 use Illuminate\Support\Facades\DB;
 
@@ -41,7 +44,7 @@ class StatsService implements StatsServiceInterface
                 AND YEAR(sale_date) = YEAR(CURRENT_DATE()) THEN total_amount ELSE 0 END) as monthly_revenue
         ')->first();
 
-        $canViewRevenue = !$user->hasRole('Sales');
+        $canViewRevenue = !$user->hasRole(UserRole::SALES->value);
 
         return [
             'total_sales' => $salesData->total_sales ?? 0,
@@ -96,13 +99,13 @@ class StatsService implements StatsServiceInterface
             return Warehouse::count();
         }
 
-        if ($user->hasRole('BranchManager') && $user->branch_id) {
+        if ($user->hasRole(UserRole::BRANCH_MANAGER->value) && $user->branch_id) {
             return Warehouse::whereHas('branches', function($query) use ($user) {
                 $query->where('branches.id', $user->branch_id);
             })->count();
         }
 
-        if ($user->hasRole('WarehouseUser') && $user->warehouse_id) {
+        if ($user->hasRole(UserRole::WAREHOUSE_USER->value) && $user->warehouse_id) {
             return 1; // User can only see their assigned warehouse
         }
 
@@ -117,16 +120,16 @@ class StatsService implements StatsServiceInterface
             return $customersQuery->count();
         }
 
-        if ($user->hasRole('BranchManager') && $user->branch_id) {
+        if ($user->hasRole(UserRole::BRANCH_MANAGER->value) && $user->branch_id) {
             $customersQuery->where('branch_id', $user->branch_id);
-        } elseif ($user->hasRole('WarehouseUser') && $user->warehouse_id) {
+        } elseif ($user->hasRole(UserRole::WAREHOUSE_USER->value) && $user->warehouse_id) {
             $customersQuery->whereExists(function($query) use ($user) {
                 $query->select(DB::raw(1))
                       ->from('sales')
                       ->where('warehouse_id', $user->warehouse_id)
                       ->whereColumn('sales.customer_id', 'customers.id');
             });
-        } elseif ($user->hasRole('Sales')) {
+        } elseif ($user->hasRole(UserRole::SALES->value)) {
             $customersQuery->whereExists(function($query) use ($user) {
                 $query->select(DB::raw(1))
                       ->from('sales')
@@ -146,7 +149,7 @@ class StatsService implements StatsServiceInterface
             return; // No filtering for admins
         }
 
-        if ($user->hasRole('BranchManager') && $user->branch_id) {
+        if ($user->hasRole(UserRole::BRANCH_MANAGER->value) && $user->branch_id) {
             $query->whereExists(function($q) use ($user) {
                 $q->select(DB::raw(1))
                   ->from('warehouses')
@@ -154,9 +157,9 @@ class StatsService implements StatsServiceInterface
                   ->where('branch_warehouse.branch_id', $user->branch_id)
                   ->whereColumn('warehouses.id', 'sales.warehouse_id');
             });
-        } elseif ($user->hasRole('WarehouseUser') && $user->warehouse_id) {
+        } elseif ($user->hasRole(UserRole::WAREHOUSE_USER->value) && $user->warehouse_id) {
             $query->where('warehouse_id', $user->warehouse_id);
-        } elseif ($user->hasRole('Sales')) {
+        } elseif ($user->hasRole(UserRole::SALES->value)) {
             $query->where('user_id', $user->id);
         } else {
             $query->whereRaw('1 = 0'); // No access
@@ -169,7 +172,7 @@ class StatsService implements StatsServiceInterface
             return; // No filtering for admins
         }
 
-        if ($user->hasRole('BranchManager') && $user->branch_id) {
+        if ($user->hasRole(UserRole::BRANCH_MANAGER->value) && $user->branch_id) {
             $query->whereExists(function($q) use ($user) {
                 $q->select(DB::raw(1))
                   ->from('warehouses')
@@ -177,9 +180,9 @@ class StatsService implements StatsServiceInterface
                   ->where('branch_warehouse.branch_id', $user->branch_id)
                   ->whereColumn('warehouses.id', 'purchases.warehouse_id');
             });
-        } elseif ($user->hasRole('WarehouseUser') && $user->warehouse_id) {
+        } elseif ($user->hasRole(UserRole::WAREHOUSE_USER->value) && $user->warehouse_id) {
             $query->where('warehouse_id', $user->warehouse_id);
-        } elseif ($user->hasRole('Sales') && $user->branch_id) {
+        } elseif ($user->hasRole(UserRole::SALES->value) && $user->branch_id) {
             // Sales users can see purchases from their assigned branch
             $query->where(function($q) use ($user) {
                 $q->where('branch_id', $user->branch_id)
@@ -195,4 +198,4 @@ class StatsService implements StatsServiceInterface
             $query->whereRaw('1 = 0'); // No access for users without proper assignments
         }
     }
-} 
+}

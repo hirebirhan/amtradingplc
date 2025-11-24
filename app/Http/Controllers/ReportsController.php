@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
@@ -12,6 +14,7 @@ use App\Models\Warehouse;
 use App\Models\Credit;
 use App\Models\Expense;
 use App\Models\User;
+use App\Enums\UserRole;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -441,7 +444,7 @@ class ReportsController extends Controller
         $userFilter = $this->getUserScopeFilter();
         
         // Check if user has appropriate permissions for financial data
-        if (!auth()->user()->can('reports.view') || (!auth()->user()->can('purchases.view') && !auth()->user()->hasRole(['SuperAdmin', 'Manager', 'BranchManager']))) {
+        if (!auth()->user()->can('reports.view') || (!auth()->user()->can('purchases.view') && !auth()->user()->hasRole([UserRole::SUPER_ADMIN->value, UserRole::MANAGER->value, UserRole::BRANCH_MANAGER->value]))) {
             abort(403, 'Access denied. You do not have permission to view complete financial reports.');
         }
         
@@ -630,7 +633,7 @@ class ReportsController extends Controller
     /**
      * Get user scope filter based on role and assignments
      */
-    private function getUserScopeFilter()
+    private function getUserScopeFilter(): array
     {
         $user = auth()->user();
         
@@ -645,9 +648,9 @@ class ReportsController extends Controller
     /**
      * Get warehouse IDs user can access
      */
-    private function getUserWarehouseIds($user)
+    private function getUserWarehouseIds(User $user): array
     {
-        if ($user->hasRole(['SystemAdmin', 'Manager'])) {
+        if ($user->hasRole([UserRole::SYSTEM_ADMIN->value, UserRole::MANAGER->value])) {
             return Warehouse::pluck('id')->toArray();
         }
         
@@ -655,7 +658,7 @@ class ReportsController extends Controller
             return [$user->warehouse_id];
         }
         
-        if ($user->branch_id && $user->hasRole('BranchManager')) {
+        if ($user->branch_id && $user->hasRole(UserRole::BRANCH_MANAGER->value)) {
             // Branch managers access warehouses through their branch
             return Warehouse::whereHas('branches', function($query) use ($user) {
                 $query->where('branches.id', $user->branch_id);
@@ -668,9 +671,9 @@ class ReportsController extends Controller
     /**
      * Get branch IDs user can access
      */
-    private function getUserBranchIds($user)
+    private function getUserBranchIds(User $user): array
     {
-        if ($user->hasRole(['SystemAdmin', 'Manager'])) {
+        if ($user->hasRole([UserRole::SYSTEM_ADMIN->value, UserRole::MANAGER->value])) {
             return DB::table('branches')->pluck('id')->toArray();
         }
         
@@ -684,17 +687,17 @@ class ReportsController extends Controller
     /**
      * Check if user can view revenue data
      */
-    private function canViewRevenue($user)
+    private function canViewRevenue(User $user): bool
     {
-        return !$user->hasRole('Sales');
+        return !$user->hasRole(UserRole::SALES->value);
     }
 
     /**
      * Get user's scope type
      */
-    private function getScopeType($user)
+    private function getScopeType(User $user): string
     {
-        if ($user->hasRole(['SystemAdmin', 'Manager'])) {
+        if ($user->hasRole([UserRole::SYSTEM_ADMIN->value, UserRole::MANAGER->value])) {
             return 'all';
         }
         
@@ -708,26 +711,4 @@ class ReportsController extends Controller
         
         return 'none';
     }
-
-    /**
-     * Apply warehouse scope to query
-     */
-    private function applyWarehouseScope($query, $warehouseIds, $warehouseField = 'warehouse_id')
-    {
-        if (!empty($warehouseIds)) {
-            $query->whereIn($warehouseField, $warehouseIds);
-        }
-        return $query;
-    }
-
-    /**
-     * Apply branch scope to query
-     */
-    private function applyBranchScope($query, $branchIds, $branchField = 'branch_id')
-    {
-        if (!empty($branchIds)) {
-            $query->whereIn($branchField, $branchIds);
-        }
-        return $query;
-    }
-} 
+}

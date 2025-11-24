@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Providers;
 
 use App\Models\Branch;
@@ -7,6 +9,7 @@ use App\Models\Customer;
 use App\Models\Item;
 use App\Models\Purchase;
 use App\Models\User;
+use App\Enums\UserRole;
 use App\Policies\BranchPolicy;
 use App\Policies\CustomerPolicy;
 use App\Policies\ItemPolicy;
@@ -38,9 +41,9 @@ class AuthServiceProvider extends ServiceProvider
         // Register policies
         $this->registerPolicies();
 
-        // Implicitly grant "SuperAdmin" and "GeneralManager" roles all permissions
-        Gate::before(function ($user, $ability) {
-            return $user->isSuperAdmin() ? true : null;
+        // Implicitly grant SuperAdmin and GeneralManager roles all permissions
+        Gate::before(function (User $user, string $ability) {
+            return $user->isSuperAdmin() || $user->isGeneralManager() ? true : null;
         });
     }
 }
