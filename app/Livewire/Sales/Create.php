@@ -114,11 +114,14 @@ class Create extends Component
         }
 
         // Enforce that selected warehouse is accessible by the user
-        $rules['form.warehouse_id'][] = function ($attribute, $value, $fail) {
-            if (!empty($value) && !\App\Facades\UserHelperFacade::hasAccessToWarehouse((int) $value)) {
-                $fail('You do not have permission to access this warehouse.');
+        $rules['form.warehouse_id'] = [
+            $rules['form.warehouse_id'] ?? 'nullable',
+            function ($attribute, $value, $fail) {
+                if (!empty($value) && !\App\Facades\UserHelperFacade::hasAccessToWarehouse((int) $value)) {
+                    $fail('You do not have permission to access this warehouse.');
+                }
             }
-        };
+        ];
 
         // Payment method specific validations
         if ($this->form['payment_method'] === PaymentMethod::TELEBIRR->value) {
