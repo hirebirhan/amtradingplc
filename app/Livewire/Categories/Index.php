@@ -25,11 +25,21 @@ class Index extends Component
 
     public $parentFilter = '';
     public $modalCategoryId = null;
+    public $categoryToDelete = null;
 
     protected $listeners = [
         'delete' => 'delete',
         'validateDelete' => 'validateDelete'
     ];
+
+    /**
+     * Prepare category for deletion
+     */
+    public function confirmDelete($categoryId)
+    {
+        $this->modalCategoryId = $categoryId;
+        $this->categoryToDelete = Category::withCount(['items', 'children'])->find($categoryId);
+    }
 
     protected $queryString = [
         'search' => ['except' => ''],
@@ -83,41 +93,71 @@ class Index extends Component
     /**
      * Delete a category and handle related data appropriately
      */
-    public function delete($id)
+    public function delete($id = null)
     {
-        Log::debug('Livewire delete called', ['id' => $id]);
+        // Use modalCategoryId if no id provided
+        $categoryId = $id ?? $this->modalCategoryId;
+        
+        if (!$categoryId) {
+            $this->dispatch('notify', type: 'error', message: 'No category selected for deletion.');
+            return;
+        }
+
         // Check permission
         if (!auth()->user()->can('categories.delete')) {
-            session()->flash('error', 'You do not have permission to delete categories.');
             $this->dispatch('notify', type: 'error', message: 'You do not have permission to delete categories.');
             return;
         }
 
-        $category = Category::withCount(['items', 'children'])->findOrFail($id);
-
-        // Integrity checks
-        if ($category->items_count > 0) {
-            session()->flash('error', 'Cannot delete category with items. Please move or delete items first.');
-            $this->dispatch('notify', type: 'error', message: 'Cannot delete category with items. Please move or delete items first.');
-            return;
-        }
-        if ($category->children_count > 0) {
-            session()->flash('error', 'Cannot delete category with subcategories. Please remove subcategories first.');
-            $this->dispatch('notify', type: 'error', message: 'Cannot delete category with subcategories. Please remove subcategories first.');
-            return;
-        }
-
         try {
+            Log::info('Starting category deletion', ['category_id' => $categoryId, 'user_id' => auth()->id()]);
+            
+            $category = Category::withCount(['items', 'children'])->findOrFail($categoryId);
+            $categoryName = $category->name;
+            $itemsCount = $category->items_count;
+            $childrenCount = $category->children_count;
+            
+            Log::info('Category found for deletion', [
+                'category_name' => $categoryName,
+                'items_count' => $itemsCount,
+                'children_count' => $childrenCount
+            ]);
+
             DB::beginTransaction();
-            $category->delete();
+            
+            // Set deleted_by before deletion
+            $category->update(['deleted_by' => auth()->id()]);
+            
+            // Delete the category (cascade will handle items)
+            $deleted = $category->delete();
+            
+            Log::info('Category deletion result', ['deleted' => $deleted]);
+            
             DB::commit();
-            session()->flash('success', "Category '{$category->name}' deleted successfully.");
-            $this->dispatch('notify', type: 'success', message: "Category '{$category->name}' deleted successfully.");
+            
+            // Create appropriate success message
+            $message = "Category '{$categoryName}' deleted successfully.";
+            if ($itemsCount > 0) {
+                $message .= " {$itemsCount} item(s) were also deleted.";
+            }
+            if ($childrenCount > 0) {
+                $message .= " {$childrenCount} subcategory(ies) were also deleted.";
+            }
+            
+            $this->dispatch('notify', type: 'success', message: $message);
             $this->dispatch('categoryDeleted');
+            
+            // Reset modal state
+            $this->modalCategoryId = null;
+            $this->categoryToDelete = null;
+            
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Category deletion failed', ['error' => $e->getMessage()]);
-            session()->flash('error', "Error deleting category: {$e->getMessage()}");
+            Log::error('Category deletion failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'category_id' => $categoryId
+            ]);
             $this->dispatch('notify', type: 'error', message: "Error deleting category: {$e->getMessage()}");
         }
     }

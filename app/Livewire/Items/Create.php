@@ -20,12 +20,9 @@ class Create extends Component
         'name' => '',
         'category_id' => '',
         'description' => '',
-        'cost_price_per_unit' => '',
-        'selling_price_per_unit' => '',
         'unit' => 'piece',
         'unit_quantity' => 1,
         'item_unit' => '',
-        'reorder_level' => null,
     ];
 
     // Enhanced category search functionality
@@ -37,8 +34,13 @@ class Create extends Component
 
     public $isSubmitting = false;
 
+    public $fromPurchase = false;
+
     public function mount()
     {
+        // Check if this is being called from purchase flow
+        $this->fromPurchase = request()->query('from') === 'purchase';
+        
         // Check if category query parameter exists and is valid
         $categoryId = request()->query('category');
         if ($categoryId && Category::where('id', $categoryId)->where('is_active', true)->exists()) {
@@ -238,25 +240,10 @@ class Create extends Component
             }
         }
 
-        // Validate selling price vs cost price
-        if (in_array($propertyName, ['form.cost_price', 'form.selling_price'])) {
-            $this->validateSellingPrice();
-        }
+
     }
 
-    /**
-     * Validate that selling price is higher than cost price
-     */
-    protected function validateSellingPrice()
-    {
-        if (!empty($this->form['cost_price']) && !empty($this->form['selling_price'])) {
-            if ((float)$this->form['selling_price'] <= (float)$this->form['cost_price']) {
-                $this->addError('form.selling_price', 'Selling price must be higher than cost price');
-            } else {
-                $this->resetErrorBag('form.selling_price');
-            }
-        }
-    }
+
 
     public function save()
     {
@@ -279,22 +266,14 @@ class Create extends Component
                 'form.name' => 'required|string|max:255|min:2',
                 'form.category_id' => 'required|exists:categories,id',
                 'form.description' => 'nullable|string|max:1000',
-                'form.cost_price_per_unit' => 'required|numeric|min:0|max:999999.99',
-                'form.selling_price_per_unit' => 'required|numeric|min:0|max:999999.99',
                 'form.unit' => 'required|string|in:piece',
                 'form.unit_quantity' => 'required|integer|min:1|max:99999',
                 'form.item_unit' => 'required|string|in:' . implode(',', ItemUnit::values()),
-                'form.reorder_level' => 'nullable|integer|min:0|max:99999',
             ]);
 
             \Log::info('Validation passed', ['validated' => $validated]);
 
-            // Additional validation to ensure selling price is higher than cost price
-            if ((float)$validated['form']['selling_price_per_unit'] <= (float)$validated['form']['cost_price_per_unit']) {
-                throw ValidationException::withMessages([
-                    'form.selling_price_per_unit' => ['Selling price per unit must be higher than cost price per unit'],
-                ]);
-            }
+
 
             DB::beginTransaction();
 
@@ -304,9 +283,9 @@ class Create extends Component
 
             \Log::info('Generated identifiers', ['sku' => $sku, 'barcode' => $barcode]);
 
-            // Calculate total prices for backward compatibility with proper type casting
-            $costPrice = (float)$validated['form']['cost_price_per_unit'] * (int)$validated['form']['unit_quantity'];
-            $sellingPrice = (float)$validated['form']['selling_price_per_unit'] * (int)$validated['form']['unit_quantity'];
+            // Set default pricing values
+            $costPrice = 0;
+            $sellingPrice = 0;
             
             // Add auto-generated fields and handle null values
             $itemData = array_merge($validated['form'], [
@@ -316,7 +295,7 @@ class Create extends Component
                 'barcode' => $barcode,
                 'is_active' => true,
                 'created_by' => Auth::id(),
-                'reorder_level' => $validated['form']['reorder_level'] ?? 1, // Default to 1 if null
+                'reorder_level' => 1, // Default value
             ]);
 
             \Log::info('Item data prepared', ['itemData' => $itemData]);
@@ -329,6 +308,11 @@ class Create extends Component
             DB::commit();
 
             session()->flash('message', 'Item created successfully!');
+
+            // Redirect back to purchase if called from purchase flow
+            if ($this->fromPurchase) {
+                return $this->redirect(route('admin.purchases.create'), navigate: true);
+            }
 
             return $this->redirect(route('admin.items.index'));
 
@@ -357,12 +341,9 @@ class Create extends Component
             'name' => '',
             'category_id' => '',
             'description' => '',
-            'cost_price_per_unit' => '',
-            'selling_price_per_unit' => '',
             'unit' => 'piece',
             'unit_quantity' => 1,
             'item_unit' => '',
-            'reorder_level' => null,
         ];
         
         $this->selectedCategory = null;
@@ -374,6 +355,11 @@ class Create extends Component
 
     public function cancel()
     {
+        // Return to purchase if called from purchase flow
+        if ($this->fromPurchase) {
+            return $this->redirect(route('admin.purchases.create'), navigate: true);
+        }
+        
         return $this->redirect(route('admin.items.index'));
     }
     

@@ -33,23 +33,7 @@
         <div class="card-body p-0">
             <!-- Form Validation & Error Alerts -->
             <div class="p-4 pb-0">
-                <!-- Error Alert -->
-                @if($errors->any())
-                    <div class="alert alert-danger alert-dismissible fade show mb-3" role="alert">
-                        <div class="d-flex align-items-center">
-                            <i class="bi bi-exclamation-triangle me-2"></i>
-                            <div class="flex-grow-1">
-                                <strong>Please fix the following errors:</strong>
-                                <ul class="mb-0 mt-1 small">
-                                    @foreach($errors->all() as $error)
-                                        <li>{{ $error }}</li>
-                                    @endforeach
-                                </ul>
-                            </div>
-                        </div>
-                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                    </div>
-                @endif
+
 
                 <!-- General Error Alert -->
                 @if($errors->has('general'))
@@ -122,7 +106,7 @@
                                 </select>
                             @endif
                             @error('form.supplier_id') 
-                                <div class="invalid-feedback d-block">{{ $message }}</div> 
+                                <div class="text-danger small mt-1">{{ $message }}</div> 
                             @enderror
                         </div>
                         <!-- Branch Selection (branch-only mode) -->
@@ -337,20 +321,32 @@
                             @endif
                         </div>
                     </div>
+                    @error('items') 
+                        <div class="text-danger small mt-1">{{ $message }}</div> 
+                    @enderror
 
                     <!-- Add Item Form -->
                     <div class="border rounded p-3">
                         <div class="row g-2 align-items-end">
                             <!-- Item Selection -->
-                            <div class="col-12 col-md-4">
-                                <label class="form-label fw-medium">
-                                    Item <span class="text-primary">*</span>
-                                    @if($current_stock > 0)
-                                        <small class="text-info">
-                                            <i class="bi bi-info-circle me-1"></i>Current stock: {{ $current_stock }}
-                                        </small>
-                                    @endif
-                                </label>
+                            <div class="col-12 {{ $selectedItem ? 'col-md-4' : 'col-md-10' }}">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <label class="form-label fw-medium mb-0">
+                                        Item <span class="text-primary">*</span>
+                                        @if($current_stock > 0)
+                                            <small class="text-info">
+                                                <i class="bi bi-info-circle me-1"></i>Current stock: {{ $current_stock }}
+                                            </small>
+                                        @endif
+                                    </label>
+                                    <button type="button" 
+                                            class="btn btn-primary btn-sm" 
+                                            data-bs-toggle="modal" 
+                                            data-bs-target="#createItemModal"
+                                            title="Create new item">
+                                        <i class="bi bi-plus-lg me-1"></i>New Item
+                                    </button>
+                                </div>
                                 @if($selectedItem)
                                     <div class="input-group">
                                         <input type="text" readonly class="form-control" value="{{ $selectedItem['name'] }}">
@@ -359,14 +355,28 @@
                                         </button>
                                     </div>
                                 @else
-                                    <select wire:model.live="newItem.item_id" class="form-select">
-                                        <option value="">Select an item...</option>
-                                        @foreach($this->filteredItemOptions as $item)
-                                            <option value="{{ $item['id'] }}">{{ $item['name'] }}</option>
-                                        @endforeach
-                                    </select>
+                                    <div class="position-relative">
+                                        <input type="text" 
+                                               wire:model.live.debounce.300ms="itemSearch" 
+                                               class="form-control" 
+                                               placeholder="Search items..."
+                                               autocomplete="off">
+                                        @if(!empty($itemSearch) && count($this->filteredItemOptions) > 0)
+                                            <div class="dropdown-menu show w-100" style="max-height: 200px; overflow-y: auto;">
+                                                @foreach($this->filteredItemOptions as $item)
+                                                    <button type="button" 
+                                                            class="dropdown-item" 
+                                                            wire:click="selectItem({{ $item['id'] }})">
+                                                        <div class="fw-medium">{{ $item['name'] }}</div>
+                                                        <small class="text-muted">{{ $item['sku'] }}</small>
+                                                    </button>
+                                                @endforeach
+                                            </div>
+                                        @endif
+                                    </div>
                                 @endif
                             </div>
+                            @if($selectedItem)
                             <!-- Quantity -->
                             <div class="col-6 col-md-2">
                                 <label class="form-label fw-medium">Qty</label>
@@ -377,7 +387,7 @@
                             </div>
                             <!-- Unit Cost Input -->
                             <div class="col-6 col-md-2">
-                                <label class="form-label fw-medium">Cost/{{ $selectedItem && isset($selectedItem['item_unit']) ? $selectedItem['item_unit'] : 'unit' }}</label>
+                                <label class="form-label fw-medium">Cost/{{ $selectedItem['item_unit'] ?? 'unit' }}</label>
                                 <input type="number" 
                                        wire:model.live="newItem.unit_cost" 
                                        class="form-control" 
@@ -393,6 +403,8 @@
                                        value="{{ number_format($newItem['cost'] ?? 0, 2) }}"
                                        readonly>
                             </div>
+                            @endif
+                            @if($selectedItem)
                             <!-- Add Button -->
                             <div class="col-6 col-md-2 d-flex align-items-end">
                                 @if($editingItemIndex !== null)
@@ -410,6 +422,7 @@
                                     </button>
                                 @endif
                             </div>
+                            @endif
                         </div>
                     </div>
                 </div>
@@ -692,6 +705,78 @@
             Livewire.on('validationError', (errors) => {
                 console.log('Validation errors:', errors);
             });
+            
+            // Handle item creation modal
+            const createItemModal = document.getElementById('createItemModal');
+            if (createItemModal) {
+                const modal = new bootstrap.Modal(createItemModal);
+                
+                Livewire.on('closeModal', () => {
+                    modal.hide();
+                });
+            }
         });
     </script>
+
+    <!-- Stock Warning Modals -->
+    @if($stockWarningType === 'out_of_stock')
+        <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1050; display: flex; align-items: center; justify-content: center;">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header bg-warning text-dark">
+                        <h5 class="modal-title">
+                            <i class="bi bi-exclamation-triangle me-2"></i>Out of Stock
+                        </h5>
+                        <button type="button" class="btn-close" wire:click="closeStockWarning"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="alert alert-warning">
+                            <strong>{{ $stockWarningItem['name'] ?? 'Item' }}</strong> is currently out of stock.
+                        </div>
+                        <p class="mb-0">This item has no available stock in the selected branch. You can still add it to create a purchase order.</p>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" wire:click="closeStockWarning">Cancel</button>
+                        <button type="button" class="btn btn-warning" wire:click="proceedWithWarning">Proceed Anyway</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    @if($stockWarningType === 'insufficient_stock')
+        <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1050; display: flex; align-items: center; justify-content: center;">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header bg-danger text-white">
+                        <h5 class="modal-title">
+                            <i class="bi bi-exclamation-triangle me-2"></i>Insufficient Stock
+                        </h5>
+                        <button type="button" class="btn-close btn-close-white" wire:click="closeStockWarning"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="alert alert-danger">
+                            <strong>{{ $stockWarningItem['name'] ?? 'Item' }}</strong> has insufficient stock.
+                        </div>
+                        <div class="row">
+                            <div class="col-6">
+                                <strong>Available:</strong> {{ $stockWarningAvailable }}
+                            </div>
+                            <div class="col-6">
+                                <strong>Requested:</strong> {{ $stockWarningQuantity }}
+                            </div>
+                        </div>
+                        <p class="mt-2 mb-0">You can still proceed to create the purchase order with this quantity.</p>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" wire:click="closeStockWarning">Cancel</button>
+                        <button type="button" class="btn btn-danger" wire:click="proceedWithWarning">Proceed</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    <!-- Create Item Modal -->
+    <livewire:purchases.create-item-modal />
 </div>

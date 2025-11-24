@@ -115,7 +115,11 @@
                                     </a>
                                     @endcan
                                     @can('categories.delete')
-                                    <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteCategoryModal" wire:click="$set('modalCategoryId', {{ $category->id }})" title="Delete">
+                                    <button type="button" class="btn btn-outline-danger" 
+                                            data-bs-toggle="modal" 
+                                            data-bs-target="#deleteCategoryModal" 
+                                            wire:click="confirmDelete({{ $category->id }})" 
+                                            title="Delete">
                                         <i class="bi bi-trash"></i>
                                     </button>
                                     @endcan
@@ -177,11 +181,47 @@
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    Are you sure you want to delete this category? This cannot be undone if there are no associated items or subcategories.
+                    @if($categoryToDelete)
+                    <p>Are you sure you want to delete the category <strong>"{{ $categoryToDelete->name }}"</strong>?</p>
+                    
+                    @if($categoryToDelete->items_count > 0 || $categoryToDelete->children_count > 0)
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        <strong>Warning:</strong> This will also delete:
+                        <ul class="mb-0 mt-2">
+                            @if($categoryToDelete->items_count > 0)
+                            <li><strong>{{ $categoryToDelete->items_count }}</strong> item(s) in this category</li>
+                            @endif
+                            @if($categoryToDelete->children_count > 0)
+                            <li><strong>{{ $categoryToDelete->children_count }}</strong> subcategory(ies)</li>
+                            @endif
+                        </ul>
+                    </div>
+                    @endif
+                    
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-circle me-2"></i>
+                        <strong>This action cannot be undone!</strong> All data will be permanently removed.
+                    </div>
+                    @else
+                    <p>Are you sure you want to delete this category?</p>
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-circle me-2"></i>
+                        This action cannot be undone.
+                    </div>
+                    @endif
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-danger" wire:click="delete({{ $modalCategoryId }})" data-bs-dismiss="modal">Delete</button>
+                    <button type="button" 
+                            class="btn btn-danger" 
+                            wire:click="delete" 
+                            data-bs-dismiss="modal">
+                        <i class="bi bi-trash me-1"></i>Delete Category
+                        @if($categoryToDelete && ($categoryToDelete->items_count > 0 || $categoryToDelete->children_count > 0))
+                        & All Data
+                        @endif
+                    </button>
                 </div>
             </div>
         </div>
@@ -190,23 +230,69 @@
 
 @push('scripts')
 <script>
-    window.addEventListener('categoryDeleted', () => {
-        const modalEl = document.getElementById('deleteCategoryModal');
-        if (modalEl) {
-            const modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
-            modal.hide();
+    document.addEventListener('DOMContentLoaded', function() {
+        // Handle category deletion success
+        window.addEventListener('categoryDeleted', () => {
+            const modalEl = document.getElementById('deleteCategoryModal');
+            if (modalEl) {
+                const modal = bootstrap.Modal.getInstance(modalEl);
+                if (modal) {
+                    modal.hide();
+                }
+            }
+        });
+        
+        // Handle notifications
+        window.addEventListener('notify', event => {
+            const { type, message } = event.detail || {};
+            if (message) {
+                // Create toast notification
+                const toastContainer = document.getElementById('toast-container') || createToastContainer();
+                const toast = createToast(type, message);
+                toastContainer.appendChild(toast);
+                
+                const bsToast = new bootstrap.Toast(toast);
+                bsToast.show();
+                
+                // Remove toast after it's hidden
+                toast.addEventListener('hidden.bs.toast', () => {
+                    toast.remove();
+                });
+            }
+        });
+        
+        function createToastContainer() {
+            const container = document.createElement('div');
+            container.id = 'toast-container';
+            container.className = 'toast-container position-fixed top-0 end-0 p-3';
+            container.style.zIndex = '1055';
+            document.body.appendChild(container);
+            return container;
         }
-    });
-    window.addEventListener('notify', event => {
-        const { type, message } = event.detail || {};
-        if (message) {
-            // Simple fallback: show Bootstrap alert
-            const alertDiv = document.createElement('div');
-            alertDiv.className = `alert alert-${type === 'error' ? 'danger' : type} alert-dismissible fade show position-fixed top-0 end-0 m-3`;
-            alertDiv.role = 'alert';
-            alertDiv.innerHTML = message + '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>';
-            document.body.appendChild(alertDiv);
-            setTimeout(() => { alertDiv.remove(); }, 4000);
+        
+        function createToast(type, message) {
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.setAttribute('role', 'alert');
+            toast.setAttribute('aria-live', 'assertive');
+            toast.setAttribute('aria-atomic', 'true');
+            
+            const iconClass = type === 'success' ? 'bi-check-circle-fill text-success' : 
+                             type === 'error' ? 'bi-exclamation-circle-fill text-danger' : 
+                             'bi-info-circle-fill text-info';
+            
+            toast.innerHTML = `
+                <div class="toast-header">
+                    <i class="bi ${iconClass} me-2"></i>
+                    <strong class="me-auto">${type === 'success' ? 'Success' : type === 'error' ? 'Error' : 'Info'}</strong>
+                    <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+                </div>
+                <div class="toast-body">
+                    ${message}
+                </div>
+            `;
+            
+            return toast;
         }
     });
 </script>
