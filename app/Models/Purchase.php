@@ -12,6 +12,9 @@ use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
 use App\Models\PriceHistory;
 use App\Models\User;
+use App\Models\Credit;
+use App\Models\Stock;
+use App\Models\StockHistory;
 use App\Enums\PaymentStatus;
 
 class Purchase extends Model
@@ -29,6 +32,7 @@ class Purchase extends Model
         'payment_method',
         'bank_account_id',
         'transaction_number',
+        'advance_amount',
         'total_amount',
         'paid_amount',
         'due_amount',
@@ -45,6 +49,7 @@ class Purchase extends Model
 
     protected $casts = [
         'purchase_date' => 'date',
+        'advance_amount' => 'decimal:2',
         'total_amount' => 'decimal:2',
         'paid_amount' => 'decimal:2',
         'due_amount' => 'decimal:2',
@@ -285,40 +290,56 @@ class Purchase extends Model
     }
 
     /**
-     * Create a credit record for unpaid amount.
+     * Create credit with advance payment following the documented workflow.
+     * Creates Credit record and advance Payment record atomically.
      */
     protected function createCreditRecord(): void
     {
-        // Only create if there's an outstanding amount
         if ($this->due_amount <= 0) {
             return;
         }
 
-        // Create credit record
-        Credit::create([
-            'supplier_id' => $this->supplier_id,
-            'amount' => $this->due_amount,
-            'paid_amount' => 0,
-            'balance' => $this->due_amount,
-            'reference_no' => $this->reference_no,
-            'reference_type' => 'purchase',
-            'reference_id' => $this->id,
-            'credit_type' => 'payable',
-            'description' => 'Credit for purchase #' . $this->reference_no,
-            'credit_date' => $this->purchase_date,
-            'due_date' => now()->addDays(30), // Default 30-day term
-            'status' => 'active',
-            'user_id' => $this->user_id,
-            'branch_id' => $this->branch_id,
-            'warehouse_id' => $this->warehouse_id,
-        ]);
+        DB::transaction(function () {
+            // Create credit record
+            $credit = Credit::create([
+                'supplier_id' => $this->supplier_id,
+                'amount' => $this->total_amount,
+                'paid_amount' => $this->paid_amount,
+                'balance' => $this->due_amount,
+                'reference_no' => $this->reference_no,
+                'reference_type' => 'purchase',
+                'reference_id' => $this->id,
+                'credit_type' => 'payable',
+                'description' => 'Credit for purchase #' . $this->reference_no,
+                'credit_date' => $this->purchase_date,
+                'due_date' => now()->addDays(30),
+                'status' => $this->paid_amount > 0 ? 'partial' : 'active',
+                'user_id' => $this->user_id,
+                'branch_id' => $this->branch_id,
+                'warehouse_id' => $this->warehouse_id,
+            ]);
+
+            // Create advance payment record if advance was made
+            if ($this->advance_amount > 0) {
+                $credit->addPayment(
+                    $this->advance_amount,
+                    $this->payment_method ?? 'cash',
+                    $this->transaction_number,
+                    'Advance payment for purchase #' . $this->reference_no,
+                    null, // payment_date (use default)
+                    'advance' // kind
+                );
+            }
+        });
     }
 
     /**
      * Record a payment for this purchase.
+     * Updates both purchase and associated credit records.
      */
     public function addPayment(float $amount, string $paymentMethod, ?string $reference = null, ?string $notes = null, ?string $paymentDate = null, ?string $referenceField = null, ?string $receiverBankName = null, ?string $receiverAccountHolder = null, ?string $receiverAccountNumber = null): PurchasePayment
     {
+        // Create purchase payment record
         $payment = new PurchasePayment([
             'amount' => $amount,
             'payment_method' => $paymentMethod,
@@ -330,35 +351,32 @@ class Purchase extends Model
 
         $this->payments()->save($payment);
 
-        // Log before update
-        \Log::info('Purchase payment before update', [
-            'purchase_id' => $this->id,
-            'before_paid_amount' => $this->paid_amount,
-            'before_due_amount' => $this->due_amount,
-            'before_status' => $this->payment_status,
-            'payment_amount' => $amount,
-        ]);
-
-        // Update the paid and due amounts
+        // Update purchase amounts and status
         $this->paid_amount += $amount;
         $this->due_amount = $this->total_amount - $this->paid_amount;
-
-        // Update payment status
         $this->updatePaymentStatus();
-        
-        // Make sure we have fresh data
-        $this->refresh();
+        $this->save();
 
-        // Log after update
-        \Log::info('Purchase payment after update', [
-            'purchase_id' => $this->id,
-            'after_paid_amount' => $this->paid_amount,
-            'after_due_amount' => $this->due_amount,
-            'after_status' => $this->payment_status,
-        ]);
+        // Update associated credit if exists
+        $credit = Credit::where('reference_type', 'purchase')
+            ->where('reference_id', $this->id)
+            ->first();
 
-        // Note: Credit payments are handled separately to avoid circular payment calls
-        // The credit payment component will handle updating both credit and purchase/sale
+        if ($credit) {
+            $credit->paid_amount = $this->paid_amount;
+            $credit->balance = $this->due_amount;
+            
+            // Update credit status following documented flow
+            if ($credit->balance <= 0) {
+                $credit->status = 'paid';
+            } elseif ($credit->paid_amount > 0) {
+                $credit->status = 'partial';
+            } else {
+                $credit->status = 'active';
+            }
+            
+            $credit->save();
+        }
 
         return $payment;
     }
@@ -373,7 +391,8 @@ class Purchase extends Model
     }
 
     /**
-     * Update payment status based on payment.
+     * Update payment status based on payment amounts.
+     * Follows credit lifecycle status transitions.
      */
     public function updatePaymentStatus(): void
     {
@@ -384,7 +403,6 @@ class Purchase extends Model
         } else {
             $this->payment_status = PaymentStatus::DUE->value;
         }
-        $this->save();
     }
 
     /**
@@ -409,5 +427,64 @@ class Purchase extends Model
     public function deleter(): BelongsTo
     {
         return $this->belongsTo(User::class, 'deleted_by');
+    }
+
+    /**
+     * Get the outstanding balance for this purchase.
+     * Returns the amount still owed to the supplier.
+     */
+    public function getOutstandingBalanceAttribute(): float
+    {
+        return $this->due_amount;
+    }
+
+    /**
+     * Check if this purchase has an outstanding credit balance.
+     */
+    public function hasOutstandingBalance(): bool
+    {
+        return $this->due_amount > 0;
+    }
+
+    /**
+     * Check if this purchase is fully paid.
+     */
+    public function isFullyPaid(): bool
+    {
+        return $this->due_amount <= 0;
+    }
+
+    /**
+     * Check if this purchase has partial payment.
+     */
+    public function hasPartialPayment(): bool
+    {
+        return $this->paid_amount > 0 && $this->due_amount > 0;
+    }
+
+    /**
+     * Validate advance amount according to business rules.
+     */
+    public function validateAdvanceAmount(float $advanceAmount): array
+    {
+        $errors = [];
+
+        if ($advanceAmount < 0) {
+            $errors[] = 'Advance amount must be greater than or equal to 0.';
+        }
+
+        if ($advanceAmount > $this->total_amount) {
+            $errors[] = 'Advance amount cannot exceed total amount.';
+        }
+
+        return $errors;
+    }
+
+    /**
+     * Check if advance amount equals total (full payment).
+     */
+    public function isAdvanceFullPayment(): bool
+    {
+        return $this->advance_amount >= $this->total_amount;
     }
 }

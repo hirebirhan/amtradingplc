@@ -10,6 +10,7 @@ use Livewire\Attributes\Validate;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Database\QueryException;
 
 #[Layout('components.layouts.app')]
 class Create extends Component
@@ -175,15 +176,24 @@ class Create extends Component
             // Re-throw to show validation errors
             throw $e;
             
-        } catch (\Exception $e) {
+        } catch (QueryException $e) {
             DB::rollBack();
             $this->isSubmitting = false;
             
-            // Log critical errors only
-            \Log::error('Customer creation failed', [
-                'error' => $e->getMessage(),
-                'user_id' => Auth::id(),
+            // Handle duplicate email constraint
+            if ($e->errorInfo[1] === 1062 && str_contains($e->getMessage(), 'email')) {
+                $this->addError('form.email', 'This email address is already registered.');
+                return;
+            }
+            
+            $this->dispatch('toast', [
+                'type' => 'error',
+                'message' => 'Database error occurred. Please try again.',
             ]);
+            
+        } catch (\Exception $e) {
+            DB::rollBack();
+            $this->isSubmitting = false;
             
             $this->dispatch('toast', [
                 'type' => 'error',

@@ -14,6 +14,7 @@ class CreditPayment extends Model
     protected $fillable = [
         'credit_id',
         'amount',
+        'kind',
         'payment_method',
         'reference_no',
         'receiver_bank_name',

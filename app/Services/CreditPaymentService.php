@@ -297,11 +297,13 @@ class CreditPaymentService
             $credit->paid_amount = $credit->payments()->sum('amount');
             $credit->balance = max(0, $effectiveAmount - $credit->paid_amount);
             
-            // Update status based on new balance
+            // Update status following documented flow
             if ($credit->balance <= 0) {
                 $credit->status = 'paid';
+            } elseif ($credit->paid_amount > 0) {
+                $credit->status = 'partial';
             } else {
-                $credit->status = 'partially_paid';
+                $credit->status = 'active';
             }
             
             $credit->save();
@@ -427,11 +429,13 @@ class CreditPaymentService
                 $credit->paid_amount = $totalPaid;
                 $credit->balance = max(0, $totalClosingCost - $totalPaid);
                 
-                // Update status
+                // Update status following documented flow
                 if ($credit->balance <= 0) {
                     $credit->status = 'paid';
+                } elseif ($credit->paid_amount > 0) {
+                    $credit->status = 'partial';
                 } else {
-                    $credit->status = 'partially_paid';
+                    $credit->status = 'active';
                 }
                 
                 $credit->save();
