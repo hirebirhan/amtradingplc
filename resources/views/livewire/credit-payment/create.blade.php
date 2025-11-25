@@ -553,9 +553,16 @@
                             <h6 class="text-muted mb-2">Credit Information</h6>
                             <div class="d-flex flex-column gap-1">
                                 <div><strong>Credit #:</strong> {{ $credit->reference_no }}</div>
+                                <div><strong>Original Amount:</strong> {{ number_format($credit->amount, 2) }} ETB</div>
+                                <div><strong>Already Paid:</strong> {{ number_format($credit->paid_amount, 2) }} ETB</div>
                                 <div><strong>Current Balance:</strong> {{ number_format($credit->balance, 2) }} ETB</div>
+                                <div><strong>Payment Amount:</strong> 
+                                    <span class="text-primary fw-bold">{{ number_format($amount, 2) }} ETB</span>
+                                </div>
                                 <div><strong>Remaining After Payment:</strong> 
-                                    <span class="text-success">{{ number_format($credit->balance - $amount, 2) }} ETB</span>
+                                    <span class="{{ ($credit->balance - $amount) <= 0 ? 'text-success' : 'text-warning' }} fw-bold">
+                                        {{ number_format(max(0, $credit->balance - $amount), 2) }} ETB
+                                    </span>
                                 </div>
                                 @if($credit->balance - $amount <= 0)
                                     <div><span class="badge bg-success">Credit will be fully paid</span></div>
@@ -647,120 +654,67 @@
                 <div class="modal-header">
                     <h5 class="modal-title">
                         <i class="fas fa-calculator text-primary me-2"></i>
-                        Close Credit with Final Prices
+                        Enter Closing Prices
                     </h5>
                 </div>
                 <div class="modal-body">
-                    <!-- Show validation errors within modal -->
-                    @if ($errors->any())
-                        @php
-                            $closingPriceErrors = array_filter($errors->all(), function($error) {
-                                return strpos($error, 'closingPrices') !== false;
-                            });
-                        @endphp
-                        @if(count($closingPriceErrors) > 0)
-                            <div class="alert alert-danger mb-3">
-                                <strong>Please fix the following errors:</strong>
-                                <ul class="mb-0 mt-2">
-                                    @foreach ($closingPriceErrors as $error)
-                                        <li>{{ $error }}</li>
-                                    @endforeach
-                                </ul>
-                            </div>
-                        @endif
-                    @endif
-                    
-                    <div class="alert alert-info">
-                        <i class="fas fa-info-circle me-2"></i>
-                        <strong>Do you want to close this credit?</strong> Enter the final closing prices to calculate savings and complete the payment.
-                    </div>
-                    
                     @if($credit->reference_type === 'purchase' && $credit->purchase)
+                        <!-- Payment Summary -->
+                        @php
+                            $totalClosingCost = 0;
+                            foreach($credit->purchase->items as $item) {
+                                if(isset($closingPrices[$item->item_id]) && is_numeric($closingPrices[$item->item_id])) {
+                                    $unitQuantity = $item->item->unit_quantity ?: 1;
+                                    $closingPricePerUnit = (float) $closingPrices[$item->item_id];
+                                    $totalClosingCost += $closingPricePerUnit * $unitQuantity * $item->quantity;
+                                }
+                            }
+                            $remainingToPay = max(0, $totalClosingCost - $credit->paid_amount);
+                        @endphp
+                        
+                        <div class="alert alert-info mb-3">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <strong>Credit Balance:</strong> {{ number_format($credit->balance, 2) }} ETB<br>
+                                    <strong>Already Paid:</strong> {{ number_format($credit->paid_amount, 2) }} ETB
+                                </div>
+                                <div class="col-md-6">
+                                    @if($totalClosingCost > 0)
+                                        <strong class="text-danger">Remaining to Pay:</strong> {{ number_format($remainingToPay, 2) }} ETB
+                                    @else
+                                        <strong class="text-muted">Enter item prices to see remaining amount</strong>
+                                    @endif
+                                </div>
+                            </div>
+                        </div>
                         
                         <div class="table-responsive">
-                            <table class="table table-sm table-hover">
+                            <table class="table table-sm">
                                 <thead>
                                     <tr>
-                                        <th class="fw-semibold">Item</th>
-                                        <th class="fw-semibold text-end">Original Cost</th>
-                                        <th class="fw-semibold text-center">Closing Price</th>
-                                        <th class="fw-semibold text-end">Saving</th>
+                                        <th>Item Name</th>
+                                        <th class="text-center">Closing Price</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     @foreach($credit->purchase->items as $item)
-                                        @php
-                                            $unitQuantity = $item->item->unit_quantity ?: 1;
-                                            $originalCostPerLiter = $item->unit_cost / $unitQuantity;
-                                            $closingPricePerLiter = isset($closingPrices[$item->item_id]) && is_numeric($closingPrices[$item->item_id]) 
-                                                ? (float) $closingPrices[$item->item_id] 
-                                                : $originalCostPerLiter;
-                                            $saving = ($originalCostPerLiter - $closingPricePerLiter) * $unitQuantity * $item->quantity;
-                                        @endphp
                                         <tr>
                                             <td class="fw-medium">{{ $item->item->name }}</td>
-                                            <td class="text-end">{{ number_format($originalCostPerLiter, 2) }} ETB</td>
                                             <td class="text-center">
                                                 <input type="number" 
                                                     wire:model.live="closingPrices.{{ $item->item_id }}" 
                                                     class="form-control form-control-sm text-center @error('closingPrices.'.$item->item_id) is-invalid @enderror" 
                                                     step="0.01" 
                                                     min="0" 
-                                                    placeholder="{{ number_format($originalCostPerLiter, 2) }}"
+                                                    placeholder="Enter price"
                                                     style="width: 120px; margin: 0 auto;">
                                                 @error('closingPrices.'.$item->item_id)
                                                     <div class="invalid-feedback">{{ $message }}</div>
                                                 @enderror
                                             </td>
-                                            <td class="text-end">
-                                                @if(isset($closingPrices[$item->item_id]) && is_numeric($closingPrices[$item->item_id]))
-                                                    <span class="{{ $saving >= 0 ? 'text-success' : 'text-danger' }} fw-bold">
-                                                        {{ $saving >= 0 ? '+' : '' }}{{ number_format($saving, 2) }} ETB
-                                                    </span>
-                                                @else
-                                                    <span class="text-muted">-</span>
-                                                @endif
-                                            </td>
                                         </tr>
                                     @endforeach
                                 </tbody>
-                                <tfoot class="border-top">
-                                    <tr>
-                                        <th colspan="3" class="text-end">Total Saving:</th>
-                                        <th class="text-end">
-                                            @php
-                                                $totalSaving = 0;
-                                                $totalClosingCost = 0;
-                                                foreach($credit->purchase->items as $item) {
-                                                    if(isset($closingPrices[$item->item_id]) && is_numeric($closingPrices[$item->item_id])) {
-                                                        $unitQuantity = $item->item->unit_quantity ?: 1;
-                                                        $originalCostPerLiter = $item->unit_cost / $unitQuantity;
-                                                        $closingPricePerLiter = (float) $closingPrices[$item->item_id];
-                                                        $totalSaving += ($originalCostPerLiter - $closingPricePerLiter) * $unitQuantity * $item->quantity;
-                                                        $totalClosingCost += $closingPricePerLiter * $unitQuantity * $item->quantity;
-                                                    }
-                                                }
-                                                $finalPaymentAmount = max(0, $totalClosingCost - $credit->paid_amount);
-                                            @endphp
-                                            <span class="{{ $totalSaving >= 0 ? 'text-success' : 'text-danger' }} fw-bold">
-                                                {{ $totalSaving >= 0 ? '+' : '' }}{{ number_format($totalSaving, 2) }} ETB
-                                            </span>
-                                        </th>
-                                    </tr>
-                                    <tr>
-                                        <th colspan="3" class="text-end">Total Closing Cost:</th>
-                                        <th class="text-end">
-                                            <span class="fw-bold">{{ number_format($totalClosingCost, 2) }} ETB</span>
-                                        </th>
-                                    </tr>
-                                    <tr class="table-success">
-                                        <th colspan="3" class="text-end">Final Payment Amount:</th>
-                                        <th class="text-end">
-                                            <span class="fw-bold text-success">{{ number_format($finalPaymentAmount, 2) }} ETB</span>
-                                            <br><small class="text-muted">(Closing Cost - Paid: {{ number_format($credit->paid_amount, 2) }} ETB)</small>
-                                        </th>
-                                    </tr>
-                                </tfoot>
                             </table>
                         </div>
                     @endif

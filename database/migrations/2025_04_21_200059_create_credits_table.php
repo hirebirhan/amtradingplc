@@ -25,7 +25,7 @@ return new class extends Migration
             $table->text('description')->nullable();
             $table->date('credit_date');
             $table->date('due_date');
-            $table->enum('status', ['active', 'partially_paid', 'paid', 'overdue', 'cancelled'])->default('active');
+            $table->enum('status', ['active', 'partial', 'paid', 'overdue', 'cancelled'])->default('active');
             $table->foreignId('user_id')->constrained(); // User who created the credit
             $table->foreignId('branch_id')->constrained();
             $table->foreignId('warehouse_id')->nullable()->constrained();

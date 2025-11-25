@@ -27,7 +27,7 @@ class Credit extends Model
         'description',
         'credit_date',
         'due_date',
-        'status', // 'active', 'partially_paid', 'paid', 'overdue', 'cancelled'
+        'status', // 'active', 'partial', 'paid', 'overdue', 'cancelled'
         'user_id',
         'branch_id',
         'warehouse_id',
@@ -135,7 +135,7 @@ class Credit extends Model
     /**
      * Record a payment against this credit.
      */
-    public function addPayment(float $amount, string $paymentMethod, ?string $reference = null, ?string $notes = null, ?string $paymentDate = null, ?string $referenceField = null, ?string $receiverBankName = null, ?string $receiverAccountHolder = null, ?string $receiverAccountNumber = null): CreditPayment
+    public function addPayment(float $amount, string $paymentMethod, ?string $reference = null, ?string $notes = null, ?string $paymentDate = null, ?string $kind = 'regular', ?string $referenceField = null, ?string $receiverBankName = null, ?string $receiverAccountHolder = null, ?string $receiverAccountNumber = null): CreditPayment
     {
         // Start timing for performance monitoring
         $startTime = microtime(true);
@@ -152,6 +152,7 @@ class Credit extends Model
 
         $payment = new CreditPayment([
             'amount' => $amount,
+            'kind' => $kind,
             'payment_method' => $paymentMethod,
             'reference_no' => $reference,
             'payment_date' => $paymentDate ? date('Y-m-d', strtotime($paymentDate)) : now(),
@@ -173,11 +174,11 @@ class Credit extends Model
         $this->paid_amount = $paidTotal;
         $this->balance = max(0, $newBalance); // Ensure balance doesn't go below zero
         
-        // Update status
+        // Update status following documented flow
         if ($this->balance <= 0) {
             $this->status = 'paid';
         } else {
-            $this->status = 'partially_paid';
+            $this->status = 'partial';
         }
         
         // Save with monitoring
@@ -214,14 +215,84 @@ class Credit extends Model
 
         return $payment;
     }
+    
+    /**
+     * Close credit with negotiated prices
+     */
+    public function closeWithNegotiatedPrices(array $negotiatedPrices, string $paymentMethod, ?string $reference = null, ?string $notes = null, ?string $paymentDate = null): CreditPayment
+    {
+        if ($this->reference_type !== 'purchase' || !$this->reference_id) {
+            throw new \Exception('Credit must be linked to a purchase for closing with negotiated prices.');
+        }
+        
+        $purchase = $this->purchase;
+        if (!$purchase) {
+            throw new \Exception('Purchase not found for this credit.');
+        }
+        
+        // Calculate new total cost based on negotiated prices
+        $totalClosingCost = 0;
+        foreach ($purchase->items as $item) {
+            if (isset($negotiatedPrices[$item->item_id])) {
+                $unitQuantity = $item->item->unit_quantity ?: 1;
+                $closingPricePerUnit = (float) $negotiatedPrices[$item->item_id];
+                $totalClosingCost += $closingPricePerUnit * $unitQuantity * $item->quantity;
+                
+                // Update purchase item with closing price
+                $item->update([
+                    'closing_unit_price' => $closingPricePerUnit * $unitQuantity,
+                    'total_closing_cost' => $closingPricePerUnit * $unitQuantity * $item->quantity,
+                    'profit_loss_per_item' => ($item->unit_cost - ($closingPricePerUnit * $unitQuantity)) * $item->quantity
+                ]);
+            }
+        }
+        
+        // Calculate remaining payment needed
+        $remainingToPay = max(0, $totalClosingCost - $this->paid_amount);
+        
+        // Update credit amount to new closing cost
+        $this->amount = $totalClosingCost;
+        $this->balance = $remainingToPay;
+        $this->save();
+        
+        // Make final payment if needed
+        if ($remainingToPay > 0) {
+            return $this->addPayment($remainingToPay, $paymentMethod, $reference, $notes, $paymentDate);
+        } else {
+            // Mark as paid if no additional payment needed
+            $this->status = 'paid';
+            $this->balance = 0;
+            $this->save();
+            
+            // Create a zero payment record for tracking
+            $payment = new CreditPayment([
+                'amount' => 0,
+                'payment_method' => $paymentMethod,
+                'reference_no' => $reference,
+                'payment_date' => $paymentDate ? date('Y-m-d', strtotime($paymentDate)) : now(),
+                'notes' => $notes . ' (Credit closed with negotiated prices)',
+                'user_id' => auth()->id(),
+            ]);
+            $this->payments()->save($payment);
+            return $payment;
+        }
+    }
 
+    /**
+     * Get remaining amount attribute for easier access
+     */
+    public function getRemainingAmountAttribute(): float
+    {
+        return $this->balance;
+    }
+    
     /**
      * Scope a query to only include active credits.
      */
     public function scopeActive($query)
     {
         return $query->where(function($q) {
-            $q->whereIn('status', ['active', 'partially_paid', 'overdue'])
+            $q->whereIn('status', ['active', 'partial', 'overdue'])
               ->where('balance', '>', 0);
         });
     }
@@ -258,7 +329,7 @@ class Credit extends Model
      */
     public function scopeOverdue($query)
     {
-        return $query->where('due_date', '<', now())->whereIn('status', ['active', 'partially_paid']);
+        return $query->where('due_date', '<', now())->whereIn('status', ['active', 'partial']);
     }
 
     /**
