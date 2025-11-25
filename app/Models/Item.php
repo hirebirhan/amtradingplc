@@ -106,13 +106,33 @@ class Item extends Model
     }
 
     /**
-     * Get the total quantity in stock across all warehouses.
+     * Get the total quantity in stock across all warehouses (pieces).
      *
      * @return float
      */
     public function getTotalStockAttribute(): float
     {
-        return $this->stocks()->sum('quantity');
+        return $this->stocks()->sum('piece_count');
+    }
+    
+    /**
+     * Get the total pieces in stock across all warehouses.
+     *
+     * @return int
+     */
+    public function getTotalPiecesAttribute(): int
+    {
+        return $this->stocks()->sum('piece_count');
+    }
+    
+    /**
+     * Get the total units in stock across all warehouses.
+     *
+     * @return float
+     */
+    public function getTotalUnitsAttribute(): float
+    {
+        return $this->stocks()->sum('total_units');
     }
 
     /**
@@ -287,7 +307,7 @@ class Item extends Model
     }
 
     /**
-     * Get the stock quantity in a specific warehouse.
+     * Get the stock quantity in a specific warehouse (pieces).
      *
      * @param int $warehouseId
      * @return float
@@ -295,7 +315,31 @@ class Item extends Model
     public function getStockInWarehouse(int $warehouseId): float
     {
         $stock = $this->stocks()->where('warehouse_id', $warehouseId)->first();
-        return $stock ? $stock->quantity : 0;
+        return $stock ? $stock->piece_count : 0;
+    }
+    
+    /**
+     * Get pieces in a specific warehouse.
+     *
+     * @param int $warehouseId
+     * @return int
+     */
+    public function getPiecesInWarehouse(int $warehouseId): int
+    {
+        $stock = $this->stocks()->where('warehouse_id', $warehouseId)->first();
+        return $stock ? $stock->piece_count : 0;
+    }
+    
+    /**
+     * Get units in a specific warehouse.
+     *
+     * @param int $warehouseId
+     * @return float
+     */
+    public function getUnitsInWarehouse(int $warehouseId): float
+    {
+        $stock = $this->stocks()->where('warehouse_id', $warehouseId)->first();
+        return $stock ? $stock->total_units : 0;
     }
 
     /**
@@ -335,12 +379,41 @@ class Item extends Model
      */
     public function getStockInBranch(int $branchId): float
     {
-        // Get stock from all warehouses that belong to this branch
         return $this->stocks()
             ->whereHas('warehouse.branches', function($query) use ($branchId) {
                 $query->where('branches.id', $branchId);
             })
-            ->sum('quantity');
+            ->sum('piece_count');
+    }
+    
+    /**
+     * Get pieces for a specific branch.
+     *
+     * @param int $branchId
+     * @return int
+     */
+    public function getPiecesInBranch(int $branchId): int
+    {
+        return $this->stocks()
+            ->whereHas('warehouse.branches', function($query) use ($branchId) {
+                $query->where('branches.id', $branchId);
+            })
+            ->sum('piece_count');
+    }
+    
+    /**
+     * Get units for a specific branch.
+     *
+     * @param int $branchId
+     * @return float
+     */
+    public function getUnitsInBranch(int $branchId): float
+    {
+        return $this->stocks()
+            ->whereHas('warehouse.branches', function($query) use ($branchId) {
+                $query->where('branches.id', $branchId);
+            })
+            ->sum('total_units');
     }
 
     public function priceHistories()

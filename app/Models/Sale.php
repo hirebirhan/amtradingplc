@@ -165,14 +165,13 @@ class Sale extends Model
             // Update stock for each item based on sale type
             foreach ($this->items as $saleItem) {
                 $item = $saleItem->item;
-                $quantity = $saleItem->quantity;
 
                 if ($this->isWarehouseSale()) {
                     // Warehouse sale - deduct from specific warehouse
-                    $this->processWarehouseSaleItem($item, $quantity);
+                    $this->processWarehouseSaleItem($item, $saleItem);
                 } elseif ($this->isBranchSale()) {
                     // Branch sale - deduct from warehouses serving the branch
-                    $this->processBranchSaleItem($item, $quantity);
+                    $this->processBranchSaleItem($item, $saleItem);
                 } else {
                     throw new \Exception('Invalid sale location configuration.');
                 }
@@ -198,38 +197,45 @@ class Sale extends Model
     /**
      * Process stock deduction for warehouse sale.
      */
-    private function processWarehouseSaleItem($item, $quantity): void
+    private function processWarehouseSaleItem($item, $saleItem): void
     {
         $stock = Stock::where('warehouse_id', $this->warehouse_id)
             ->where('item_id', $item->id)
             ->first();
 
-        if (!$stock || $stock->quantity < $quantity) {
-            throw new \Exception('Not enough stock for item: ' . $item->name . ' in warehouse');
+        if (!$stock) {
+            throw new \Exception('No stock found for item: ' . $item->name . ' in warehouse');
         }
 
-        // Update stock quantity
-        $stock->quantity -= $quantity;
-        $stock->save();
-
-        // Record stock history
-        StockHistory::create([
-            'item_id' => $item->id,
-            'warehouse_id' => $this->warehouse_id,
-            'quantity_change' => -$quantity,
-            'quantity_before' => $stock->quantity + $quantity,
-            'quantity_after' => $stock->quantity,
-            'reference_type' => 'sale',
-            'reference_id' => $this->id,
-            'user_id' => $this->user_id,
-            'description' => 'Warehouse sale - Sale #' . $this->reference_no,
-        ]);
+        $quantity = $saleItem->quantity;
+        $unitCapacity = $item->unit_quantity ?? 1;
+        
+        // Process based on sale method
+        if ($saleItem->isSoldByPiece()) {
+            $stock->sellByPiece(
+                (int)$quantity, 
+                $unitCapacity, 
+                'sale', 
+                $this->id, 
+                'Warehouse sale by piece - Sale #' . $this->reference_no, 
+                $this->user_id
+            );
+        } else {
+            $stock->sellByUnit(
+                $quantity, 
+                $unitCapacity, 
+                'sale', 
+                $this->id, 
+                'Warehouse sale by unit - Sale #' . $this->reference_no, 
+                $this->user_id
+            );
+        }
     }
 
     /**
      * Process stock deduction for branch sale.
      */
-    private function processBranchSaleItem($item, $quantity): void
+    private function processBranchSaleItem($item, $saleItem): void
     {
         // Get warehouses serving this branch
         $warehouseIds = DB::table('branch_warehouse')
@@ -241,6 +247,8 @@ class Sale extends Model
             throw new \Exception('No warehouses found for branch: ' . $this->branch->name);
         }
 
+        $quantity = $saleItem->quantity;
+        $unitCapacity = $item->unit_quantity ?? 1;
         $remainingQuantity = $quantity;
 
         foreach ($warehouseIds as $warehouseId) {
@@ -248,36 +256,48 @@ class Sale extends Model
 
             $stock = Stock::where('warehouse_id', $warehouseId)
                 ->where('item_id', $item->id)
-                ->where('quantity', '>', 0)
                 ->first();
 
-            if ($stock) {
-                $deductQuantity = min($remainingQuantity, $stock->quantity);
+            if (!$stock) continue;
+
+            if ($saleItem->isSoldByPiece()) {
+                $availablePieces = $stock->piece_count;
+                if ($availablePieces <= 0) continue;
                 
-                // Update stock quantity
-                $quantityBefore = $stock->quantity;
-                $stock->quantity -= $deductQuantity;
-                $stock->save();
-
-                // Record stock history
-                StockHistory::create([
-                    'item_id' => $item->id,
-                    'warehouse_id' => $warehouseId,
-                    'quantity_change' => -$deductQuantity,
-                    'quantity_before' => $quantityBefore,
-                    'quantity_after' => $stock->quantity,
-                    'reference_type' => 'sale',
-                    'reference_id' => $this->id,
-                    'user_id' => $this->user_id,
-                    'description' => 'Branch sale - Sale #' . $this->reference_no,
-                ]);
-
-                $remainingQuantity -= $deductQuantity;
+                $deductPieces = min($remainingQuantity, $availablePieces);
+                
+                $stock->sellByPiece(
+                    (int)$deductPieces, 
+                    $unitCapacity, 
+                    'sale', 
+                    $this->id, 
+                    'Branch sale by piece - Sale #' . $this->reference_no, 
+                    $this->user_id
+                );
+                
+                $remainingQuantity -= $deductPieces;
+            } else {
+                $availableUnits = $stock->total_units;
+                if ($availableUnits <= 0) continue;
+                
+                $deductUnits = min($remainingQuantity, $availableUnits);
+                
+                $stock->sellByUnit(
+                    $deductUnits, 
+                    $unitCapacity, 
+                    'sale', 
+                    $this->id, 
+                    'Branch sale by unit - Sale #' . $this->reference_no, 
+                    $this->user_id
+                );
+                
+                $remainingQuantity -= $deductUnits;
             }
         }
 
         if ($remainingQuantity > 0) {
-            throw new \Exception("Insufficient stock for item '{$item->name}'. Could not fulfill {$remainingQuantity} units from branch warehouses.");
+            $method = $saleItem->isSoldByPiece() ? 'pieces' : 'units';
+            throw new \Exception("Insufficient stock for item '{$item->name}'. Could not fulfill {$remainingQuantity} {$method} from branch warehouses.");
         }
     }
 

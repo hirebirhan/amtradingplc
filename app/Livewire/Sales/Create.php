@@ -69,6 +69,7 @@ class Create extends Component
     public $newItem = [
         'item_id' => '',
         'quantity' => 1,
+        'sale_method' => 'piece', // 'piece' or 'unit' - mutually exclusive
         'unit_price' => 0, // Price per unit (e.g., per kg)
         'price' => 0, // Calculated price per piece
         'notes' => '',
@@ -289,7 +290,7 @@ class Create extends Component
                         'selling_price_per_unit' => $item->selling_price_per_unit ?? 0,
                         'unit_quantity' => $item->unit_quantity ?? 1,
                         'item_unit' => $item->item_unit ?? 'piece',
-                        'quantity' => $stock ? $stock->quantity : 0,
+                        'quantity' => $stock ? $stock->piece_count : 0, // Show piece count as stock level
                         'unit' => $item->unit ?? '',
                     ];
                 })
@@ -435,6 +436,13 @@ class Create extends Component
         
         if ($item) {
             $stock = $item->stocks->first();
+            
+            // Initialize current_piece_units if null
+            if ($stock && $stock->current_piece_units === null) {
+                $stock->current_piece_units = $item->unit_quantity ?? 1;
+                $stock->save();
+            }
+            
             $this->selectedItem = [
                 'id' => $item->id,
                 'name' => $item->name,
@@ -444,11 +452,11 @@ class Create extends Component
             ];
             $this->newItem['item_id'] = $item->id;
             $this->newItem['unit_price'] = $item->selling_price_per_unit ?? 0;
-            $this->newItem['price'] = ($item->selling_price_per_unit ?? 0) * ($item->unit_quantity ?? 1);
-            $this->availableStock = $stock ? $stock->quantity : 0;
+            $this->newItem['price'] = $item->selling_price ?? 0; // Default to piece price
+            $this->availableStock = $stock ? $stock->piece_count : 0; // Default to piece count
             $this->itemSearch = '';
             
-            // Show warning if out of stock - don't set selected item fields yet
+            // Show warning if stock is zero or negative
             if ($this->availableStock <= 0) {
                 $this->stockWarningType = 'out_of_stock';
                 $this->stockWarningItem = [
@@ -468,6 +476,7 @@ class Create extends Component
         $this->newItem = [
             'item_id' => '',
             'quantity' => 1,
+            'sale_method' => 'piece', // Default to piece method
             'unit_price' => 0,
             'price' => 0,
             'notes' => '',
@@ -501,8 +510,8 @@ class Create extends Component
         ]);
         
         // Check for insufficient stock and show warning
-        if ($requestedQty > $this->availableStock) {
-            $this->stockWarningType = 'insufficient';
+        if ($this->availableStock <= 0 || $requestedQty > $this->availableStock) {
+            $this->stockWarningType = $this->availableStock <= 0 ? 'out_of_stock' : 'insufficient';
             $item = Item::find($this->newItem['item_id']);
             $this->stockWarningItem = [
                 'name' => $item->name,
@@ -611,6 +620,7 @@ class Create extends Component
             'unit' => $item->unit ?? '',
             'unit_quantity' => $item->unit_quantity ?? 1,
             'quantity' => $quantity,
+            'sale_method' => $this->newItem['sale_method'],
             'price' => $price,
             'subtotal' => $subtotal,
             'notes' => $this->newItem['notes'] ?? null,
@@ -643,6 +653,7 @@ class Create extends Component
         $this->newItem = [
             'item_id' => $item['item_id'],
             'quantity' => $item['quantity'],
+            'sale_method' => $item['sale_method'] ?? 'piece',
             'unit_price' => $item['unit_quantity'] ? $item['price'] / $item['unit_quantity'] : $item['price'],
             'price' => $item['price'],
             'notes' => $item['notes'] ?? '',
@@ -902,10 +913,14 @@ class Create extends Component
                 $saleItem->sale_id = $sale->id;
                 $saleItem->item_id = $item['item_id'];
                 $saleItem->quantity = $item['quantity'];
+                $saleItem->sale_method = $item['sale_method'] ?? 'piece';
                 $saleItem->unit_price = $item['price'];
                 $saleItem->subtotal = $item['subtotal'];
                 $saleItem->notes = $item['notes'] ?? null;
                 $saleItem->save();
+                
+                // Update stock based on sale method
+                $this->updateStockForSaleMethod($item, $sale->warehouse_id ?? $this->form['warehouse_id']);
             }
 
             // Process the sale (update stock)
@@ -1480,17 +1495,131 @@ class Create extends Component
     }
 
     /**
+     * Handle sale method changes - mutually exclusive selection
+     */
+    public function updatedNewItemSaleMethod($value)
+    {
+        // Reset quantity when switching methods
+        $this->newItem['quantity'] = 1;
+        
+        if ($this->selectedItem) {
+            if ($value === 'piece') {
+                // Selling by piece - use piece price
+                $this->newItem['price'] = $this->selectedItem['selling_price'] ?? 0;
+                $this->newItem['unit_price'] = $this->selectedItem['selling_price_per_unit'] ?? 0;
+            } else {
+                // Selling by unit - use unit price
+                $this->newItem['price'] = $this->selectedItem['selling_price_per_unit'] ?? 0;
+                $this->newItem['unit_price'] = $this->selectedItem['selling_price_per_unit'] ?? 0;
+            }
+        }
+    }
+    
+    /**
      * Handle unit price changes for auto-calculation
      */
     public function updatedNewItemUnitPrice($value)
     {
-        // Calculate piece price based on unit price and item's unit quantity
-        if ($this->selectedItem && isset($this->selectedItem['unit_quantity'])) {
-            $this->newItem['price'] = (float)$value * (int)($this->selectedItem['unit_quantity'] ?? 1);
+        if ($this->newItem['sale_method'] === 'piece') {
+            // Calculate piece price based on unit price and item's unit quantity
+            if ($this->selectedItem && isset($this->selectedItem['unit_quantity'])) {
+                $this->newItem['price'] = (float)$value * (int)($this->selectedItem['unit_quantity'] ?? 1);
+            }
+        } else {
+            // Selling by unit - price is the unit price
+            $this->newItem['price'] = (float)$value;
         }
         
-        // Update totals when price changes
         $this->updateTotals();
+    }
+    
+    /**
+     * Get available stock based on sale method
+     */
+    public function getAvailableStockForMethod(): float
+    {
+        if (!$this->selectedItem || !$this->form['warehouse_id']) {
+            return 0.0;
+        }
+        
+        $stock = Stock::where('warehouse_id', $this->form['warehouse_id'])
+            ->where('item_id', $this->selectedItem['id'])
+            ->first();
+            
+        if (!$stock) {
+            return 0.0;
+        }
+        
+        if ($this->newItem['sale_method'] === 'piece') {
+            return (float)($stock->piece_count ?? 0.0);
+        } else {
+            // For unit sales, calculate total available units
+            $pieceCount = $stock->piece_count ?? 0;
+            $unitQuantity = $this->selectedItem['unit_quantity'] ?? 1;
+            $currentPieceUnits = $stock->current_piece_units ?? $unitQuantity;
+            
+            if ($pieceCount === 0) {
+                return 0.0;
+            }
+            
+            // Total units = units in current piece + (remaining full pieces * units per piece)
+            $remainingFullPieces = max(0, $pieceCount - 1);
+            return (float)($currentPieceUnits + ($remainingFullPieces * $unitQuantity));
+        }
+    }
+
+    /**
+     * Update stock based on sale method
+     */
+    private function updateStockForSaleMethod($item, $warehouseId)
+    {
+        $stock = Stock::where('warehouse_id', $warehouseId)
+            ->where('item_id', $item['item_id'])
+            ->first();
+            
+        if (!$stock) {
+            return;
+        }
+        
+        $saleMethod = $item['sale_method'] ?? 'piece';
+        $quantity = (float)$item['quantity'];
+        $itemModel = Item::find($item['item_id']);
+        $unitQuantity = $itemModel->unit_quantity ?? 1;
+        
+        if ($saleMethod === 'piece') {
+            // Selling by piece - reduce piece count directly
+            $stock->piece_count = max(0, $stock->piece_count - $quantity);
+            // Reset current piece units to full capacity when selling whole pieces
+            $stock->current_piece_units = $unitQuantity;
+        } else {
+            // Selling by unit - deduct from current piece units first
+            $currentPieceUnits = $stock->current_piece_units ?? $unitQuantity;
+            $remainingUnits = $quantity;
+            
+            while ($remainingUnits > 0 && $stock->piece_count > 0) {
+                if ($remainingUnits >= $currentPieceUnits) {
+                    // Use entire current piece
+                    $remainingUnits -= $currentPieceUnits;
+                    $stock->piece_count -= 1;
+                    $currentPieceUnits = $unitQuantity; // Reset for next piece
+                } else {
+                    // Use partial current piece
+                    $currentPieceUnits -= $remainingUnits;
+                    $remainingUnits = 0;
+                }
+            }
+            
+            $stock->current_piece_units = $currentPieceUnits;
+        }
+        
+        // Update total units calculation
+        $stock->total_units = ($stock->piece_count - 1) * $unitQuantity + $stock->current_piece_units;
+        if ($stock->piece_count === 0) {
+            $stock->total_units = 0;
+            $stock->current_piece_units = 0;
+        }
+        
+        $stock->save();
     }
 
     public function render()

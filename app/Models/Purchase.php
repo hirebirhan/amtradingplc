@@ -209,56 +209,62 @@ class Purchase extends Model
             // Update stock for each item
             foreach ($this->items as $purchaseItem) {
                 $item = $purchaseItem->item;
-                $quantity = $purchaseItem->quantity;
+                $pieces = (int)$purchaseItem->quantity; // Purchases are always in pieces
+                $unitCapacity = $item->unit_quantity ?? 1;
 
                 // Find or create the stock in the selected warehouse
                 $stock = Stock::firstOrCreate(
                     [
                         'warehouse_id' => $this->warehouse_id,
                         'item_id' => $item->id,
+                        'branch_id' => null, // Warehouse stock has no branch assignment
                     ],
                     [
                         'quantity' => 0,
+                        'piece_count' => 0,
+                        'total_units' => 0,
                     ]
                 );
 
-                // Update stock quantity
-                $stock->quantity += $quantity;
-                $stock->save();
+                // Add pieces to stock
+                $stock->addPieces(
+                    $pieces, 
+                    $unitCapacity, 
+                    'purchase', 
+                    $this->id, 
+                    'Item received - Purchase #' . $this->reference_no, 
+                    $this->user_id
+                );
 
                 // Update item's cost_price and record price history if needed
                 if ($this->update_cost_price && $item->cost_price != $purchaseItem->unit_cost) {
-                    $oldCost = $item->cost_price;
-                    $item->cost_price = $purchaseItem->unit_cost;
+                    $oldCostPerPiece = $item->cost_price;
+                    $oldCostPerUnit = $item->cost_price_per_unit;
+                    
+                    // The unit_cost from purchase item is the cost per piece
+                    $costPerPiece = $purchaseItem->unit_cost;
+                    $unitQuantity = $item->unit_quantity ?? 1;
+                    $costPerUnit = $costPerPiece / $unitQuantity;
+                    
+                    // Update both cost prices
+                    $item->cost_price = $costPerPiece; // Cost per piece
+                    $item->cost_price_per_unit = $costPerUnit; // Cost per individual unit
                     $item->save();
 
                     // Record price history
                     PriceHistory::create([
                         'item_id' => $item->id,
-                        'old_price' => $item->selling_price, // No change in selling price
-                        'new_price' => $item->selling_price, // No change in selling price
-                        'old_cost' => $oldCost,
-                        'new_cost' => $purchaseItem->unit_cost,
+                        'old_price' => $item->selling_price,
+                        'new_price' => $item->selling_price,
+                        'old_cost' => $oldCostPerPiece,
+                        'new_cost' => $costPerPiece,
                         'change_type' => 'purchase',
                         'reference_id' => $this->id,
                         'reference_type' => get_class($this),
                         'user_id' => $this->user_id,
-                        'notes' => 'Cost updated from purchase #' . $this->reference_no,
+                        'notes' => "Cost updated from purchase #{$this->reference_no} - Per piece: {$costPerPiece}, Per unit: {$costPerUnit}",
                     ]);
                 }
-
-                // Record stock history
-                StockHistory::create([
-                    'item_id' => $item->id,
-                    'warehouse_id' => $this->warehouse_id,
-                    'quantity_change' => $quantity,
-                    'quantity_before' => $stock->quantity - $quantity,
-                    'quantity_after' => $stock->quantity,
-                    'reference_type' => 'purchase',
-                    'reference_id' => $this->id,
-                    'user_id' => $this->user_id,
-                    'description' => 'Item received - Purchase #' . $this->reference_no,
-                ]);
             }
 
             // Update purchase status

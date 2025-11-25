@@ -265,9 +265,13 @@ class Create extends Component
                 // Debug before setting cost
                 $this->debugCostValues($item, 'updatedNewItemItemId-before');
 
-                // Set the unit cost and calculate piece cost
-                $this->newItem['unit_cost'] = $item->cost_price_per_unit ?? 0;
-                $this->newItem['cost'] = ($item->cost_price_per_unit ?? 0) * ($item->unit_quantity ?? 1);
+                // Set the cost per piece (this is what will be stored in purchase_items.unit_cost)
+                // If item has cost_price, use it; otherwise calculate from cost_price_per_unit
+                $costPerPiece = $item->cost_price ?? (($item->cost_price_per_unit ?? 0) * ($item->unit_quantity ?? 1));
+                $costPerUnit = $item->cost_price_per_unit ?? ($costPerPiece / ($item->unit_quantity ?? 1));
+                
+                $this->newItem['unit_cost'] = $costPerUnit; // Cost per individual unit (for display)
+                $this->newItem['cost'] = $costPerPiece; // Cost per piece (what gets stored)
 
                 // Store additional useful information
                 $this->newItem['unit'] = $item->unit ?? '';
@@ -281,8 +285,8 @@ class Create extends Component
                     'unit' => $item->unit ?? 'pcs',
                     'unit_quantity' => $item->unit_quantity ?? 1,
                     'item_unit' => $item->item_unit ?? 'piece',
-                    'cost_price' => $item->cost_price,
-                    'cost_price_per_unit' => $item->cost_price_per_unit ?? 0,
+                    'cost_price' => $costPerPiece,
+                    'cost_price_per_unit' => $costPerUnit,
                     'description' => $item->description,
                 ];
 
@@ -293,6 +297,9 @@ class Create extends Component
                     'item_id' => $item->id,
                     'item_name' => $item->name,
                     'unit' => $item->unit,
+                    'cost_per_piece' => $costPerPiece,
+                    'cost_per_unit' => $costPerUnit,
+                    'unit_quantity' => $item->unit_quantity,
                     'selectedItem' => $this->selectedItem,
                     'newItem' => $this->newItem
                 ]);
@@ -686,13 +693,27 @@ class Create extends Component
                     // Add to total
                     $itemTotal += $subtotal;
                     
-                    // Update stock
+                    // Update stock - quantity is treated as pieces
                     $this->updateStock($purchase->warehouse_id, $itemId, $quantity, $purchase->id);
                     
-                    // Update item cost price automatically
+                    // Update item cost prices automatically
                     if ($cost > 0) {
-                        $itemRecord->cost_price = $cost;
+                        // The cost from purchase is the total cost per piece
+                        // Calculate cost per unit (individual item within a piece)
+                        $unitQuantity = $itemRecord->unit_quantity ?? 1;
+                        $costPerUnit = $cost / $unitQuantity;
+                        
+                        // Update both cost prices
+                        $itemRecord->cost_price = $cost; // Cost per piece
+                        $itemRecord->cost_price_per_unit = $costPerUnit; // Cost per individual unit
                         $itemRecord->save();
+                        
+                        \Log::info('Item cost prices updated', [
+                            'item_id' => $itemId,
+                            'cost_per_piece' => $cost,
+                            'cost_per_unit' => $costPerUnit,
+                            'unit_quantity' => $unitQuantity
+                        ]);
                 }
             }
             
@@ -1445,7 +1466,7 @@ class Create extends Component
      * 
      * @param int $warehouseId The warehouse ID
      * @param int $itemId The item ID
-     * @param float $quantity The quantity to add to stock
+     * @param float $quantity The quantity to add to stock (pieces)
      * @param int $purchaseId The purchase ID for reference
      * @return void
      */
@@ -1458,46 +1479,51 @@ class Create extends Component
                 'quantity' => $quantity
             ]);
             
-            // Find existing stock record or create a new one (warehouse-only, no branch_id)
+            // Get the item to access unit_quantity
+            $item = Item::find($itemId);
+            if (!$item) {
+                throw new \Exception("Item not found: {$itemId}");
+            }
+            
+            $unitCapacity = $item->unit_quantity ?? 1;
+            
+            // Find existing stock record or create a new one
             $stock = Stock::firstOrNew([
                 'warehouse_id' => $warehouseId,
                 'item_id' => $itemId,
-                'branch_id' => null  // Explicitly ensure warehouse stock has no branch assignment
+                'branch_id' => null  // Warehouse stock has no branch assignment
             ]);
             
-            // If it's a new record, set the initial quantity to 0
+            // If it's a new record, initialize all values to 0
             if (!$stock->exists) {
                 $stock->quantity = 0;
+                $stock->piece_count = 0;
+                $stock->total_units = 0;
             }
             
-            // Get the original quantity for logging
-            $originalQuantity = $stock->quantity;
+            // Get the original values for logging
+            $originalPieces = $stock->piece_count;
+            $originalUnits = $stock->total_units;
             
-            // Add the purchase quantity
-            $stock->quantity += $quantity;
-            
-            // Save the stock record
-            $stock->save();
+            // Add pieces using the Stock model's method
+            $stock->addPieces(
+                (int)$quantity, 
+                $unitCapacity, 
+                'purchase', 
+                $purchaseId, 
+                'Stock added from purchase: ' . ($this->form['reference_no'] ?? 'N/A'), 
+                auth()->id()
+            );
             
             \Log::info('Stock updated successfully', [
                 'warehouse_id' => $warehouseId,
                 'item_id' => $itemId,
-                'previous_quantity' => $originalQuantity,
-                'added_quantity' => $quantity,
-                'new_quantity' => $stock->quantity
-            ]);
-            
-            // Create a stock history record for tracking
-            \App\Models\StockHistory::create([
-                'item_id' => $itemId,
-                'warehouse_id' => $warehouseId,
-                'quantity_before' => $originalQuantity,
-                'quantity_after' => $stock->quantity,
-                'quantity_change' => $quantity,
-                'reference_type' => 'purchase',
-                'reference_id' => $purchaseId,
-                'description' => 'Stock added from purchase: ' . ($this->form['reference_no'] ?? 'N/A'),
-                'user_id' => auth()->id()
+                'previous_pieces' => $originalPieces,
+                'previous_units' => $originalUnits,
+                'added_pieces' => $quantity,
+                'new_pieces' => $stock->piece_count,
+                'new_units' => $stock->total_units,
+                'unit_capacity' => $unitCapacity
             ]);
             
             return true;
@@ -1571,8 +1597,11 @@ class Create extends Component
                     'name' => $item['name'] ?? '',
                     'sku' => $item['sku'] ?? '',
                     'unit' => $item['unit'] ?? 'pcs',
-                    'quantity' => (float)($item['quantity'] ?? 0),
-                    'cost' => (float)($item['cost'] ?? 0),
+                    'unit_quantity' => (int)($item['unit_quantity'] ?? 1),
+                    'item_unit' => $item['item_unit'] ?? 'piece',
+                    'quantity' => (float)($item['quantity'] ?? 0), // Pieces for stock
+                    'cost' => (float)($item['cost'] ?? 0), // Cost per piece
+                    'unit_cost' => (float)($item['unit_cost'] ?? 0), // Cost per unit
                     'subtotal' => (float)($item['subtotal'] ?? 0),
                     'notes' => $item['notes'] ?? null,
                 ];
@@ -1763,9 +1792,10 @@ class Create extends Component
             'sku' => $item->sku,
             'unit' => $item->unit,
             'unit_quantity' => $item->unit_quantity ?? 1,
-            'item_unit' => $item->item_unit ?? '',
-            'quantity' => $this->newItem['quantity'],
-            'cost' => $this->newItem['cost'],
+            'item_unit' => $item->item_unit ?? 'piece',
+            'quantity' => $this->newItem['quantity'], // Pieces that will become stock
+            'cost' => $this->newItem['cost'], // Cost per piece
+            'unit_cost' => $this->newItem['unit_cost'] ?? ($this->newItem['cost'] / ($item->unit_quantity ?? 1)), // Cost per unit
             'subtotal' => $subtotal,
             'notes' => $this->newItem['notes'] ?? null,
         ];
@@ -2083,7 +2113,14 @@ class Create extends Component
     {
         // Calculate piece cost based on unit cost and item's unit quantity
         if ($this->selectedItem && isset($this->selectedItem['unit_quantity'])) {
-            $this->newItem['cost'] = (float)$value * (int)($this->selectedItem['unit_quantity'] ?? 1);
+            $unitQuantity = (int)($this->selectedItem['unit_quantity'] ?? 1);
+            $this->newItem['cost'] = (float)$value * $unitQuantity;
+            
+            \Log::info('Unit cost updated, recalculating piece cost', [
+                'unit_cost' => $value,
+                'unit_quantity' => $unitQuantity,
+                'piece_cost' => $this->newItem['cost']
+            ]);
         }
         
         // Update totals when cost changes
@@ -2138,8 +2175,10 @@ class Create extends Component
             'sku' => $item->sku,
             'unit' => $item->unit ?? '',
             'unit_quantity' => $item->unit_quantity ?? 1,
-            'quantity' => $quantity,
-            'cost' => $cost,
+            'item_unit' => $item->item_unit ?? 'piece',
+            'quantity' => $quantity, // This represents pieces that will become stock
+            'cost' => $cost, // This is cost per piece
+            'unit_cost' => $this->newItem['unit_cost'] ?? ($cost / ($item->unit_quantity ?? 1)), // Cost per individual unit
             'subtotal' => $subtotal,
             'notes' => $this->newItem['notes'] ?? null,
         ];
