@@ -14,6 +14,7 @@ class SaleItem extends Model
         'sale_id',
         'item_id',
         'quantity',
+        'sale_method',
         'unit_price',
         'tax_rate',
         'discount',
@@ -28,6 +29,22 @@ class SaleItem extends Model
         'discount' => 'decimal:2',
         'subtotal' => 'decimal:2',
     ];
+    
+    /**
+     * Check if this item was sold by piece
+     */
+    public function isSoldByPiece(): bool
+    {
+        return $this->sale_method === 'piece';
+    }
+    
+    /**
+     * Check if this item was sold by unit
+     */
+    public function isSoldByUnit(): bool
+    {
+        return $this->sale_method === 'unit';
+    }
 
     /**
      * Get the sale that owns the sale item.

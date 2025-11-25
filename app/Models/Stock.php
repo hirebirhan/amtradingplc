@@ -22,6 +22,9 @@ class Stock extends Model
         'branch_id',
         'item_id',
         'quantity',
+        'piece_count',
+        'total_units',
+        'current_piece_units',
         'created_by',
         'updated_by',
         'deleted_by',
@@ -37,6 +40,9 @@ class Stock extends Model
         'branch_id' => 'integer',
         'item_id' => 'integer',
         'quantity' => 'decimal:2',
+        'piece_count' => 'integer',
+        'total_units' => 'decimal:2',
+        'current_piece_units' => 'decimal:2',
     ];
 
     /**
@@ -64,14 +70,92 @@ class Stock extends Model
     }
 
     /**
-     * Update stock level and create a history record.
-     *
-     * @param float $quantity
-     * @param string $referenceType
-     * @param int|null $referenceId
-     * @param string|null $description
-     * @param int|null $userId
-     * @return void
+     * Add pieces to stock (Purchase flow)
+     */
+    public function addPieces(int $pieces, float $unitCapacity, string $referenceType, ?int $referenceId = null, ?string $description = null, ?int $userId = null): void
+    {
+        $piecesBefore = $this->piece_count;
+        $unitsBefore = $this->total_units;
+        
+        $this->piece_count += $pieces;
+        $this->total_units += ($pieces * $unitCapacity);
+        $this->quantity = $this->piece_count; // Stock level = piece count
+        $this->save();
+        
+        $this->createStockHistory($referenceType, $referenceId, $description, $userId, $piecesBefore, $unitsBefore);
+    }
+    
+    /**
+     * Sell by piece (deduct whole pieces)
+     */
+    public function sellByPiece(int $pieces, float $unitCapacity, string $referenceType, ?int $referenceId = null, ?string $description = null, ?int $userId = null): void
+    {
+        if ($this->piece_count < $pieces) {
+            throw new \Exception("Insufficient pieces. Available: {$this->piece_count}, Requested: {$pieces}");
+        }
+        
+        $unitsToDeduct = $pieces * $unitCapacity;
+        if ($this->total_units < $unitsToDeduct) {
+            throw new \Exception("Insufficient units. Available: {$this->total_units}, Required: {$unitsToDeduct}");
+        }
+        
+        $piecesBefore = $this->piece_count;
+        $unitsBefore = $this->total_units;
+        
+        $this->piece_count -= $pieces;
+        $this->total_units -= $unitsToDeduct;
+        $this->quantity = $this->piece_count; // Stock level = piece count
+        $this->save();
+        
+        $this->createStockHistory($referenceType, $referenceId, $description, $userId, $piecesBefore, $unitsBefore);
+    }
+    
+    /**
+     * Sell by unit (deduct units, auto-adjust pieces)
+     */
+    public function sellByUnit(float $units, float $unitCapacity, string $referenceType, ?int $referenceId = null, ?string $description = null, ?int $userId = null): void
+    {
+        if ($this->total_units < $units) {
+            throw new \Exception("Insufficient units. Available: {$this->total_units}, Requested: {$units}");
+        }
+        
+        $piecesBefore = $this->piece_count;
+        $unitsBefore = $this->total_units;
+        
+        // Calculate how many full pieces are emptied
+        $fullPiecesEmptied = floor($units / $unitCapacity);
+        
+        $this->total_units -= $units;
+        $this->piece_count -= $fullPiecesEmptied;
+        $this->quantity = $this->piece_count; // Stock level = piece count
+        $this->save();
+        
+        $this->createStockHistory($referenceType, $referenceId, $description, $userId, $piecesBefore, $unitsBefore);
+    }
+    
+    /**
+     * Create stock history record
+     */
+    private function createStockHistory(string $referenceType, ?int $referenceId, ?string $description, ?int $userId, int $piecesBefore, float $unitsBefore): void
+    {
+        StockHistory::create([
+            'warehouse_id' => $this->warehouse_id,
+            'item_id' => $this->item_id,
+            'quantity_before' => $piecesBefore,
+            'quantity_after' => $this->piece_count,
+            'quantity_change' => $this->piece_count - $piecesBefore,
+            'units_before' => $unitsBefore,
+            'units_after' => $this->total_units,
+            'units_change' => $this->total_units - $unitsBefore,
+            'reference_type' => $referenceType,
+            'reference_id' => $referenceId,
+            'description' => $description,
+            'user_id' => $userId,
+        ]);
+    }
+    
+    /**
+     * Legacy method for backward compatibility
      */
     public function updateStock(
         float $quantity,
@@ -84,7 +168,6 @@ class Stock extends Model
         $this->quantity += $quantity;
         $this->save();
 
-        // Create stock history record
         StockHistory::create([
             'warehouse_id' => $this->warehouse_id,
             'item_id' => $this->item_id,

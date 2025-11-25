@@ -353,9 +353,9 @@
 
                     <!-- Add Item Form -->
                     <div class="border rounded p-3">
-                        <div class="row g-2 align-items-end">
+                        <div class="row g-3 align-items-end">
                             <!-- Item Selection -->
-                            <div class="col-12 {{ $selectedItem ? 'col-md-4' : 'col-md-10' }}">
+                            <div class="col-12 {{ $selectedItem ? 'col-lg-2' : 'col-lg-10' }}">
                                 <label class="form-label fw-medium">
                                     Item <span class="text-primary">*</span>
                                 </label>
@@ -378,20 +378,30 @@
                                                 @if(count($this->filteredItemOptions) > 0)
                                                     @foreach($this->filteredItemOptions as $item)
                                                         <button type="button" 
-                                                                class="dropdown-item" 
+                                                                class="dropdown-item py-2" 
                                                                 wire:click="selectItem({{ $item['id'] }})">
                                                             <div class="d-flex justify-content-between align-items-center">
-                                                                <div>
-                                                                    <div class="fw-medium">{{ $item['name'] }}</div>
+                                                                <div class="flex-grow-1 me-2">
+                                                                    <div class="fw-medium text-truncate">{{ $item['name'] }}</div>
                                                                     <small class="text-muted">{{ $item['sku'] }}</small>
                                                                 </div>
-                                                                <div class="text-end">
-                                                                    @if($item['quantity'] <= 0)
-                                                                        <span class="badge bg-danger">Out of Stock</span>
+                                                                <div class="text-end flex-shrink-0">
+                                                                    @if($item['quantity'] < 0)
+                                                                        <span class="badge bg-dark text-white small">
+                                                                            Negative:<br>{{ $item['quantity'] }}
+                                                                        </span>
+                                                                    @elseif($item['quantity'] == 0)
+                                                                        <span class="badge bg-danger small">
+                                                                            Out of<br>Stock
+                                                                        </span>
                                                                     @elseif($item['quantity'] <= 5)
-                                                                        <span class="badge bg-warning">Low Stock: {{ $item['quantity'] }}</span>
+                                                                        <span class="badge bg-warning text-dark small">
+                                                                            Low Stock:<br>{{ $item['quantity'] }}
+                                                                        </span>
                                                                     @else
-                                                                        <span class="badge bg-success">Stock: {{ $item['quantity'] }}</span>
+                                                                        <span class="badge bg-success small">
+                                                                            Stock:<br>{{ $item['quantity'] }}
+                                                                        </span>
                                                                     @endif
                                                                 </div>
                                                             </div>
@@ -414,40 +424,62 @@
                                 @endif
                             </div>
                             @if($selectedItem)
-                            <!-- Quantity -->
-                            <div class="col-6 col-md-2">
-                                <label class="form-label fw-medium">Qty</label>
-                                <div class="input-group">
-                                    <input type="number" wire:model.live="newItem.quantity" class="form-control" min="1" step="1" placeholder="0">
-                                    <span class="input-group-text">pcs</span>
+                            <!-- Sale Method Toggle -->
+                            <div class="col-12 col-lg-2">
+                                <label class="form-label fw-medium">Sale Method</label>
+                                <div class="btn-group w-100 d-flex" role="group">
+                                    <input type="radio" class="btn-check" wire:model.live="newItem.sale_method" value="piece" id="method_piece" name="sale_method">
+                                    <label class="btn btn-outline-primary flex-fill text-center" for="method_piece">
+                                        <i class="bi bi-box d-block d-sm-inline me-sm-1"></i>
+                                        <span class="d-block d-sm-inline">Piece</span>
+                                    </label>
+                                    <input type="radio" class="btn-check" wire:model.live="newItem.sale_method" value="unit" id="method_unit" name="sale_method">
+                                    <label class="btn btn-outline-primary flex-fill text-center" for="method_unit">
+                                        <i class="bi bi-rulers d-block d-sm-inline me-sm-1"></i>
+                                        <span class="d-block d-sm-inline">{{ $selectedItem['item_unit'] ?? 'Unit' }}</span>
+                                    </label>
                                 </div>
                             </div>
-                            <!-- Unit Price Input -->
-                            <div class="col-6 col-md-2">
-                                <label class="form-label fw-medium">Price/{{ $selectedItem['item_unit'] ?? 'unit' }}</label>
+                            <!-- Quantity -->
+                            <div class="col-6 col-lg-2">
+                                <label class="form-label fw-medium">Quantity</label>
+                                <div class="input-group">
+                                    <input type="number" wire:model.live="newItem.quantity" class="form-control" min="1" step="{{ $newItem['sale_method'] === 'unit' ? '0.01' : '1' }}" placeholder="0">
+                                    <span class="input-group-text small">
+                                        @if($newItem['sale_method'] === 'piece')
+                                            pcs
+                                        @else
+                                            {{ $selectedItem['item_unit'] ?? 'units' }}
+                                        @endif
+                                    </span>
+                                </div>
+                                <small class="text-muted d-block mt-1">
+                                    Available: {{ number_format($this->getAvailableStockForMethod(), 2) }}
+                                </small>
+                            </div>
+                            <!-- Unit Price -->
+                            <div class="col-6 col-lg-2">
+                                <label class="form-label fw-medium">Unit<br>Price</label>
                                 <input type="number" wire:model.live="newItem.unit_price" class="form-control" min="0" step="0.01" placeholder="0.00">
                             </div>
-                            <!-- Calculated Piece Price -->
-                            <div class="col-6 col-md-2">
-                                <label class="form-label fw-medium">Price/piece</label>
-                                <input type="text" 
-                                       class="form-control" 
-                                       value="{{ number_format($newItem['price'] ?? 0, 2) }}"
-                                       readonly>
+                            <!-- Total Price -->
+                            <div class="col-6 col-lg-2">
+                                <label class="form-label fw-medium">Total<br>Price</label>
+                                <input type="text" class="form-control" value="{{ number_format((floatval($newItem['quantity'] ?? 0)) * (floatval($newItem['unit_price'] ?? 0)), 2) }}" readonly>
                             </div>
                             <!-- Add Button -->
-                            <div class="col-6 col-md-2 d-flex align-items-end">
+                            <div class="col-6 col-lg-2 d-flex align-items-end">
                                 @if($editingItemIndex !== null)
-                                    <div class="d-flex gap-1 w-100">
-                                        <button type="button" class="btn btn-success btn-sm flex-fill" wire:click="addItem">
+                                    <div class="btn-group w-100">
+                                        <button type="button" class="btn btn-success" wire:click="addItem">
                                             <i class="bi bi-check-lg"></i>
                                         </button>
-                                        <button type="button" class="btn btn-secondary btn-sm" wire:click="cancelEdit" title="Cancel editing">
+                                        <button type="button" class="btn btn-secondary" wire:click="cancelEdit">
                                             <i class="bi bi-x-lg"></i>
                                         </button>
                                     </div>
                                 @else
-                                    <button type="button" class="btn btn-outline-secondary w-100" wire:click="addItem">
+                                    <button type="button" class="btn btn-primary w-100" wire:click="addItem">
                                         <i class="bi bi-plus-lg me-1"></i>Add
                                     </button>
                                 @endif
@@ -470,8 +502,8 @@
                                 <thead>
                                     <tr>
                                         <th class="py-3 px-4 fw-semibold text-dark">Item</th>
+                                        <th class="text-center py-3 px-3 fw-semibold text-dark">Method</th>
                                         <th class="text-center py-3 px-3 fw-semibold text-dark">Qty</th>
-                                        <th class="text-center py-3 px-3 fw-semibold text-dark">Unit Qty</th>
                                         <th class="text-end py-3 px-3 fw-semibold text-dark">Price</th>
                                         <th class="text-end py-3 px-3 fw-semibold text-dark">Total</th>
                                         <th class="text-end py-3 px-4 fw-semibold text-dark" style="width: 80px;">Actions</th>
@@ -484,10 +516,23 @@
                                             <div class="fw-medium">{{ $item['name'] }}</div>
                                         </td>
                                         <td class="text-center py-3 px-3">
-                                            {{ $item['quantity'] }} pcs
+                                            @if(($item['sale_method'] ?? 'piece') === 'piece')
+                                                <span class="badge bg-primary-subtle text-primary-emphasis">
+                                                    <i class="bi bi-box me-1"></i>Piece
+                                                </span>
+                                            @else
+                                                <span class="badge bg-success-subtle text-success-emphasis">
+                                                    <i class="bi bi-rulers me-1"></i>Unit
+                                                </span>
+                                            @endif
                                         </td>
                                         <td class="text-center py-3 px-3">
-                                            {{ $item['unit_quantity'] ?? 1 }}
+                                            {{ $item['quantity'] }} 
+                                            @if(($item['sale_method'] ?? 'piece') === 'piece')
+                                                pcs
+                                            @else
+                                                {{ $item['item_unit'] ?? 'units' }}
+                                            @endif
                                         </td>
                                         <td class="text-end py-3 px-3">
                                             {{ number_format($item['price'], 2) }}
