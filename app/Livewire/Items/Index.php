@@ -598,7 +598,7 @@ class Index extends Component
         }
         
         $query = Item::query()
-            ->with(['category', 'stocks.warehouse'])
+            ->with(['category', 'stocks.warehouse', 'purchaseItems', 'saleItems'])
             ->where('is_active', true)
             ->when($this->search, function ($query) {
                 // Handle SKU search with and without prefix
@@ -631,97 +631,63 @@ class Index extends Component
                 });
             })
             ->when($this->hideZeroStock, function ($query) use ($warehouseIds) {
-                if (!empty($warehouseIds)) {
-                    $query->whereHas('stocks', function ($q) use ($warehouseIds) {
-                        $q->whereIn('warehouse_id', $warehouseIds)
-                          ->where('quantity', '>', 0);
-                    });
-                } else {
-                    $query->whereRaw('(SELECT SUM(quantity) FROM stocks WHERE item_id = items.id) > 0');
-                }
+                // Hide items with zero purchase quantity
+                $query->whereExists(function ($q) {
+                    $q->selectRaw('1')
+                      ->from('purchase_items')
+                      ->whereColumn('purchase_items.item_id', 'items.id')
+                      ->whereNull('purchase_items.deleted_at')
+                      ->havingRaw('SUM(purchase_items.quantity) > 0');
+                });
             })
             // Filter items based on user's role and warehouse access
             ->when($this->stockFilter, function ($query) use ($warehouseIds) {
                 if ($this->stockFilter === 'low') {
-                    if (!empty($warehouseIds)) {
-                        $query->whereHas('stocks', function ($q) use ($warehouseIds) {
-                            $q->whereIn('warehouse_id', $warehouseIds)
-                              ->whereRaw('quantity <= reorder_level')
-                              ->where('quantity', '>', 0);
-                        });
-                    } else {
-                        $query->whereRaw('(SELECT SUM(quantity) FROM stocks WHERE item_id = items.id) <= items.reorder_level')
-                              ->whereRaw('(SELECT SUM(quantity) FROM stocks WHERE item_id = items.id) > 0');
-                    }
+                    // Low purchase quantity (below reorder level)
+                    $query->whereRaw('(SELECT SUM(quantity) FROM purchase_items WHERE item_id = items.id) <= items.reorder_level')
+                          ->whereRaw('(SELECT SUM(quantity) FROM purchase_items WHERE item_id = items.id) > 0');
                 } elseif ($this->stockFilter === 'out') {
-                    if (!empty($warehouseIds)) {
-                        // For specific warehouses, we need to check if all those warehouses have 0 quantity
-                        // or the item doesn't have stock entries for those warehouses
-                        $itemsWithStock = Stock::whereIn('warehouse_id', $warehouseIds)
-                            ->where('quantity', '>', 0)
-                            ->pluck('item_id')
-                            ->toArray();
-                        $query->whereNotIn('id', $itemsWithStock);
-                    } else {
-                        $query->whereRaw('(SELECT SUM(quantity) FROM stocks WHERE item_id = items.id) = 0');
-                    }
+                    // No purchases
+                    $query->whereRaw('(SELECT SUM(quantity) FROM purchase_items WHERE item_id = items.id) = 0 OR (SELECT SUM(quantity) FROM purchase_items WHERE item_id = items.id) IS NULL');
                 } elseif ($this->stockFilter === 'in') {
-                    if (!empty($warehouseIds)) {
-                        $query->whereHas('stocks', function ($q) use ($warehouseIds) {
-                            $q->whereIn('warehouse_id', $warehouseIds)
-                              ->where('quantity', '>', 0);
-                        });
-                    } else {
-                        $query->whereRaw('(SELECT SUM(quantity) FROM stocks WHERE item_id = items.id) > 0');
-                    }
+                    // Has purchases
+                    $query->whereRaw('(SELECT SUM(quantity) FROM purchase_items WHERE item_id = items.id) > 0');
                 }
             })
             ->when($this->sortField === 'stock', function ($query) use ($warehouseIds) {
-                if (!empty($warehouseIds)) {
-                    $query->leftJoin('stocks', function ($join) use ($warehouseIds) {
-                        $join->on('items.id', '=', 'stocks.item_id')
-                             ->whereIn('stocks.warehouse_id', $warehouseIds);
-                    })
-                    ->orderByRaw('COALESCE(SUM(stocks.quantity), 0) ' . $this->sortDirection);
-                } else {
-                    $query->leftJoin('stocks', 'items.id', '=', 'stocks.item_id')
-                          ->orderByRaw('COALESCE(SUM(stocks.quantity), 0) ' . $this->sortDirection);
-                }
+                // Sort by total purchase quantity instead of stock
+                $query->leftJoin('purchase_items', 'items.id', '=', 'purchase_items.item_id')
+                      ->orderByRaw('COALESCE(SUM(purchase_items.quantity), 0) ' . $this->sortDirection);
             }, function ($query) {
-                $query->orderBy($this->sortField, $this->sortDirection);
+                if ($this->sortField === 'selling_price') {
+                    // Sort by total purchase amount instead of selling price
+                    $query->leftJoin('purchase_items as pi_sort', 'items.id', '=', 'pi_sort.item_id')
+                          ->orderByRaw('COALESCE(SUM(pi_sort.subtotal), 0) ' . $this->sortDirection);
+                } else {
+                    $query->orderBy($this->sortField, $this->sortDirection);
+                }
             });
 
+        // Group by items.id when using joins to avoid duplicates
+        if ($this->sortField === 'stock' || $this->sortField === 'selling_price') {
+            $query->groupBy('items.id');
+        }
+        
         $items = $query->paginate($this->perPage);
         $categories = Category::orderBy('name')->get();
         $branches = Branch::orderBy('name')->get();
         $warehouses = Warehouse::orderBy('name')->get();
 
-        // Calculate low stock and out of stock counts based on user role
-        $lowStockCount = 0;
-        $outOfStockCount = 0;
-
-        if (!empty($warehouseIds)) {
-            // For warehouse-specific users
-            $lowStockCount = Item::whereHas('stocks', function ($q) use ($warehouseIds) {
-                $q->whereIn('warehouse_id', $warehouseIds)
-                  ->whereRaw('quantity <= reorder_level')
-                  ->where('quantity', '>', 0);
-            })->count();
-
-            $itemsWithStock = Stock::whereIn('warehouse_id', $warehouseIds)
-                ->where('quantity', '>', 0)
-                ->pluck('item_id')
-                ->toArray();
-            $outOfStockCount = Item::whereNotIn('id', $itemsWithStock)->count();
-        } else {
-            // For super admin users (all stock)
-            $lowStockCount = Item::whereRaw('(SELECT SUM(quantity) FROM stocks WHERE item_id = items.id) <= items.reorder_level')
-                ->whereRaw('(SELECT SUM(quantity) FROM stocks WHERE item_id = items.id) > 0')
-                ->count();
-            $outOfStockCount = Item::whereRaw('(SELECT SUM(quantity) FROM stocks WHERE item_id = items.id) = 0')->count();
-        }
+        // Calculate low purchase and no purchase counts
+        $lowStockCount = Item::whereRaw('(SELECT SUM(quantity) FROM purchase_items WHERE item_id = items.id) <= items.reorder_level')
+            ->whereRaw('(SELECT SUM(quantity) FROM purchase_items WHERE item_id = items.id) > 0')
+            ->count();
+            
+        $outOfStockCount = Item::whereRaw('(SELECT SUM(quantity) FROM purchase_items WHERE item_id = items.id) = 0 OR (SELECT SUM(quantity) FROM purchase_items WHERE item_id = items.id) IS NULL')
+            ->count();
 
         $totalCount = Item::count();
+        $inStockCount = Item::whereRaw('(SELECT SUM(quantity) FROM purchase_items WHERE item_id = items.id) > 0')->count();
 
         return view('livewire.items.index', [
             'items' => $items,

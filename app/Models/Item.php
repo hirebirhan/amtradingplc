@@ -17,6 +17,7 @@ use App\Models\Category;
 use App\Models\StockReservation;
 use App\Models\Stock;
 use App\Models\StockHistory;
+use App\Models\PurchaseItem;
 
 class Item extends Model
 {
@@ -429,6 +430,54 @@ class Item extends Model
     public function sales()
     {
         return $this->hasMany(Sale::class);
+    }
+
+    /**
+     * Get all purchase items for this item.
+     */
+    public function purchaseItems()
+    {
+        return $this->hasMany(PurchaseItem::class);
+    }
+
+    /**
+     * Get all sale items for this item.
+     */
+    public function saleItems()
+    {
+        return $this->hasMany(SaleItem::class);
+    }
+
+    /**
+     * Get the total purchase amount for this item.
+     * This calculates the sum of all purchase costs for this item.
+     *
+     * @return float
+     */
+    public function getTotalPurchaseAmountAttribute(): float
+    {
+        return $this->purchaseItems()->sum('subtotal') ?: 0;
+    }
+
+    /**
+     * Get the total quantity purchased for this item.
+     *
+     * @return float
+     */
+    public function getTotalPurchaseQuantityAttribute(): float
+    {
+        return $this->purchaseItems()->sum('quantity') ?: 0;
+    }
+
+    /**
+     * Get the total sales amount for this item.
+     * This calculates the sum of all sales revenue for this item.
+     *
+     * @return float
+     */
+    public function getTotalSalesAmountAttribute(): float
+    {
+        return $this->saleItems()->sum('subtotal') ?: 0;
     }
 
     /**

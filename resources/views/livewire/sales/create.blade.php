@@ -465,7 +465,7 @@
                             <!-- Total Price -->
                             <div class="col-6 col-lg-2">
                                 <label class="form-label fw-medium">Total<br>Price</label>
-                                <input type="text" class="form-control" value="{{ number_format((floatval($newItem['quantity'] ?? 0)) * (floatval($newItem['unit_price'] ?? 0)), 2) }}" readonly>
+                                <input type="text" class="form-control" value="{{ number_format((floatval($newItem['quantity'] ?? 0)) * (floatval($newItem['price'] ?? 0)), 2) }}" readonly>
                             </div>
                             <!-- Add Button -->
                             <div class="col-6 col-lg-2 d-flex align-items-end">

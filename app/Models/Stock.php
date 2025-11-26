@@ -80,6 +80,12 @@ class Stock extends Model
         $this->piece_count += $pieces;
         $this->total_units += ($pieces * $unitCapacity);
         $this->quantity = $this->piece_count; // Stock level = piece count
+        
+        // Initialize current_piece_units if null or set to full capacity
+        if ($this->current_piece_units === null || $this->piece_count === $pieces) {
+            $this->current_piece_units = $unitCapacity;
+        }
+        
         $this->save();
         
         $this->createStockHistory($referenceType, $referenceId, $description, $userId, $piecesBefore, $unitsBefore);
@@ -105,6 +111,14 @@ class Stock extends Model
         $this->piece_count -= $pieces;
         $this->total_units -= $unitsToDeduct;
         $this->quantity = $this->piece_count; // Stock level = piece count
+        
+        // Reset current piece units to full capacity when selling whole pieces
+        if ($this->piece_count > 0) {
+            $this->current_piece_units = $unitCapacity;
+        } else {
+            $this->current_piece_units = 0;
+        }
+        
         $this->save();
         
         $this->createStockHistory($referenceType, $referenceId, $description, $userId, $piecesBefore, $unitsBefore);
@@ -122,12 +136,51 @@ class Stock extends Model
         $piecesBefore = $this->piece_count;
         $unitsBefore = $this->total_units;
         
-        // Calculate how many full pieces are emptied
-        $fullPiecesEmptied = floor($units / $unitCapacity);
+        // Initialize current_piece_units if null
+        if ($this->current_piece_units === null) {
+            $this->current_piece_units = $unitCapacity;
+        }
         
+        $remainingUnits = $units;
+        
+        // First, deduct from current piece units
+        if ($remainingUnits <= $this->current_piece_units) {
+            // Can fulfill from current piece without touching piece count
+            $this->current_piece_units -= $remainingUnits;
+            $remainingUnits = 0;
+        } else {
+            // Need to use multiple pieces
+            $remainingUnits -= $this->current_piece_units; // Use all units from current piece
+            $piecesToDeduct = 1; // Current piece is now empty
+            
+            // Calculate how many additional full pieces needed
+            $additionalFullPieces = floor($remainingUnits / $unitCapacity);
+            $piecesToDeduct += $additionalFullPieces;
+            
+            // Calculate remaining units for the next piece
+            $unitsFromNextPiece = $remainingUnits % $unitCapacity;
+            
+            // Deduct pieces from stock
+            $this->piece_count -= $piecesToDeduct;
+            
+            // Set current piece units for the new current piece
+            if ($this->piece_count > 0 && $unitsFromNextPiece > 0) {
+                $this->current_piece_units = $unitCapacity - $unitsFromNextPiece;
+            } else {
+                $this->current_piece_units = $unitCapacity;
+            }
+        }
+        
+        // Update total units and quantity
         $this->total_units -= $units;
-        $this->piece_count -= $fullPiecesEmptied;
         $this->quantity = $this->piece_count; // Stock level = piece count
+        
+        // Ensure consistency
+        if ($this->piece_count === 0) {
+            $this->total_units = 0;
+            $this->current_piece_units = 0;
+        }
+        
         $this->save();
         
         $this->createStockHistory($referenceType, $referenceId, $description, $userId, $piecesBefore, $unitsBefore);
