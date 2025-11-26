@@ -3,6 +3,7 @@
 namespace App\Livewire\Suppliers;
 
 use App\Models\Supplier;
+use App\Traits\HasFlashMessages;
 use Livewire\Component;
 use Livewire\Attributes\Layout;
 use Illuminate\Support\Facades\Auth;
@@ -11,6 +12,7 @@ use Illuminate\Database\QueryException;
 #[Layout('components.layouts.app')]
 class Create extends Component
 {
+    use HasFlashMessages;
     // Only keep the required field to simplify supplier creation
     public $form = [
         'name' => '',
@@ -51,7 +53,7 @@ class Create extends Component
     {
         // Check permissions
         if (!Auth::user()->can('create', Supplier::class)) {
-            $this->dispatch('toast', type: 'error', message: 'You are not authorized to create suppliers.');
+            $this->dispatch('notify', type: 'error', message: 'You are not authorized to create suppliers.');
             return;
         }
 
@@ -69,7 +71,7 @@ class Create extends Component
                 'created_by' => Auth::id(),
             ]);
 
-            session()->flash('message', 'Supplier created successfully!');
+            session()->flash('success', 'Supplier created successfully.');
             return redirect()->route('admin.suppliers.show', $supplier->id);
 
         } catch (QueryException $e) {
@@ -77,7 +79,7 @@ class Create extends Component
                 $this->addError('form.email', 'This email address is already registered.');
                 return;
             }
-            $this->dispatch('toast', type: 'error', message: 'Database error occurred. Please try again.');
+            $this->dispatch('notify', type: 'error', message: 'Database error occurred. Please try again.');
         }
     }
 

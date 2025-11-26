@@ -5,6 +5,7 @@ namespace App\Livewire\Items;
 use App\Models\Category;
 use App\Models\Item;
 use App\Imports\ItemsImport;
+use App\Traits\HasFlashMessages;
 use Livewire\Component;
 use Livewire\WithPagination;
 use Livewire\WithFileUploads;
@@ -19,7 +20,7 @@ use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 #[Layout('components.layouts.app')]
 class Index extends Component
 {
-    use WithPagination, WithFileUploads, AuthorizesRequests;
+    use WithPagination, WithFileUploads, AuthorizesRequests, HasFlashMessages;
 
     #[Url(except: '')]
     public $search = '';
@@ -66,7 +67,6 @@ class Index extends Component
     {
         // The #[Url] attribute automatically handles URL parameters
         // We can add additional initialization logic here if needed
-        session()->flash('low-stock-report-accessed', $this->stockFilter === 'low');
     }
 
     public function clearSearch()
@@ -97,25 +97,23 @@ class Index extends Component
     {
         // Check permission
         if (!auth()->user()->can('items.delete')) {
-            $this->dispatch('notify', type: 'error', message: 'You do not have permission to delete items.');
+            // Permission and validation checks - no flash messages for errors
             return;
         }
 
         // Check if the item has stock history
         if ($item->stockHistories()->count() > 0) {
-            $this->dispatch('notify', type: 'error', message: 'Cannot delete item with stock history records.');
             return;
         }
 
         // Check if the item has stock
         if ($item->stocks()->sum('quantity') > 0) {
-            $this->dispatch('notify', type: 'error', message: 'Cannot delete item with existing stock. Please adjust stock to zero first.');
             return;
         }
 
         // Delete the item
         $item->delete();
-        $this->dispatch('notify', type: 'success', message: 'Item deleted successfully!');
+        $this->flashCrudSuccess('item', 'deleted');
     }
 
     public function previewImport()

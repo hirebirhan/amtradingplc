@@ -4,6 +4,7 @@ namespace App\Livewire\Customers;
 
 use App\Models\Customer;
 use App\Models\Branch;
+use App\Traits\HasFlashMessages;
 use Livewire\Component;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Validate;
@@ -15,6 +16,7 @@ use Illuminate\Database\QueryException;
 #[Layout('components.layouts.app')]
 class Create extends Component
 {
+    use HasFlashMessages;
     public $form = [
         'name' => '',
         'email' => '',
@@ -123,10 +125,7 @@ class Create extends Component
 
         // Check permissions
         if (!Auth::user()->can('create', Customer::class)) {
-            $this->dispatch('toast', [
-                'type' => 'error',
-                'message' => 'You are not authorized to create customers.',
-            ]);
+            $this->dispatch('notify', type: 'error', message: 'You are not authorized to create customers.');
             return;
         }
 
@@ -163,10 +162,7 @@ class Create extends Component
             // Reset the form
             $this->resetForm();
 
-            $this->dispatch('toast', [
-                'type' => 'success',
-                'message' => 'Customer created successfully!',
-            ]);
+            session()->flash('success', 'Customer created successfully.');
 
             return redirect()->route('admin.customers.show', $customer->id);
 
@@ -186,19 +182,13 @@ class Create extends Component
                 return;
             }
             
-            $this->dispatch('toast', [
-                'type' => 'error',
-                'message' => 'Database error occurred. Please try again.',
-            ]);
+            $this->dispatch('notify', type: 'error', message: 'Database error occurred. Please try again.');
             
         } catch (\Exception $e) {
             DB::rollBack();
             $this->isSubmitting = false;
             
-            $this->dispatch('toast', [
-                'type' => 'error',
-                'message' => 'An error occurred while creating the customer. Please try again.',
-            ]);
+            $this->dispatch('notify', type: 'error', message: 'An error occurred while creating the customer. Please try again.');
         }
     }
 

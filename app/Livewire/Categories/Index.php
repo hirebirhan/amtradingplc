@@ -3,6 +3,7 @@
 namespace App\Livewire\Categories;
 
 use App\Models\Category;
+use App\Traits\HasFlashMessages;
 use Livewire\Component;
 use Livewire\WithPagination;
 use Illuminate\Database\Eloquent\Builder;
@@ -16,7 +17,7 @@ use Illuminate\Support\Facades\Log;
 #[Layout('components.layouts.app')]
 class Index extends Component
 {
-    use WithPagination, AuthorizesRequests;
+    use WithPagination, AuthorizesRequests, HasFlashMessages;
 
     public $search = '';
     public $perPage = 10;
@@ -144,7 +145,7 @@ class Index extends Component
                 $message .= " {$childrenCount} subcategory(ies) were also deleted.";
             }
             
-            $this->dispatch('notify', type: 'success', message: $message);
+            $this->flashSuccess($message);
             $this->dispatch('categoryDeleted');
             
             // Reset modal state

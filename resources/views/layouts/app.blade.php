@@ -24,8 +24,6 @@
     <noscript><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" crossorigin="anonymous" referrerpolicy="no-referrer"></noscript>
     
     <!-- Non-critical CSS -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" media="print" onload="this.media='all'" crossorigin="anonymous" referrerpolicy="no-referrer">
-    <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" crossorigin="anonymous" referrerpolicy="no-referrer"></noscript>
     
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -155,11 +153,14 @@
         
     </div>
 
+    <!-- Global Flash Messages -->
+    @include('components.flash-messages')
+
     <!-- Scripts (defer non-critical) -->
     <!-- Alpine.js for x-* directives used across views -->
     <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js" defer crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" defer integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js" defer crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
     <script src="{{ asset('js/phone-input-restriction.js') }}" defer></script>
     
     <script>
@@ -200,39 +201,13 @@
                 });
             }
             
-            // Initialize Toastr
-            if (typeof toastr !== 'undefined') {
-                toastr.options = {
-                    closeButton: true,
-                    progressBar: true,
-                    positionClass: "toast-top-right",
-                    timeOut: 5000,
-                    preventDuplicates: true,
-                    newestOnTop: true
-                };
-
-                // Show session messages
-                @if(session('success'))
-                    toastr.success("{{ session('success') }}");
-                @endif
-                @if(session('error'))
-                    toastr.error("{{ session('error') }}");
-                @endif
-                @if(session('warning'))
-                    toastr.warning("{{ session('warning') }}");
-                @endif
-                @if(session('info'))
-                    toastr.info("{{ session('info') }}");
-                @endif
-            }
-
-            // Livewire event listeners
+            // Livewire event listeners for flash messages
             if (typeof Livewire !== 'undefined') {
                 document.addEventListener('livewire:initialized', () => {
                     Livewire.on('notify', (event) => {
                         const { type, message } = event.detail || event;
-                        if (toastr && toastr[type]) {
-                            toastr[type](message);
+                        if (typeof showFlashMessage === 'function') {
+                            showFlashMessage(type, message);
                         }
                     });
                 });

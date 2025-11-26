@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace App\Livewire\Categories;
 
 use App\Models\Category;
+use App\Traits\HasFlashMessages;
 use Livewire\Component;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Log;
 
 class Form extends Component
 {
+    use HasFlashMessages;
     public Category $category;
     public bool $isEdit = false;
     public bool $isSubmitting = false;
@@ -176,9 +178,9 @@ class Form extends Component
 
             if (!$this->isEdit) {
                 $this->reset(['name', 'description', 'parent_id']);
-                session()->flash('success', "Category '{$this->category->name}' created successfully!");
+                $this->flashCrudSuccess('category', 'created');
             } else {
-                session()->flash('success', "Category '{$this->category->name}' updated successfully!");
+                $this->flashCrudSuccess('category', 'updated');
             }
 
         } catch (\Illuminate\Validation\ValidationException $e) {
@@ -197,7 +199,7 @@ class Form extends Component
                 ]
             ]);
             
-            session()->flash('error', 'Failed to save category. Please try again or contact support if the problem persists.');
+            // Removed error flash - validation errors are sufficient
         } finally {
             $this->isSubmitting = false;
         }
