@@ -296,7 +296,7 @@ class Index extends Component
     {
         // Start with a clean query builder
         $query = Credit::query()
-            ->with(['customer', 'supplier', 'purchase.items']);
+            ->with(['customer', 'supplier', 'purchase.items', 'sale']);
 
         // Apply search filter
         if (!empty($this->search)) {
@@ -534,7 +534,7 @@ class Index extends Component
      */
     private function getCreditsQuery()
     {
-        $query = Credit::query()->with(['customer', 'supplier', 'user', 'branch']);
+        $query = Credit::query()->with(['customer', 'supplier', 'user', 'branch', 'sale']);
 
         // Apply search filter
         if (!empty($this->search)) {

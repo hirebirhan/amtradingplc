@@ -333,7 +333,7 @@ class Sale extends Model
                 'description' => 'Credit for sale #' . $this->reference_no,
                 'credit_date' => $this->sale_date,
                 'due_date' => now()->addDays(30),
-                'status' => $this->paid_amount > 0 ? 'partial' : 'active',
+                'status' => $this->paid_amount > 0 ? 'partially_paid' : 'active',
                 'user_id' => $this->user_id,
                 'branch_id' => $this->branch_id,
                 'warehouse_id' => $this->warehouse_id,
@@ -406,7 +406,7 @@ class Sale extends Model
             if ($credit->balance <= 0) {
                 $credit->status = 'paid';
             } elseif ($credit->paid_amount > 0) {
-                $credit->status = 'partial';
+                $credit->status = 'partially_paid';
             } else {
                 $credit->status = 'active';
             }

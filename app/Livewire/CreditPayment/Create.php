@@ -236,9 +236,7 @@ class Create extends Component
         ];
         
         // Add conditional validation rules based on payment method
-        if (
-            $this->payment_method === 'bank_transfer'
-        ) {
+        if ($this->payment_method === 'bank_transfer') {
             $rules['bank_account_id'] = 'required|exists:bank_accounts,id';
             $rules['reference_no'] = 'nullable|string|max:255';
             $rules['receiver_bank_name'] = 'required|string|max:255';
@@ -364,10 +362,15 @@ class Create extends Component
             
             DB::commit();
             
+            // Refresh credit to get updated status
+            $this->credit->refresh();
+            
             if ($this->credit->status === 'paid' || $this->credit->balance <= 0) {
-                return redirect()->route('admin.credits.index')->with('success', 'Credit fully paid.');
+                session()->flash('success', 'Credit closed successfully with negotiated prices.');
+                return redirect()->route('admin.credits.index');
             } else {
-                return redirect()->route('admin.credits.index')->with('success', 'Credit partially paid.');
+                session()->flash('success', 'Closing payment recorded. Remaining balance: ' . number_format($this->credit->balance, 2) . ' ETB');
+                return redirect()->route('admin.credits.index');
             }
         } catch (\Exception $e) {
             DB::rollBack();
@@ -377,27 +380,10 @@ class Create extends Component
     
     public function store()
     {
-        $rules = [
-            'amount' => 'required|numeric|min:0.01',
-            'payment_method' => 'required|string|in:cash,bank_transfer,telebirr,check',
-            'payment_date' => 'required|date',
-        ];
-        
-        if ($this->payment_method === 'bank_transfer') {
-            $rules['bank_account_id'] = 'required|exists:bank_accounts,id';
-            $rules['receiver_bank_name'] = 'required|string|max:255';
-            $rules['receiver_account_holder'] = 'required|string|max:255';
-            $rules['receiver_account_number'] = 'required|string|max:255';
-        } elseif ($this->payment_method === 'telebirr') {
-            $rules['transaction_number'] = 'required|string|max:255';
-            $rules['receiver_bank_name'] = 'required|string|max:255';
-            $rules['receiver_account_holder'] = 'required|string|max:255';
-            $rules['receiver_account_number'] = 'required|string|max:255';
-        } elseif ($this->payment_method === 'check') {
-            $rules['reference_no'] = 'required|string|max:255';
+        // Prevent double submission
+        if ($this->showConfirmation === false) {
+            return;
         }
-        
-        $this->validate($rules, $this->getValidationMessages());
         
         try {
             DB::beginTransaction();
@@ -423,13 +409,22 @@ class Create extends Component
             
             DB::commit();
             
+            // Close confirmation modal
+            $this->showConfirmation = false;
+            
+            // Refresh credit to get updated status
+            $this->credit->refresh();
+            
             if ($this->credit->status === 'paid' || $this->credit->balance <= 0) {
-                return redirect()->route('admin.credits.index')->with('success', 'Credit fully paid.');
+                session()->flash('success', 'Payment recorded successfully. Credit is now fully paid.');
+                return redirect()->route('admin.credits.index');
             } else {
-                return redirect()->route('admin.credits.index')->with('success', 'Credit partially paid.');
+                session()->flash('success', 'Payment recorded successfully. Remaining balance: ' . number_format($this->credit->balance, 2) . ' ETB');
+                return redirect()->route('admin.credits.index');
             }
         } catch (\Exception $e) {
             DB::rollBack();
+            $this->showConfirmation = false;
             $this->notifyError('Failed to record payment: ' . $e->getMessage());
         }
     }

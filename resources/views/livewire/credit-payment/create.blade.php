@@ -293,31 +293,33 @@
                         @endif
 
                         <form wire:submit.prevent="confirmPayment">
-                            @if($credit->credit_type === 'payable')
-                                <div class="row g-3 mb-3">
-                                    <div class="col-12">
-                                        <label for="paymentType" class="form-label">Payment Type</label>
-                                        <select wire:model.live="paymentType" id="paymentType" class="form-select @error('paymentType') is-invalid @enderror" required>
-                                            <option value="down_payment">Down Payment (Partial)</option>
-                                            <option value="closing_payment">Closing Payment (Final with closing prices)</option>
-                                        </select>
-                                        @error('paymentType')
-                                            <div class="invalid-feedback d-block">{{ $message }}</div>
-                                        @enderror
-                                        <div class="form-text">
-                                            @if($paymentType === 'down_payment')
-                                                <span class="text-muted">Make a partial payment without closing prices.</span>
-                                                @if($amount >= $credit->balance)
-                                                    <br><span class="text-warning"><i class="fas fa-exclamation-triangle me-1"></i>You're paying the full amount. Consider selecting "Closing Payment" instead.</span>
-                                                @endif
-                                            @else
+                            <div class="row g-3 mb-3">
+                                <div class="col-12">
+                                    <label for="paymentType" class="form-label">Payment Type</label>
+                                    <select wire:model.live="paymentType" id="paymentType" class="form-select @error('paymentType') is-invalid @enderror" required>
+                                        <option value="down_payment">Down Payment (Partial)</option>
+                                        <option value="closing_payment">Closing Payment (Final {{ $credit->credit_type === 'payable' ? 'with closing prices' : 'payment' }})</option>
+                                    </select>
+                                    @error('paymentType')
+                                        <div class="invalid-feedback d-block">{{ $message }}</div>
+                                    @enderror
+                                    <div class="form-text">
+                                        @if($paymentType === 'down_payment')
+                                            <span class="text-muted">Make a partial payment.</span>
+                                            @if($amount >= $credit->balance)
+                                                <br><span class="text-warning"><i class="fas fa-exclamation-triangle me-1"></i>You're paying the full amount. Consider selecting "Closing Payment" instead.</span>
+                                            @endif
+                                        @else
+                                            @if($credit->credit_type === 'payable')
                                                 <span class="text-muted">Close the credit by entering final closing prices for all items.</span>
                                                 <br><span class="text-info"><i class="fas fa-info-circle me-1"></i>You'll be asked to enter closing prices for each item to calculate savings.</span>
+                                            @else
+                                                <span class="text-muted">Make the final payment to close this credit.</span>
                                             @endif
-                                        </div>
+                                        @endif
                                     </div>
                                 </div>
-                            @endif
+                            </div>
                             
                             <div class="row g-3">
                                 <div class="col-12 col-md-6">

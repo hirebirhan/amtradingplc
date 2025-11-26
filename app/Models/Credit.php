@@ -178,7 +178,7 @@ class Credit extends Model
         if ($this->balance <= 0) {
             $this->status = 'paid';
         } else {
-            $this->status = 'partial';
+            $this->status = 'partially_paid';
         }
         
         // Save with monitoring
