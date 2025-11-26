@@ -71,10 +71,10 @@
                 </div>
                 <div class="col-6 col-md-3">
                     <select wire:model.live="stockFilter" class="form-select">
-                        <option value="">All Stock Statuses</option>
-                        <option value="in">In Stock</option>
-                        <option value="low">Low Stock</option>
-                        <option value="out">Out of Stock</option>
+                        <option value="">All Purchase Statuses</option>
+                        <option value="in">Has Purchases</option>
+                        <option value="low">Low Purchase Qty</option>
+                        <option value="out">No Purchases</option>
                     </select>
                 </div>
             </div>
@@ -102,8 +102,8 @@
                         <div class="d-flex align-items-center h-100">
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" wire:model.live="hideZeroStock" id="hideZeroStock">
-                                <label class="form-check-label" for="hideZeroStock" title="Hide items with zero stock">
-                                    Hide items with zero stock
+                                <label class="form-check-label" for="hideZeroStock" title="Hide items with zero purchases">
+                                    Hide items with zero purchases
                                 </label>
                             </div>
                         </div>
@@ -113,8 +113,8 @@
                         <div class="d-flex align-items-center h-100">
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" wire:model.live="hideZeroStock" id="hideZeroStock">
-                                <label class="form-check-label" for="hideZeroStock" title="Hide items with zero stock">
-                                    Hide items with zero stock
+                                <label class="form-check-label" for="hideZeroStock" title="Hide items with zero purchases">
+                                    Hide items with zero purchases
                                 </label>
                             </div>
                         </div>
@@ -152,13 +152,16 @@
                             </th>
                             <th class="px-3 py-3 text-start cursor-pointer fw-semibold text-dark" wire:click="sortBy('selling_price')">
                                 <div class="d-flex align-items-center gap-2">
-                                    <span>Price (ETB)</span>
+                                    <span>Total Purchase (ETB)</span>
                                     <i class="bi bi-arrow-down-up text-secondary"></i>
                                 </div>
                             </th>
+                            <th class="px-3 py-3 text-start fw-semibold text-dark">
+                                <span>Sales Amount (ETB)</span>
+                            </th>
                             <th class="px-3 py-3 text-center cursor-pointer fw-semibold text-dark" wire:click="sortByStock">
                                 <div class="d-flex align-items-center justify-content-center gap-2">
-                                    <span>Stock</span>
+                                    <span>Purchase Qty</span>
                                     <i class="bi bi-arrow-down-up text-secondary"></i>
                                 </div>
                             </th>
@@ -179,19 +182,14 @@
                                     {{ $item->unit_quantity ?? 1 }}
                                 </td>
                                 <td class="px-3 py-3 text-start">{{ number_format($item->cost_price, 2) }}</td>
-                                <td class="px-3 py-3 text-start">{{ number_format($item->selling_price, 2) }}</td>
+                                <td class="px-3 py-3 text-start">{{ number_format($item->total_purchase_amount, 2) }}</td>
+                                <td class="px-3 py-3 text-start">{{ number_format($item->total_sales_amount, 2) }}</td>
                                 <td class="px-3 py-3 text-center">
                                     <div class="d-flex flex-column align-items-center">
                                         <div class="d-flex align-items-center gap-1">
-                                            <span class="fw-medium">{{ $this->getItemStock($item) }}</span>
+                                            <span class="fw-medium">{{ number_format($item->total_purchase_quantity, 2) }}</span>
                                             <span class="text-secondary">{{ $item->unit ?? 'pcs' }}</span>
                                         </div>
-                                       
-                                        @if(auth()->user()->hasRole(['SystemAdmin', 'Manager']) && $item->stocks->count() > 1)
-                                            <div class="text-secondary small" title="Click to view warehouse details">
-                                                <i class="bi bi-building me-1"></i>{{ $item->stocks->count() }} warehouses
-                                            </div>
-                                        @endif
                                     </div>
                                 </td>
                                 <td class="px-3 py-3 text-center">
@@ -211,7 +209,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="8" class="text-center py-5">
+                                <td colspan="9" class="text-center py-5">
                                     <div class="d-flex flex-column align-items-center">
                                         <i class="bi bi-box-seam display-6 text-secondary mb-3"></i>
                                         <h6 class="fw-medium">No items found</h6>

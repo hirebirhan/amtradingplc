@@ -232,6 +232,9 @@ class Sale extends Model
                 $this->user_id
             );
         }
+        
+        // Also deduct from purchase quantity
+        $this->deductFromPurchaseQuantity($item, $saleItem);
     }
 
     /**
@@ -301,6 +304,9 @@ class Sale extends Model
             $method = $saleItem->isSoldByPiece() ? 'pieces' : 'units';
             throw new \Exception("Insufficient stock for item '{$item->name}'. Could not fulfill {$remainingQuantity} {$method} from branch warehouses.");
         }
+        
+        // Also deduct from purchase quantity
+        $this->deductFromPurchaseQuantity($item, $saleItem);
     }
 
     /**
@@ -345,6 +351,22 @@ class Sale extends Model
                 );
             }
         });
+    }
+
+    /**
+     * Deduct sold quantity from purchase quantity by creating negative purchase item
+     */
+    private function deductFromPurchaseQuantity($item, $saleItem): void
+    {
+        // Create a negative purchase item to deduct from total purchase quantity
+        PurchaseItem::create([
+            'purchase_id' => null, // No specific purchase (system adjustment)
+            'item_id' => $item->id,
+            'quantity' => -$saleItem->quantity, // Negative quantity
+            'unit_cost' => 0, // No cost for sale deduction
+            'subtotal' => 0, // No cost for sale deduction
+            'notes' => 'Sale deduction - Sale #' . $this->reference_no,
+        ]);
     }
 
     /**
