@@ -253,6 +253,11 @@
                                 </td>
                                 <td class="text-end py-3 px-3">
                                     <span class="text-success fw-semibold">{{ number_format($credit->paid_amount, 2) }}</span>
+                                    @if($credit->reference_type === 'sale' && $credit->sale && $credit->sale->advance_amount > 0)
+                                        <div class="text-info small">
+                                            <i class="bi bi-cash-coin me-1"></i>{{ number_format($credit->sale->advance_amount, 2) }} advance
+                                        </div>
+                                    @endif
                                 </td>
                                 <td class="text-end py-3 px-3">
                                     @php
@@ -351,6 +356,11 @@
                             <div class="col-4">
                                 <div class="small text-muted">Paid</div>
                                 <div class="fw-medium">{{ number_format($credit->paid_amount, 2) }}</div>
+                                @if($credit->reference_type === 'sale' && $credit->sale && $credit->sale->advance_amount > 0)
+                                    <div class="text-info small">
+                                        💰 {{ number_format($credit->sale->advance_amount, 2) }} advance
+                                    </div>
+                                @endif
                             </div>
                             <div class="col-4">
                                 <div class="small text-muted">Balance</div>
