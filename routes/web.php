@@ -530,3 +530,7 @@ Route::get('/stock-card/print', [App\Http\Controllers\StockCardController::class
 Route::get('/test-phone', function () {
     return view('test-phone');
 })->name('test-phone');
+
+// Test routes for flash messages (remove in production)
+Route::get('/test-flash', [App\Http\Controllers\TestFlashController::class, 'show'])->name('test.flash.show');
+Route::post('/test-flash', [App\Http\Controllers\TestFlashController::class, 'test'])->name('test.flash');

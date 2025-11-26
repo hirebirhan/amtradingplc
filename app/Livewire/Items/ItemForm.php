@@ -4,13 +4,14 @@ namespace App\Livewire\Items;
 
 use App\Models\Category;
 use App\Models\Item;
+use App\Traits\HasFlashMessages;
 use Livewire\Component;
 use Livewire\WithFileUploads;
 use Illuminate\Support\Str;
 
 class ItemForm extends Component
 {
-    use WithFileUploads;
+    use WithFileUploads, HasFlashMessages;
 
     public Item $item;
     public $isEdit = false;
@@ -70,9 +71,7 @@ class ItemForm extends Component
 
         $this->item->save();
 
-        $message = $this->isEdit ? 'Item updated successfully.' : 'Item created successfully.';
-        $this->dispatch('notify', type: 'success', message: $message);
-
+        $this->flashCrudSuccess('item', $this->isEdit ? 'updated' : 'created');
         return redirect()->route('admin.items.index');
     }
 

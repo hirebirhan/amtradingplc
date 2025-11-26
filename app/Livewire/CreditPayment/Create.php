@@ -7,6 +7,7 @@ use App\Models\BankAccount;
 use App\Services\BankService;
 use App\Services\CreditPaymentService;
 use App\Traits\HasNotifications;
+use App\Traits\HasFlashMessages;
 use Illuminate\Support\Facades\DB;
 use Livewire\Component;
 use Livewire\Attributes\Layout;
@@ -15,7 +16,7 @@ use Livewire\WithFileUploads;
 #[Layout('layouts.app')]
 class Create extends Component
 {
-    use WithFileUploads, HasNotifications;
+    use WithFileUploads, HasNotifications, HasFlashMessages;
     
     public Credit $credit;
     
@@ -366,10 +367,10 @@ class Create extends Component
             $this->credit->refresh();
             
             if ($this->credit->status === 'paid' || $this->credit->balance <= 0) {
-                session()->flash('success', 'Credit closed successfully with negotiated prices.');
+                session()->flash('success', 'Credit fully paid.');
                 return redirect()->route('admin.credits.index');
             } else {
-                session()->flash('success', 'Closing payment recorded. Remaining balance: ' . number_format($this->credit->balance, 2) . ' ETB');
+                session()->flash('success', 'Credit partially paid.');
                 return redirect()->route('admin.credits.index');
             }
         } catch (\Exception $e) {
@@ -416,10 +417,10 @@ class Create extends Component
             $this->credit->refresh();
             
             if ($this->credit->status === 'paid' || $this->credit->balance <= 0) {
-                session()->flash('success', 'Payment recorded successfully. Credit is now fully paid.');
+                session()->flash('success', 'Credit fully paid.');
                 return redirect()->route('admin.credits.index');
             } else {
-                session()->flash('success', 'Payment recorded successfully. Remaining balance: ' . number_format($this->credit->balance, 2) . ' ETB');
+                session()->flash('success', 'Credit partially paid.');
                 return redirect()->route('admin.credits.index');
             }
         } catch (\Exception $e) {

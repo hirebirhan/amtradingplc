@@ -10,6 +10,7 @@ use App\Models\Branch;
 use App\Models\Stock;
 use App\Services\TransferService;
 use App\Exceptions\TransferException;
+use App\Traits\HasFlashMessages;
 use Livewire\Component;
 use Livewire\Attributes\Layout;
 use Illuminate\Support\Facades\DB;
@@ -18,6 +19,7 @@ use Illuminate\Support\Facades\Log;
 #[Layout('layouts.app')]
 class Create extends Component
 {
+    use HasFlashMessages;
     public $form = [
         'source_type' => 'branch',
         'source_id' => '',
@@ -754,8 +756,8 @@ class Create extends Component
             // Verify stock movements were executed
             $this->logStockMovementVerification($transfer);
 
-            // Use Livewire's session flash for immediate feedback
-            session()->flash('success', $successMessage);
+            // Use standardized flash message
+            session()->flash('success', 'Stock updated successfully.');
             
             // Dispatch success event for cleanup
             $this->dispatch('transferCreated', ['transfer_id' => $transfer->id]);

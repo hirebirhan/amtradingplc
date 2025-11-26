@@ -6,11 +6,13 @@ use Livewire\Component;
 use App\Models\Credit;
 use App\Models\Customer;
 use App\Models\Supplier;
+use App\Traits\HasFlashMessages;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 
 class Create extends Component
 {
+    use HasFlashMessages;
     public $form = [
         'credit_type' => '',
         'reference_no' => '',
@@ -86,7 +88,7 @@ class Create extends Component
 
         $credit->save();
 
-        session()->flash('success', 'Credit created successfully.');
+        $this->flashCrudSuccess('credit', 'created');
         return redirect()->route('admin.credits.show', $credit);
     }
 

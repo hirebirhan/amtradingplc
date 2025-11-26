@@ -14,6 +14,7 @@ use App\Models\Credit;
 use App\Models\StockHistory;
 use App\Models\CreditPayment;
 use App\Facades\UserHelperFacade as UserHelper;
+use App\Traits\HasFlashMessages;
 use Livewire\Component;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\On;
@@ -28,6 +29,7 @@ use App\Enums\PaymentStatus;
 
 class Create extends Component
 {
+    use HasFlashMessages;
     protected $listeners = [
         'customerSelected',
         'itemSelected',
@@ -975,7 +977,7 @@ class Create extends Component
                 $successMessage .= ' Credit record created for full amount of ' . number_format($this->totalAmount, 2) . ' ETB.';
             }
             
-            session()->flash('success', $successMessage);
+            $this->flashSuccess('Sale completed successfully.');
             
             // Redirect to sales list
             return redirect()->route('admin.sales.index');
@@ -1027,10 +1029,10 @@ class Create extends Component
 
     private function notify($message, $type = 'info')
     {
-        $this->dispatch('notify', [
-            'type' => $type,
-            'message' => $message
-        ]);
+        match($type) {
+            'success' => $this->flashSuccess($message),
+            default => $this->dispatch('notify', type: $type, message: $message)
+        };
     }
 
     /**
