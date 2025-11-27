@@ -22,6 +22,7 @@ return new class extends Migration
             $table->enum('status', ['pending', 'received', 'partial', 'ordered', 'canceled']);
             $table->decimal('total_amount', 15, 2)->default(0);
             $table->decimal('paid_amount', 15, 2)->default(0);
+            $table->decimal('advance_amount', 15, 2)->default(0)->comment('Advance payment made at purchase creation');
             $table->decimal('discount', 15, 2)->default(0);
             $table->decimal('tax', 15, 2)->default(0);
             $table->decimal('shipping', 15, 2)->default(0);
