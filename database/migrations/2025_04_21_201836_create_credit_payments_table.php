@@ -15,6 +15,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('credit_id')->constrained()->onDelete('cascade');
             $table->decimal('amount', 15, 2);
+            $table->string('kind')->default('regular')->comment('Payment type: advance, regular, refund');
             $table->enum('payment_method', ['cash', 'bank_transfer', 'credit_card', 'check', 'other'])->default('cash');
             $table->string('reference_no')->nullable();
             $table->date('payment_date');
