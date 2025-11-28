@@ -211,28 +211,17 @@ class Transfer extends Model
      */
     public function scopeForUser($query, User $user)
     {
-        if ($user->isSuperAdmin()) {
-            return $query;
-        }
-
-        return $query->where(function ($q) use ($user) {
-            // User can see transfers from/to their assigned locations
-            if ($user->warehouse_id) {
-                $q->orWhere(function ($sq) use ($user) {
-                    $sq->where('source_type', 'warehouse')->where('source_id', $user->warehouse_id);
-                })->orWhere(function ($sq) use ($user) {
-                    $sq->where('destination_type', 'warehouse')->where('destination_id', $user->warehouse_id);
-                });
-            }
-
-            if ($user->branch_id) {
-                $q->orWhere(function ($sq) use ($user) {
+        return match (\App\Enums\AuthorizationLevel::fromUser($user)) {
+            \App\Enums\AuthorizationLevel::FULL_ACCESS => $query,
+            \App\Enums\AuthorizationLevel::BRANCH_RESTRICTED => $query->where(function ($q) use ($user) {
+                $q->where(function ($sq) use ($user) {
                     $sq->where('source_type', 'branch')->where('source_id', $user->branch_id);
                 })->orWhere(function ($sq) use ($user) {
                     $sq->where('destination_type', 'branch')->where('destination_id', $user->branch_id);
                 });
-            }
-        });
+            }),
+            \App\Enums\AuthorizationLevel::NO_ACCESS => $query->whereRaw('1 = 0'),
+        };
     }
 
     /**
@@ -240,19 +229,11 @@ class Transfer extends Model
      */
     public function canUserCreateFrom(User $user, string $locationType, int $locationId): bool
     {
-        if ($user->isSuperAdmin()) {
-            return true;
-        }
-
-        if ($locationType === 'warehouse' && $user->warehouse_id === $locationId) {
-            return true;
-        }
-
-        if ($locationType === 'branch' && $user->branch_id === $locationId) {
-            return true;
-        }
-
-        return false;
+        return match (\App\Enums\AuthorizationLevel::fromUser($user)) {
+            \App\Enums\AuthorizationLevel::FULL_ACCESS => true,
+            \App\Enums\AuthorizationLevel::BRANCH_RESTRICTED => $locationType === 'branch' && $user->branch_id === $locationId,
+            \App\Enums\AuthorizationLevel::NO_ACCESS => false,
+        };
     }
 
     /**
@@ -297,11 +278,15 @@ class Transfer extends Model
 
     /**
      * Determine if a user can approve / process this transfer.
-     * Super-admins or users with explicit permission can do so.
+     * Only managers of destination branch can approve.
      */
     public function canUserApprove(User $user): bool
     {
-        return $user->isSuperAdmin() || $user->can('transfers.approve');
+        return match (\App\Enums\AuthorizationLevel::fromUser($user)) {
+            \App\Enums\AuthorizationLevel::FULL_ACCESS => true,
+            \App\Enums\AuthorizationLevel::BRANCH_RESTRICTED => $this->destination_type === 'branch' && $user->branch_id === $this->destination_id,
+            \App\Enums\AuthorizationLevel::NO_ACCESS => false,
+        };
     }
 
     /**

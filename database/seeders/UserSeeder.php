@@ -7,6 +7,7 @@ namespace Database\Seeders;
 use App\Models\User;
 use App\Models\Branch;
 use App\Enums\UserRole;
+use App\Enums\BranchCode;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
@@ -46,37 +47,23 @@ class UserSeeder extends Seeder
 
         $generalManager->assignRole(UserRole::GENERAL_MANAGER->value);
 
-        // Create Branch Managers for each branch
-        foreach ($branches as $index => $branch) {
-            $branchManager = User::updateOrCreate(
-                ['email' => "branch-manager-{$index}@amtradingplc.com"],
-                [
-                    'name' => "Branch Manager " . ($index + 1),
-                    'password' => Hash::make('password'),
-                    'email_verified_at' => now(),
-                    'branch_id' => $branch->id,
-                    'position' => 'Branch Manager',
-                    'phone' => '123-456-' . rand(1000, 9999),
-                    'is_active' => true,
-                ]
-            );
-            $branchManager->assignRole(UserRole::BRANCH_MANAGER->value);
-
-            // Create a Sales User for each branch
-            $salesUser = User::updateOrCreate(
-                ['email' => "sales-{$index}@amtradingplc.com"],
-                [
-                    'name' => "Sales User " . ($index + 1),
-                    'password' => Hash::make('password'),
-                    'email_verified_at' => now(),
-                    'branch_id' => $branch->id,
-                    'position' => 'Sales Representative',
-                    'phone' => '123-789-' . rand(1000, 9999),
-                    'is_active' => true,
-                ]
-            );
-            $salesUser->assignRole(UserRole::SALES->value);
-        }
-
+        // Create Branch Managers using enum mapping
+        foreach ($branches as $branch) {
+            $branchCode = BranchCode::tryFrom($branch->code);
+            if ($branchCode) {
+                $branchManager = User::updateOrCreate(
+                    ['email' => $branchCode->getManagerEmail()],
+                    [
+                        'name' => $branchCode->getName() . ' Manager',
+                        'password' => Hash::make('password'),
+                        'email_verified_at' => now(),
+                        'branch_id' => $branch->id,
+                        'position' => 'Branch Manager',
+                        'phone' => '123-456-' . rand(1000, 9999),
+                        'is_active' => true,
+                    ]
+                );
+                $branchManager->assignRole(UserRole::BRANCH_MANAGER->value);
+            }
     }
 }

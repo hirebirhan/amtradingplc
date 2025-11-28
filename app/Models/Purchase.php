@@ -16,10 +16,11 @@ use App\Models\Credit;
 use App\Models\Stock;
 use App\Models\StockHistory;
 use App\Enums\PaymentStatus;
+use App\Traits\HasBranchAuthorization;
 
 class Purchase extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, HasBranchAuthorization;
 
     protected $fillable = [
 'reference_no',
@@ -487,4 +488,6 @@ class Purchase extends Model
     {
         return $this->advance_amount >= $this->total_amount;
     }
+
+
 }

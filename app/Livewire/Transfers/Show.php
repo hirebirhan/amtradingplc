@@ -87,25 +87,14 @@ class Show extends Component
     {
         $user = auth()->user();
         
-        if ($user->isSuperAdmin()) {
+        if ($user->isSuperAdmin() || $user->isGeneralManager()) {
             return true;
         }
 
-        // Check if user has access to source or destination location
-        if ($this->transfer->source_type === 'warehouse' && $user->warehouse_id === $this->transfer->source_id) {
-            return true;
-        }
-        
-        if ($this->transfer->destination_type === 'warehouse' && $user->warehouse_id === $this->transfer->destination_id) {
-            return true;
-        }
-        
-        if ($this->transfer->source_type === 'branch' && $user->branch_id === $this->transfer->source_id) {
-            return true;
-        }
-        
-        if ($this->transfer->destination_type === 'branch' && $user->branch_id === $this->transfer->destination_id) {
-            return true;
+        // Branch managers can view transfers involving their branch
+        if ($user->isBranchManager() && $user->branch_id) {
+            return ($this->transfer->source_type === 'branch' && $this->transfer->source_id === $user->branch_id) ||
+                   ($this->transfer->destination_type === 'branch' && $this->transfer->destination_id === $user->branch_id);
         }
 
         return false;
