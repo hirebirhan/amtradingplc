@@ -223,11 +223,12 @@ class Create extends Component
     private function loadUserPermissions()
     {
         $user = auth()->user();
-        // Branch-only mode: restrict to branches the user can access
         $this->warehouses = collect();
-        if ($user->isSuperAdmin()) {
+        
+        if ($user->isSuperAdmin() || $user->isGeneralManager()) {
             $this->branches = Branch::where('is_active', true)->orderBy('name')->get();
-        } elseif ($user->branch_id) {
+        } elseif ($user->isBranchManager() && $user->branch_id) {
+            // Branch managers can only see their own branch
             $this->branches = Branch::where('id', $user->branch_id)->where('is_active', true)->get();
         } else {
             $this->branches = collect();
@@ -262,9 +263,10 @@ class Create extends Component
     {
         $user = auth()->user();
         
-        if ($user->isSuperAdmin()) {
+        if ($user->isSuperAdmin() || $user->isGeneralManager()) {
             return $this->branches;
-        } elseif ($user->branch_id) {
+        } elseif ($user->isBranchManager() && $user->branch_id) {
+            // Branch managers can only create transfers from their branch
             return $this->branches->where('id', $user->branch_id);
         }
         

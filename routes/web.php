@@ -82,7 +82,7 @@ Route::prefix('admin')->middleware(['auth', 'active'])->group(function () {
     });
 
     // Item Routes
-    Route::prefix('items')->name('admin.items.')->group(function () {
+    Route::prefix('items')->name('admin.items.')->middleware('App\Http\Middleware\EnforceBranchAuthorization')->group(function () {
         Route::get('/', function() {
             return view('items');
         })->middleware('permission:items.view')->name('index');
@@ -118,7 +118,7 @@ Route::prefix('admin')->middleware(['auth', 'active'])->group(function () {
     });
 
     // Warehouse routes
-    Route::prefix('warehouses')->name('admin.warehouses.')->group(function () {
+    Route::prefix('warehouses')->name('admin.warehouses.')->middleware('App\Http\Middleware\EnforceBranchAuthorization')->group(function () {
         Route::get('/', App\Livewire\Warehouses\Index::class)
             ->middleware('permission:warehouses.view')
             ->name('index');
@@ -217,7 +217,7 @@ Route::prefix('admin')->middleware(['auth', 'active'])->group(function () {
     });
 
     // Purchase Routes
-    Route::prefix('purchases')->name('admin.purchases.')->group(function () {
+    Route::prefix('purchases')->name('admin.purchases.')->middleware('App\Http\Middleware\EnforceBranchAuthorization')->group(function () {
         Route::get('/', function() {
             return view('purchases');
         })->middleware('permission:purchases.view')->name('index');
@@ -234,7 +234,6 @@ Route::prefix('admin')->middleware(['auth', 'active'])->group(function () {
             return view('purchases-edit', ['purchase' => $purchase]);
         })->middleware('permission:purchases.edit')->name('edit');
         
-        // Add PDF and print routes
         Route::get('/{purchase}/pdf', [App\Http\Controllers\PurchasesController::class, 'generatePdf'])
             ->middleware('permission:purchases.view')
             ->name('pdf');
@@ -245,7 +244,7 @@ Route::prefix('admin')->middleware(['auth', 'active'])->group(function () {
     });
 
     // Sales Routes
-    Route::prefix('sales')->name('admin.sales.')->group(function () {
+    Route::prefix('sales')->name('admin.sales.')->middleware('App\Http\Middleware\EnforceBranchAuthorization')->group(function () {
         Route::get('/', App\Livewire\Sales\Index::class)
             ->middleware('permission:sales.view')->name('index');
 
@@ -260,13 +259,12 @@ Route::prefix('admin')->middleware(['auth', 'active'])->group(function () {
             return view('sales-edit', ['sale' => $sale]);
         })->middleware('permission:sales.edit')->name('edit');
             
-        // Add print route for sales
         Route::get('/{sale}/print', [App\Http\Controllers\SaleController::class, 'print'])
             ->middleware('permission:sales.view')->name('print');
     });
 
     // Transfer Routes
-    Route::prefix('transfers')->name('admin.transfers.')->group(function () {
+    Route::prefix('transfers')->name('admin.transfers.')->middleware('App\Http\Middleware\EnforceBranchAuthorization')->group(function () {
         Route::get('/', App\Livewire\Transfers\Index::class)
             ->middleware('permission:transfers.view')->name('index');
 
@@ -280,7 +278,6 @@ Route::prefix('admin')->middleware(['auth', 'active'])->group(function () {
             return view('transfers-edit', ['transfer' => $transfer]);
         })->middleware('permission:transfers.edit')->name('edit');
         
-        // Add print route for transfers
         Route::get('/{transfer}/print', [App\Http\Controllers\TransferController::class, 'print'])
             ->middleware('permission:transfers.view')->name('print');
     });

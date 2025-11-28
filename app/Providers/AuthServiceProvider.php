@@ -8,12 +8,14 @@ use App\Models\Branch;
 use App\Models\Customer;
 use App\Models\Item;
 use App\Models\Purchase;
+use App\Models\Transfer;
 use App\Models\User;
 use App\Enums\UserRole;
 use App\Policies\BranchPolicy;
 use App\Policies\CustomerPolicy;
 use App\Policies\ItemPolicy;
 use App\Policies\PurchasePolicy;
+use App\Policies\TransferPolicy;
 use App\Policies\UserPolicy;
 use Illuminate\Foundation\Support\Providers\AuthServiceProvider as ServiceProvider;
 use Illuminate\Support\Facades\Gate;
@@ -30,6 +32,7 @@ class AuthServiceProvider extends ServiceProvider
         Branch::class => BranchPolicy::class,
         Customer::class => CustomerPolicy::class,
         Purchase::class => PurchasePolicy::class,
+        Transfer::class => TransferPolicy::class,
         User::class => UserPolicy::class,
     ];
 

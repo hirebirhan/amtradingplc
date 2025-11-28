@@ -14,10 +14,11 @@ use App\Models\User;
 use App\Models\Credit;
 use App\Models\Stock;
 use App\Enums\PaymentStatus;
+use App\Traits\HasBranchAuthorization;
 
 class Sale extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, HasBranchAuthorization;
 
     protected $fillable = [
 'reference_no',

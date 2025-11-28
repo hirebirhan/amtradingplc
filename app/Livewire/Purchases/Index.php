@@ -122,28 +122,7 @@ class Index extends Component
      */
     private function getBaseQueryForStats()
     {
-        $user = Auth::user();
-        $query = Purchase::query();
-
-        // Apply same user-based filtering as main query
-        if (!$user->isSuperAdmin()) {
-            $query->where(function ($q) use ($user) {
-                if ($user->warehouse_id) {
-                    $q->where('warehouse_id', $user->warehouse_id);
-                } elseif ($user->branch_id) {
-                    $q->where('branch_id', $user->branch_id)
-                      ->orWhereHas('warehouse', function ($warehouseQuery) use ($user) {
-                          $warehouseQuery->whereHas('branches', function ($branchQuery) use ($user) {
-                              $branchQuery->where('branch_id', $user->branch_id);
-                          });
-                      });
-                } else {
-                    $q->whereRaw('1 = 0');
-                }
-            });
-        }
-
-        return $query;
+        return Purchase::forUser(Auth::user());
     }
 
     public function delete($id)
@@ -177,9 +156,8 @@ class Index extends Component
      */
     protected function getPurchasesQuery()
     {
-        $user = Auth::user();
-        
-        $query = Purchase::with(['supplier', 'warehouse', 'branch'])
+        $query = Purchase::forUser(Auth::user())
+            ->with(['supplier', 'warehouse', 'branch'])
             ->when($this->search, function ($query) {
                 $query->where('reference_no', 'like', '%' . $this->search . '%')
                     ->orWhereHas('supplier', function ($q) {
@@ -199,38 +177,11 @@ class Index extends Component
                 $query->where('payment_status', $this->statusFilter);
             })
             ->when($this->branchFilter, function ($query) {
-                $query->whereHas('warehouse', function ($q) {
-                    $q->whereHas('branch', function ($branchQuery) {
-                        $branchQuery->where('id', $this->branchFilter);
-                    });
-                });
+                $query->where('branch_id', $this->branchFilter);
             })
             ->when($this->warehouseFilter, function ($query) {
                 $query->where('warehouse_id', $this->warehouseFilter);
             });
-
-        // Apply user-based filtering
-        if (!$user->isSuperAdmin()) {
-            $query->where(function ($q) use ($user) {
-                // If user is assigned to a specific warehouse, show only purchases from that warehouse
-                if ($user->warehouse_id) {
-                    $q->where('warehouse_id', $user->warehouse_id);
-                }
-                // If user is assigned to a branch (and not a specific warehouse), show purchases from that branch
-                elseif ($user->branch_id) {
-                    $q->where('branch_id', $user->branch_id)
-                      ->orWhereHas('warehouse', function ($warehouseQuery) use ($user) {
-                          $warehouseQuery->whereHas('branches', function ($branchQuery) use ($user) {
-                              $branchQuery->where('branch_id', $user->branch_id);
-                          });
-                      });
-                }
-                // If user has no specific assignment, they can't see any purchases (except SuperAdmin/GeneralManager)
-                else {
-                    $q->whereRaw('1 = 0'); // This will return no results
-                }
-            });
-        }
 
         return $query->orderBy($this->sortField, $this->sortDirection);
     }

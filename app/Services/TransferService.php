@@ -164,10 +164,17 @@ class TransferService
             throw new TransferException('Source and destination locations must be different.');
         }
 
-        // Validate user permissions
-        $transfer = new Transfer();
-        if (!$transfer->canUserCreateFrom($user, $transferData['source_type'], $transferData['source_id'])) {
-            throw new TransferException('You do not have permission to create transfers from this location.');
+        // Hard enforcement for branch managers
+        if ($user->isBranchManager()) {
+            // Source must be user's branch
+            if ($user->branch_id !== $transferData['source_id']) {
+                throw new TransferException('You can only create transfers from your assigned branch.');
+            }
+            
+            // Destination cannot be user's branch (no self-transfer)
+            if ($user->branch_id === $transferData['destination_id']) {
+                throw new TransferException('You cannot transfer to your own branch.');
+            }
         }
 
         // Validate stock availability
@@ -213,6 +220,19 @@ class TransferService
     {
         if ($transfer->status !== 'pending') {
             throw new TransferException('Only pending transfers can be approved.');
+        }
+
+        // Hard enforcement for branch managers
+        if ($user->isBranchManager()) {
+            // Cannot approve transfers FROM their own branch
+            if ($transfer->source_type === 'branch' && $transfer->source_id === $user->branch_id) {
+                throw new TransferException('You cannot approve transfers from your own branch.');
+            }
+            
+            // Can only approve transfers TO their branch
+            if ($transfer->destination_type !== 'branch' || $transfer->destination_id !== $user->branch_id) {
+                throw new TransferException('You can only approve transfers to your branch.');
+            }
         }
 
         $transfer->approve($user);
