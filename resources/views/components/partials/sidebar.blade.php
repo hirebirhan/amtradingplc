@@ -43,9 +43,16 @@
                     @endcan
                     @can('transfers.view')
                     <a href="{{ route('admin.transfers.index') }}"
-                       class="nav-link d-flex align-items-center gap-3 px-3 py-2 rounded text-decoration-none {{ request()->routeIs('admin.transfers.*') ? 'bg-primary bg-opacity-10 text-primary' : 'text-body-secondary' }}">
+                       class="nav-link d-flex align-items-center gap-3 px-3 py-2 rounded text-decoration-none {{ request()->routeIs('admin.transfers.index') ? 'bg-primary bg-opacity-10 text-primary' : 'text-body-secondary' }}">
                         <i class="bi bi-arrow-left-right fs-6"></i>
                         <span>Transfers</span>
+                    </a>
+                    @endcan
+                    @can('transfers.view')
+                    <a href="{{ route('admin.transfers.pending') }}"
+                       class="nav-link d-flex align-items-center gap-3 px-3 py-2 rounded text-decoration-none {{ request()->routeIs('admin.transfers.pending') ? 'bg-primary bg-opacity-10 text-primary' : 'text-body-secondary' }}">
+                        <i class="bi bi-clock-history fs-6"></i>
+                        <span>Pending Approvals</span>
                     </a>
                     @endcan
                 </div>
