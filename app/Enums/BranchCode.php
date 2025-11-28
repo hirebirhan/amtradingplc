@@ -20,9 +20,9 @@ enum BranchCode: string
     public function getManagerEmail(): string
     {
         return match($this) {
-            self::BICHA_FOK => 'branch-manager-1@amtradingplc.com',
-            self::MERKATO => 'branch-manager-2@amtradingplc.com',
-            self::FURI => 'branch-manager-3@amtradingplc.com',
+            self::BICHA_FOK => 'branch-manager-0@amtradingplc.com',
+            self::MERKATO => 'branch-manager-1@amtradingplc.com',
+            self::FURI => 'branch-manager-2@amtradingplc.com',
         };
     }
 }

@@ -2,9 +2,9 @@
 
 ## Branch → Manager Mapping
 ```
-Branch 1: Bicha Fok Branch (BR-BFOK) → branch-manager-1@amtradingplc.com
-Branch 2: Merkato Branch (BR-MERC) → branch-manager-2@amtradingplc.com
-Branch 3: Furi Branch (BR-FURI) → branch-manager-3@amtradingplc.com
+Branch 0: Bicha Fok Branch (BR-BFOK) → branch-manager-0@amtradingplc.com
+Branch 1: Merkato Branch (BR-MERC) → branch-manager-1@amtradingplc.com
+Branch 2: Furi Branch (BR-FURI) → branch-manager-2@amtradingplc.com
 ```
 
 ## Enum-Based Implementation
@@ -18,9 +18,9 @@ enum BranchCode: string {
     
     public function getManagerEmail(): string {
         return match($this) {
-            self::BICHA_FOK => 'branch-manager-1@amtradingplc.com',
-            self::MERKATO => 'branch-manager-2@amtradingplc.com',
-            self::FURI => 'branch-manager-3@amtradingplc.com',
+            self::BICHA_FOK => 'branch-manager-0@amtradingplc.com',
+            self::MERKATO => 'branch-manager-1@amtradingplc.com',
+            self::FURI => 'branch-manager-2@amtradingplc.com',
         };
     }
 }
@@ -122,7 +122,7 @@ Route::prefix('warehouses')->middleware('EnforceBranchAuthorization')
 
 ### Branch Manager Tests
 ```
-1. branch-manager-1@amtradingplc.com (Bicha Fok)
+1. branch-manager-0@amtradingplc.com (Bicha Fok)
    - Can create transfers FROM Bicha Fok only
    - Can approve transfers TO Bicha Fok only
    - Cannot self-transfer within Bicha Fok

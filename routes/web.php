@@ -268,6 +268,9 @@ Route::prefix('admin')->middleware(['auth', 'active'])->group(function () {
         Route::get('/', App\Livewire\Transfers\Index::class)
             ->middleware('permission:transfers.view')->name('index');
 
+        Route::get('/pending', App\Livewire\Transfers\Pending::class)
+            ->middleware('permission:transfers.view')->name('pending');
+
         Route::get('/create', App\Livewire\Transfers\Create::class)
             ->middleware('permission:transfers.create')->name('create');
 
