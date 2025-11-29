@@ -60,41 +60,36 @@ class Create extends Component
     public function mount()
     {
         $this->loadUserPermissions();
+        $this->setDefaultSourceLocation();
         $this->updateAvailableLocations();
     }
 
-    public function updatedFormSourceType()
-    {
-        $this->form['source_id'] = '';
-        $this->form['destination_id'] = '';
-        $this->resetItems();
-        $this->updateAvailableLocations();
-    }
 
-    public function updatedFormDestinationType()
-    {
-        $this->form['destination_id'] = '';
-        $this->updateAvailableLocations();
-        $this->validateDifferentLocations();
-    }
 
     public function updatedFormSourceId()
     {
         $this->form['destination_id'] = '';
         $this->resetItems();
         $this->loadAvailableItems();
-        $this->validateDifferentLocations();
+        $this->updateAvailableLocations();
     }
 
     public function updatedFormDestinationId()
     {
-        $this->validateDifferentLocations();
+        // No additional validation needed - handled by form validation
     }
 
     public function updatedItemSearchTerm($value)
     {
         // Refresh available items list whenever the search term changes
         $this->loadAvailableItems();
+    }
+
+    public function updatedNewItemItemId($value)
+    {
+        if (!empty($value)) {
+            $this->selectItem($value);
+        }
     }
 
     /**
@@ -106,7 +101,7 @@ class Create extends Component
             Log::info('Transfer Create: Item selection initiated', [
                 'item_id' => $itemId,
                 'user_id' => auth()->id(),
-                'source_location' => $this->form['source_type'] . ':' . $this->form['source_id']
+                'source_location' => 'branch:' . $this->form['source_id']
             ]);
 
         $this->newItem['item_id'] = (int) $itemId;
@@ -235,12 +230,28 @@ class Create extends Component
         }
     }
 
+    private function setDefaultSourceLocation()
+    {
+        $user = auth()->user();
+        
+        // Set default source location based on user's branch
+        if ($user->branch_id) {
+            $this->form['source_id'] = $user->branch_id;
+            $this->loadAvailableItems();
+        }
+    }
+
     private function updateAvailableLocations()
     {
-        // Branch-only lists
+        // Source branches - user's accessible branches only
         $this->availableSourceBranches = $this->getUserAccessibleBranches();
         $this->availableSourceWarehouses = collect();
-        $this->availableDestinationBranches = $this->branches;
+        
+        // Destination branches - all active branches except source
+        $this->availableDestinationBranches = Branch::where('is_active', true)
+            ->where('id', '!=', $this->form['source_id'])
+            ->orderBy('name')
+            ->get();
         $this->availableDestinationWarehouses = collect();
     }
 
@@ -273,15 +284,7 @@ class Create extends Component
         return collect();
     }
 
-    private function validateDifferentLocations()
-    {
-        if ($this->form['source_type'] === $this->form['destination_type'] && 
-            $this->form['source_id'] === $this->form['destination_id'] &&
-            !empty($this->form['source_id']) && !empty($this->form['destination_id'])) {
-            $this->form['destination_id'] = '';
-            session()->flash('error', 'Source and destination locations must be different.');
-        }
-    }
+
 
     private function resetItems()
     {
@@ -299,9 +302,9 @@ class Create extends Component
         }
 
         $stockMovementService = new \App\Services\StockMovementService();
+        $user = auth()->user();
 
-        // Determine base items query based on location type
-        // Branch-only aggregation of stock across a branch
+        // Get stock from all warehouses in the source branch
         $branch = Branch::with('warehouses')->find($this->form['source_id']);
         if (!$branch || $branch->warehouses->isEmpty()) {
             $this->itemOptions = [];
@@ -313,6 +316,20 @@ class Create extends Component
             ->join('stocks', 'items.id', '=', 'stocks.item_id')
             ->whereIn('stocks.warehouse_id', $warehouseIds)
             ->where('items.is_active', true)
+            ->where(function($query) use ($user) {
+                if ($user->isSuperAdmin()) {
+                    // SuperAdmin sees all items
+                    return $query;
+                }
+                // Branch users see their branch items + global items
+                if ($user->branch_id) {
+                    return $query->where(function($q) use ($user) {
+                        $q->where('items.branch_id', $user->branch_id)
+                          ->orWhereNull('items.branch_id');
+                    });
+                }
+                return $query;
+            })
             ->groupBy('items.id', 'items.name', 'items.sku')
             ->havingRaw('SUM(stocks.quantity) > 0');
 
@@ -341,49 +358,32 @@ class Create extends Component
         // Get items and filter by actual available stock (considering reservations)
         $items = $itemsQuery->orderBy('items.name')->get();
         
-        $this->itemOptions = $items->filter(function ($item) use ($stockMovementService) {
+        $this->itemOptions = $items->map(function ($item) use ($stockMovementService) {
             // Calculate actual available stock (total - reserved)
             $totalStock = $stockMovementService->getAvailableStock(
                 $item->id,
-                $this->form['source_type'],
+                'branch',
                 $this->form['source_id']
             );
             
             $reservedStock = $stockMovementService->getReservedStock(
                 $item->id,
-                $this->form['source_type'],
+                'branch',
                 $this->form['source_id']
             );
             
             $availableStock = max(0, $totalStock - $reservedStock);
-            
-            // Only include items with available stock > 0
-            return $availableStock > 0;
-        })->map(function ($item) use ($stockMovementService) {
-            // Calculate available stock for display
-            $totalStock = $stockMovementService->getAvailableStock(
-                $item->id,
-                $this->form['source_type'],
-                $this->form['source_id']
-            );
-            
-            $reservedStock = $stockMovementService->getReservedStock(
-                $item->id,
-                $this->form['source_type'],
-                $this->form['source_id']
-            );
-            
-            $availableStock = max(0, $totalStock - $reservedStock);
-            
-            // Add low stock warning to label
-            $stockWarning = $availableStock < 10 ? ' ⚠️' : '';
             
             return [
                 'id'    => $item->id,
-                'label' => $item->name . ' (' . config('app.sku_prefix', 'CODE-') . $item->sku . ') - Available: ' . number_format($availableStock, 2) . $stockWarning,
+                'label' => $item->name . ' (' . config('app.sku_prefix', 'CODE-') . $item->sku . ') - Available: ' . number_format($availableStock, 2) . ($availableStock < 10 ? ' ⚠️' : ''),
                 'available_stock' => $availableStock,
             ];
+        })->filter(function ($option) {
+            // Only include items with available stock > 0
+            return $option['available_stock'] > 0;
         })->values()->toArray();
+
     }
 
     private function getAvailableStock($itemId)
@@ -396,13 +396,13 @@ class Create extends Component
         
         $totalStock = $stockMovementService->getAvailableStock(
             $itemId,
-            $this->form['source_type'],
+            'branch',
             $this->form['source_id']
         );
         
         $reservedStock = $stockMovementService->getReservedStock(
             $itemId,
-            $this->form['source_type'],
+            'branch',
             $this->form['source_id']
         );
         
@@ -622,6 +622,16 @@ class Create extends Component
         }
     }
 
+
+
+    /**
+     * Create pending transfer for approval
+     */
+    public function createPendingTransfer()
+    {
+        return $this->save();
+    }
+
     /**
      * Save transfer with comprehensive logging and error handling
      */
@@ -640,8 +650,8 @@ class Create extends Component
         try {
             Log::info('Transfer Create: Save process initiated', [
                 'user_id' => auth()->id(),
-                'source_location' => $this->form['source_type'] . ':' . $this->form['source_id'],
-                'destination_location' => $this->form['destination_type'] . ':' . $this->form['destination_id'],
+                'source_location' => 'branch:' . $this->form['source_id'],
+                'destination_location' => 'branch:' . $this->form['destination_id'],
                 'items_count' => count($this->items),
                 'total_quantity' => collect($this->items)->sum('quantity')
             ]);
@@ -651,31 +661,21 @@ class Create extends Component
 
             // Enhanced validation with production-grade error messages
             $this->validate([
-                'form.source_type' => 'required|in:branch',
                 'form.source_id' => 'required|integer|min:1',
-                'form.destination_type' => 'required|in:branch', 
-                'form.destination_id' => 'required|integer|min:1',
+                'form.destination_id' => 'required|integer|min:1|different:form.source_id',
                 'form.note' => 'nullable|string|max:1000',
                 'items' => 'required|array|min:1|max:100', // Limit max items for performance
             ], [
-                'form.source_id.required' => '❌ Please select a source location',
-                'form.destination_id.required' => '❌ Please select a destination location',
+                'form.source_id.required' => '❌ Please select a source branch',
+                'form.destination_id.required' => '❌ Please select a destination branch',
+                'form.destination_id.different' => '❌ Source and destination branches must be different',
                 'items.required' => '❌ Please add at least one item to transfer',
                 'items.min' => '❌ Transfer must contain at least one item',
                 'items.max' => '❌ Transfer cannot contain more than 100 items',
                 'form.note.max' => '❌ Notes cannot exceed 1000 characters',
             ]);
 
-            // Validate that source and destination are different
-            if ($this->form['source_type'] === $this->form['destination_type'] && 
-                $this->form['source_id'] === $this->form['destination_id']) {
-                $this->addError('form.destination_id', '❌ Source and destination must be different locations');
-                Log::warning('Transfer Create: Same source and destination selected', [
-                    'user_id' => auth()->id(),
-                    'location' => $this->form['source_type'] . ':' . $this->form['source_id']
-                ]);
-                return;
-            }
+            // Additional validation is handled by the 'different' rule above
 
             // Validate each item has sufficient stock (final check)
             $stockValidationErrors = [];
@@ -715,9 +715,6 @@ class Create extends Component
                 'destination_type' => 'branch',
                 'destination_id' => (int)$this->form['destination_id'],
                 'note' => $this->form['note'],
-                'created_via' => 'web_form',
-                'user_agent' => request()->header('User-Agent'),
-                'ip_address' => request()->ip()
             ];
 
             Log::info('Transfer Create: Creating transfer via service', [
@@ -734,9 +731,7 @@ class Create extends Component
                 'reference_code' => $transfer->reference_code
             ]);
 
-            // Auto-complete all transfers - no approval workflow needed
-                $transferService->processTransferWorkflow($transfer, $user, 'approve');
-                $transferService->processTransferWorkflow($transfer, $user, 'complete');
+            // Don't auto-complete - leave as pending for approval
             
             $executionTime = round((microtime(true) - $startTime) * 1000, 2);
             
@@ -759,14 +754,14 @@ class Create extends Component
             $this->logStockMovementVerification($transfer);
 
             // Use standardized flash message
-            session()->flash('success', 'Stock updated successfully.');
+            session()->flash('success', 'Transfer sent for approval successfully.');
             
             // Dispatch success event for cleanup
             $this->dispatch('transferCreated', ['transfer_id' => $transfer->id]);
             
             // Close the modal and redirect
             $this->dispatch('closeModal');
-            return $this->redirect(route('admin.transfers.show', $transfer), navigate: true);
+            return $this->redirect(route('admin.transfers.index'), navigate: true);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
             $this->isSubmitting = false;
@@ -842,9 +837,7 @@ class Create extends Component
         if (empty($this->form['source_id'])) {
             return '-';
         }
-        return $this->form['source_type'] === 'warehouse'
-            ? (Warehouse::find($this->form['source_id'])->name ?? '-')
-            : (Branch::find($this->form['source_id'])->name ?? '-');
+        return Branch::find($this->form['source_id'])->name ?? '-';
     }
 
     /**
@@ -855,9 +848,7 @@ class Create extends Component
         if (empty($this->form['destination_id'])) {
             return '-';
         }
-        return $this->form['destination_type'] === 'warehouse'
-            ? (Warehouse::find($this->form['destination_id'])->name ?? '-')
-            : (Branch::find($this->form['destination_id'])->name ?? '-');
+        return Branch::find($this->form['destination_id'])->name ?? '-';
     }
 
     /**

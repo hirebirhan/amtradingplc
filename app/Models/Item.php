@@ -33,6 +33,7 @@ class Item extends Model
         'sku',
         'barcode',
         'category_id',
+        'branch_id',
         'cost_price',
         'selling_price',
         'cost_price_per_unit',
@@ -72,6 +73,43 @@ class Item extends Model
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class);
+    }
+
+    /**
+     * Get the branch that owns the item.
+     */
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
+    /**
+     * Scope items for the current user based on their branch.
+     */
+    public function scopeForUser($query, User $user = null)
+    {
+        if (!$user) {
+            $user = auth()->user();
+        }
+
+        if (!$user) {
+            return $query;
+        }
+
+        // SuperAdmin sees all items
+        if ($user->isSuperAdmin()) {
+            return $query;
+        }
+
+        // Branch managers and other users see only their branch items + global items (null branch_id)
+        if ($user->branch_id) {
+            return $query->where(function($q) use ($user) {
+                $q->where('branch_id', $user->branch_id)
+                  ->orWhereNull('branch_id');
+            });
+        }
+
+        return $query;
     }
 
     /**

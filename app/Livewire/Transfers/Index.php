@@ -3,6 +3,9 @@
 namespace App\Livewire\Transfers;
 
 use App\Models\Transfer;
+use App\Models\Branch;
+use App\Models\Stock;
+use App\Models\Item;
 use Livewire\Component;
 use Livewire\WithPagination;
 use Livewire\Attributes\Layout;
@@ -180,6 +183,152 @@ class Index extends Component
         $this->dateTo = '';
         $this->resetPage();
         session()->flash('success', 'Filters reset successfully.');
+    }
+
+    /**
+     * Approve a pending transfer
+     */
+    public function approveTransfer($transferId)
+    {
+        $transfer = Transfer::findOrFail($transferId);
+        
+        if ($transfer->status !== 'pending') {
+            session()->flash('error', 'Only pending transfers can be approved.');
+            return;
+        }
+        
+        $user = auth()->user();
+        if (!($user->isSuperAdmin() || $user->isGeneralManager() || ($user->isBranchManager() && $user->branch_id === $transfer->destination_id))) {
+            session()->flash('error', 'Only the destination branch manager can approve this transfer.');
+            return;
+        }
+        
+        $this->processTransferApproval($transfer, $user);
+        
+        session()->flash('success', 'Transfer approved and completed successfully.');
+    }
+    
+    /**
+     * Reject a pending transfer
+     */
+    public function rejectTransfer($transferId)
+    {
+        $transfer = Transfer::findOrFail($transferId);
+        
+        if ($transfer->status !== 'pending') {
+            session()->flash('error', 'Only pending transfers can be rejected.');
+            return;
+        }
+        
+        $user = auth()->user();
+        if (!($user->isSuperAdmin() || $user->isGeneralManager() || ($user->isBranchManager() && $user->branch_id === $transfer->destination_id))) {
+            session()->flash('error', 'Only the destination branch manager can reject this transfer.');
+            return;
+        }
+        
+        $transfer->update(['status' => 'rejected']);
+        
+        session()->flash('success', 'Transfer rejected successfully.');
+    }
+
+    /**
+     * Process transfer approval with stock movement and item creation
+     */
+    private function processTransferApproval($transfer, $user)
+    {
+        DB::beginTransaction();
+        
+        try {
+            // Get source and destination warehouses
+            $sourceBranch = Branch::with('warehouses')->find($transfer->source_id);
+            $destinationBranch = Branch::with('warehouses')->find($transfer->destination_id);
+            
+            if (!$sourceBranch || !$destinationBranch) {
+                throw new \Exception('Source or destination branch not found');
+            }
+            
+            $sourceWarehouses = $sourceBranch->warehouses;
+            $destinationWarehouse = $destinationBranch->warehouses->first();
+            
+            if (!$destinationWarehouse) {
+                throw new \Exception('No warehouse found in destination branch');
+            }
+            
+            foreach ($transfer->items as $transferItem) {
+                $item = $transferItem->item;
+                $quantity = $transferItem->quantity;
+                
+                // Deduct from source warehouses
+                $remainingToDeduct = $quantity;
+                foreach ($sourceWarehouses as $warehouse) {
+                    if ($remainingToDeduct <= 0) break;
+                    
+                    $stock = Stock::where('item_id', $item->id)
+                        ->where('warehouse_id', $warehouse->id)
+                        ->first();
+                    
+                    if ($stock && $stock->quantity > 0) {
+                        $deductAmount = min($remainingToDeduct, $stock->quantity);
+                        $stock->decrement('quantity', $deductAmount);
+                        $remainingToDeduct -= $deductAmount;
+                    }
+                }
+                
+                // Check if item exists in destination branch
+                $destinationItem = Item::where('name', $item->name)
+                    ->where('sku', $item->sku)
+                    ->where(function($q) use ($destinationBranch) {
+                        $q->where('branch_id', $destinationBranch->id)
+                          ->orWhereNull('branch_id');
+                    })
+                    ->first();
+                
+                if (!$destinationItem) {
+                    // Create item in destination branch
+                    $destinationItem = Item::create([
+                        'name' => $item->name,
+                        'sku' => $item->sku . '-' . $destinationBranch->id,
+                        'barcode' => $item->barcode,
+                        'category_id' => $item->category_id,
+                        'branch_id' => $destinationBranch->id,
+                        'cost_price' => $item->cost_price,
+                        'selling_price' => $item->selling_price,
+                        'unit' => $item->unit,
+                        'unit_quantity' => $item->unit_quantity,
+                        'item_unit' => $item->item_unit,
+                        'reorder_level' => $item->reorder_level,
+                        'brand' => $item->brand,
+                        'description' => $item->description,
+                        'is_active' => true,
+                        'created_by' => $user->id,
+                    ]);
+                }
+                
+                // Add to destination warehouse stock
+                $destinationStock = Stock::firstOrCreate(
+                    [
+                        'item_id' => $destinationItem->id,
+                        'warehouse_id' => $destinationWarehouse->id,
+                    ],
+                    ['quantity' => 0]
+                );
+                
+                $destinationStock->increment('quantity', $quantity);
+            }
+            
+            // Update transfer status
+            $transfer->update([
+                'status' => 'completed',
+                'approved_by' => $user->id,
+                'approved_at' => now(),
+            ]);
+            
+            DB::commit();
+            
+        } catch (\Exception $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     public function render()

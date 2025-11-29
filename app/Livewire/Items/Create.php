@@ -296,6 +296,7 @@ class Create extends Component
                 'is_active' => true,
                 'created_by' => Auth::id(),
                 'reorder_level' => 1, // Default value
+                'branch_id' => Auth::user()->isSuperAdmin() ? null : Auth::user()->branch_id,
             ]);
 
             \Log::info('Item data prepared', ['itemData' => $itemData]);

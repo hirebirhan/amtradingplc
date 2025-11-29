@@ -596,6 +596,7 @@ class Index extends Component
         }
         
         $query = Item::query()
+            ->forUser($user)
             ->with(['category', 'stocks.warehouse', 'purchaseItems', 'saleItems'])
             ->where('is_active', true)
             ->when($this->search, function ($query) {

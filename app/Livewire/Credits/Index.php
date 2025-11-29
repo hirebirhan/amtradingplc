@@ -193,7 +193,7 @@ class Index extends Component
     {
         return match($status) {
             'active' => 'primary',
-            'partially_paid' => 'warning',
+            'partial' => 'warning',
             'paid' => 'success',
             'overdue' => 'danger',
             'cancelled' => 'secondary',
@@ -320,7 +320,7 @@ class Index extends Component
             // Otherwise, if not showing paid, only show active credits
             // Note: We'll filter by effective status after loading the data
             $query->where(function($q) {
-                $q->whereIn('status', ['active', 'partially_paid', 'overdue'])
+                $q->whereIn('status', ['active', 'partial', 'overdue'])
                   ->where('balance', '>', 0);
             });
         }
@@ -364,7 +364,7 @@ class Index extends Component
         }
 
         // Get counts for filters using separate queries
-        $activeCount = Credit::whereIn('status', ['active', 'partially_paid', 'overdue'])
+        $activeCount = Credit::whereIn('status', ['active', 'partial', 'overdue'])
             ->where(function($q) {
                 $q->where('balance', '>', 0)
                   ->orWhereNull('balance');
@@ -555,7 +555,7 @@ class Index extends Component
             $query->where('status', $this->filters['status']);
         } elseif (!$this->showPaidCredits) {
             $query->where(function($q) {
-                $q->whereIn('status', ['active', 'partially_paid', 'overdue'])
+                $q->whereIn('status', ['active', 'partial', 'overdue'])
                   ->where('balance', '>', 0);
             });
         }
@@ -756,7 +756,7 @@ class Index extends Component
             $totalAmount = $credits->sum('amount');
             $totalPaid = $credits->sum('paid_amount');
             $totalBalance = $credits->sum('balance');
-            $activeCount = $credits->whereIn('status', ['active', 'partially_paid', 'overdue'])->count();
+            $activeCount = $credits->whereIn('status', ['active', 'partial', 'overdue'])->count();
             
             $html .= '</tbody>
     </table>
