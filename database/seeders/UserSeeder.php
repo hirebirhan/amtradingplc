@@ -65,5 +65,6 @@ class UserSeeder extends Seeder
                 );
                 $branchManager->assignRole(UserRole::BRANCH_MANAGER->value);
             }
+        }
     }
 }
