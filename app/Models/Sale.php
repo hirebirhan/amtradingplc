@@ -213,26 +213,38 @@ class Sale extends Model
         $quantity = $saleItem->quantity;
         $unitCapacity = $item->unit_quantity ?? 1;
         
-        // Process based on sale method
+        // Process based on sale method (allow negative stock)
+        $piecesBefore = $stock->piece_count ?? 0;
+        $quantityBefore = $stock->quantity ?? 0;
+        
         if ($saleItem->isSoldByPiece()) {
-            $stock->sellByPiece(
-                (int)$quantity, 
-                $unitCapacity, 
-                'sale', 
-                $this->id, 
-                'Warehouse sale by piece - Sale #' . $this->reference_no, 
-                $this->user_id
-            );
+            // Selling by piece - allow negative stock
+            $piecesToDeduct = (int)$quantity;
+            $stock->piece_count = $piecesBefore - $piecesToDeduct;
+            $stock->quantity = $stock->piece_count;
+            $stock->total_units = max(0, ($stock->total_units ?? 0) - ($piecesToDeduct * $unitCapacity));
         } else {
-            $stock->sellByUnit(
-                $quantity, 
-                $unitCapacity, 
-                'sale', 
-                $this->id, 
-                'Warehouse sale by unit - Sale #' . $this->reference_no, 
-                $this->user_id
-            );
+            // Selling by unit - allow negative stock
+            $unitsToDeduct = $quantity;
+            $stock->total_units = ($stock->total_units ?? 0) - $unitsToDeduct;
+            $stock->piece_count = max(0, floor($stock->total_units / $unitCapacity));
+            $stock->quantity = $stock->piece_count;
         }
+        
+        $stock->save();
+        
+        // Create stock history
+        \App\Models\StockHistory::create([
+            'warehouse_id' => $stock->warehouse_id,
+            'item_id' => $item->id,
+            'quantity_before' => $quantityBefore,
+            'quantity_after' => $stock->quantity,
+            'quantity_change' => $stock->quantity - $quantityBefore,
+            'reference_type' => 'sale',
+            'reference_id' => $this->id,
+            'description' => 'Warehouse sale - Sale #' . $this->reference_no,
+            'user_id' => $this->user_id,
+        ]);
         
         // Also deduct from purchase quantity
         $this->deductFromPurchaseQuantity($item, $saleItem);

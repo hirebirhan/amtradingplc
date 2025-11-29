@@ -592,11 +592,11 @@ class Create extends Component
             return false;
         }
         
-            // Use our stored reference number which has already been validated for uniqueness
+            // Generate unique reference number
         $referenceNo = $this->generateUniqueReferenceNumber();
             
-            // Start a transaction to ensure all related operations succeed or fail together
-            \DB::beginTransaction();
+        // Start a transaction to ensure all related operations succeed or fail together
+        \DB::beginTransaction();
             
         try {
             \Log::info('Starting purchase save process', [
@@ -612,7 +612,15 @@ class Create extends Component
                 $branchId = auth()->user()->branch_id ?? (Branch::value('id') ?? 1);
             }
             // Resolve internal warehouse for branch
-            $warehouseId = $this->resolveWarehouseIdForBranch($branchId);
+            try {
+                $warehouseId = $this->resolveWarehouseIdForBranch($branchId);
+            } catch (\Exception $e) {
+                \Log::error('Failed to resolve warehouse for branch', [
+                    'branch_id' => $branchId,
+                    'error' => $e->getMessage()
+                ]);
+                throw new \Exception('Failed to resolve warehouse for branch: ' . $e->getMessage());
+            }
             
             $purchase = new Purchase();
             $purchase->reference_no = $referenceNo;
@@ -623,7 +631,7 @@ class Create extends Component
             $purchase->purchase_date = $this->form['purchase_date'];
             $purchase->payment_method = $this->form['payment_method'];
             $purchase->payment_status = $this->form['payment_status'];
-            $purchase->status = PurchaseStatus::CONFIRMED->value;
+            $purchase->status = 'pending'; // Use valid database enum value
             $purchase->discount = 0;
             $purchase->tax = $this->taxAmount;
             $purchase->total_amount = $this->totalAmount;
@@ -653,8 +661,14 @@ class Create extends Component
             }
             
             // Attempt to save the purchase
-                if (!$purchase->save()) {
-                $this->addError('general', 'Failed to save purchase record. Please try again.');
+            try {
+                $purchase->save();
+            } catch (\Exception $e) {
+                \Log::error('Failed to save purchase record', [
+                    'error' => $e->getMessage(),
+                    'purchase_data' => $purchase->toArray()
+                ]);
+                $this->addError('general', 'Failed to save purchase record: ' . $e->getMessage());
                 $this->notify('❌ Failed to save purchase record.', 'error');
                 \DB::rollBack();
                 return false;
@@ -701,11 +715,17 @@ class Create extends Component
                         $purchaseItem->notes = $item['notes'];
                     }
                     
-                    if (!$purchaseItem->save()) {
-                    $this->addError('items', "Failed to save purchase item {$index}. Please try again.");
-                    $this->notify('❌ Failed to save purchase item.', 'error');
-                    \DB::rollBack();
-                    return false;
+                    try {
+                        $purchaseItem->save();
+                    } catch (\Exception $e) {
+                        \Log::error('Failed to save purchase item', [
+                            'error' => $e->getMessage(),
+                            'item_data' => $purchaseItem->toArray()
+                        ]);
+                        $this->addError('items', "Failed to save purchase item {$index}: " . $e->getMessage());
+                        $this->notify('❌ Failed to save purchase item.', 'error');
+                        \DB::rollBack();
+                        return false;
                     }
                     
                     // Add to total
@@ -1511,10 +1531,11 @@ class Create extends Component
     private function updateStock($warehouseId, $itemId, $quantity, $purchaseId = null)
     {
         try {
-            \Log::info('Updating stock', [
+            \Log::info('Updating stock from purchase', [
                 'warehouse_id' => $warehouseId,
                 'item_id' => $itemId,
-                'quantity' => $quantity
+                'quantity' => $quantity,
+                'purchase_id' => $purchaseId
             ]);
             
             // Get the item to access unit_quantity
@@ -1526,54 +1547,78 @@ class Create extends Component
             $unitCapacity = $item->unit_quantity ?? 1;
             
             // Find existing stock record or create a new one
-            $stock = Stock::firstOrNew([
-                'warehouse_id' => $warehouseId,
-                'item_id' => $itemId,
-                'branch_id' => null  // Warehouse stock has no branch assignment
-            ]);
-            
-            // If it's a new record, initialize all values to 0
-            if (!$stock->exists) {
-                $stock->quantity = 0;
-                $stock->piece_count = 0;
-                $stock->total_units = 0;
-            }
-            
-            // Get the original values for logging
-            $originalPieces = $stock->piece_count;
-            $originalUnits = $stock->total_units;
-            
-            // Add pieces using the Stock model's method
-            $stock->addPieces(
-                (int)$quantity, 
-                $unitCapacity, 
-                'purchase', 
-                $purchaseId, 
-                'Stock added from purchase: ' . ($this->form['reference_no'] ?? 'N/A'), 
-                auth()->id()
+            $stock = Stock::firstOrCreate(
+                [
+                    'warehouse_id' => $warehouseId,
+                    'item_id' => $itemId
+                ],
+                [
+                    'quantity' => 0,
+                    'piece_count' => 0,
+                    'total_units' => 0,
+                    'current_piece_units' => $unitCapacity
+                ]
             );
             
-            \Log::info('Stock updated successfully', [
+            // Get the original values for logging
+            $originalPieces = $stock->piece_count ?? 0;
+            $originalQuantity = $stock->quantity ?? 0;
+            $originalUnits = $stock->total_units ?? 0;
+            
+            // Update stock - add the purchased quantity
+            $addedPieces = (int)$quantity;
+            $stock->piece_count = $originalPieces + $addedPieces;
+            $stock->quantity = $stock->piece_count; // Keep quantity in sync with piece_count
+            $stock->total_units = $originalUnits + ($addedPieces * $unitCapacity);
+            
+            // Ensure current_piece_units is set
+            if ($stock->current_piece_units === null) {
+                $stock->current_piece_units = $unitCapacity;
+            }
+            
+            $stock->save();
+            
+            // Create stock history record
+            \App\Models\StockHistory::create([
                 'warehouse_id' => $warehouseId,
                 'item_id' => $itemId,
+                'quantity_before' => $originalQuantity,
+                'quantity_after' => $stock->quantity,
+                'quantity_change' => $addedPieces,
+                'units_before' => $originalUnits,
+                'units_after' => $stock->total_units,
+                'units_change' => ($addedPieces * $unitCapacity),
+                'reference_type' => 'purchase',
+                'reference_id' => $purchaseId,
+                'description' => 'Stock added from purchase: ' . ($this->form['reference_no'] ?? 'N/A'),
+                'user_id' => auth()->id(),
+            ]);
+            
+            \Log::info('Stock updated successfully from purchase', [
+                'warehouse_id' => $warehouseId,
+                'item_id' => $itemId,
+                'item_name' => $item->name,
                 'previous_pieces' => $originalPieces,
+                'previous_quantity' => $originalQuantity,
                 'previous_units' => $originalUnits,
-                'added_pieces' => $quantity,
+                'added_pieces' => $addedPieces,
                 'new_pieces' => $stock->piece_count,
+                'new_quantity' => $stock->quantity,
                 'new_units' => $stock->total_units,
                 'unit_capacity' => $unitCapacity
             ]);
             
             return true;
         } catch (\Exception $e) {
-            \Log::error('Error updating stock', [
+            \Log::error('Error updating stock from purchase', [
                 'exception' => get_class($e),
                 'message' => $e->getMessage(),
                 'file' => $e->getFile(),
                 'line' => $e->getLine(),
                 'warehouse_id' => $warehouseId,
                 'item_id' => $itemId,
-                'quantity' => $quantity
+                'quantity' => $quantity,
+                'purchase_id' => $purchaseId
             ]);
             
             return false;
