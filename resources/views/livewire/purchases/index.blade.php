@@ -47,9 +47,9 @@
                     <select class="form-select" wire:model.live="statusFilter">
                         <option value="">All Status</option>
                         <option value="paid">Paid</option>
-                        <option value="partial">Partially Paid</option>
-                        <option value="pending">Pending</option>
+                        <option value="partial">Partial</option>
                         <option value="due">Due</option>
+                        <option value="pending">Pending</option>
                     </select>
                 </div>
                 <div class="col-6 col-md-2">
@@ -118,7 +118,7 @@
                             </th>
                             <th class="px-3 py-3 text-center cursor-pointer fw-semibold text-dark" wire:click="sortBy('payment_status')">
                                 <div class="d-flex align-items-center justify-content-center gap-2">
-                                    <span>Status</span>
+                                    <span>Payment Status</span>
                                     <i class="bi bi-arrow-down-up text-secondary"></i>
                                 </div>
                             </th>
@@ -136,38 +136,26 @@
                                 <td class="px-3 py-3 text-start">{{ number_format($purchase->total_amount, 2) ?? 'N/A' }}</td>
                                 <td class="px-3 py-3 text-center">
                                     @php
-                                        $status = \App\Enums\PaymentStatus::tryFrom($purchase->payment_status);
+                                        // Calculate actual payment status based on amounts
+                                        if ($purchase->due_amount <= 0) {
+                                            $actualStatus = 'paid';
+                                            $badgeClass = 'badge bg-success rounded-1';
+                                        } elseif ($purchase->paid_amount > 0) {
+                                            $actualStatus = 'partial';
+                                            $badgeClass = 'badge bg-warning rounded-1';
+                                        } else {
+                                            $actualStatus = 'due';
+                                            $badgeClass = 'badge bg-danger rounded-1';
+                                        }
                                     @endphp
-                                    @if($status)
-                                        <span class="{{ $status->badgeClass() }}">
-                                            {{ $status->label() }}
-                                        </span>
-                                    @else
-                                        {{ ucfirst($purchase->payment_status) }}
-                                    @endif
+                                    <span class="{{ $badgeClass }}">{{ ucfirst($actualStatus) }}</span>
                                 </td>
                                 <td class="px-4 py-3 text-end">
                                     <div class="btn-group btn-group-sm">
                                         @can('view', $purchase)
-                                            <a href="{{ route('admin.purchases.show', $purchase->id) }}" class="btn btn-outline-info" title="View">
+                                            <a href="{{ route('admin.purchases.show', $purchase->id) }}" class="btn btn-outline-info" title="View Details">
                                                 <i class="bi bi-eye"></i>
                                             </a>
-                                        @endcan
-                                        @can('update', $purchase)
-                                            <a href="{{ route('admin.purchases.edit', $purchase->id) }}" class="btn btn-outline-primary" title="Edit">
-                                                <i class="bi bi-pencil"></i>
-                                            </a>
-                                        @endcan
-                                        @can('delete', $purchase)
-                                            <button 
-                                                type="button" 
-                                                class="btn btn-outline-danger" 
-                                                title="Delete"
-                                                wire:click="delete({{ $purchase->id }})"
-                                                wire:confirm="Are you sure you want to delete purchase {{ $purchase->reference_no }}? This will permanently remove the purchase and all associated records (credits, payments) and reverse the stock adjustments. This action cannot be undone."
-                                            >
-                                                <i class="bi bi-trash"></i>
-                                            </button>
                                         @endcan
                                     </div>
                                 </td>
@@ -217,9 +205,3 @@
         </div>
     </div>
 
-    @push('scripts')
-    <script>
-        // Note: The custom JavaScript for the delete modal has been removed 
-        // in favor of Livewire's built-in wire:confirm functionality.
-    </script>
-    @endpush

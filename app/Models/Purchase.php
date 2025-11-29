@@ -16,6 +16,7 @@ use App\Models\Credit;
 use App\Models\Stock;
 use App\Models\StockHistory;
 use App\Enums\PaymentStatus;
+use App\Enums\PurchaseStatus;
 use App\Traits\HasBranchAuthorization;
 
 class Purchase extends Model
@@ -77,6 +78,19 @@ class Purchase extends Model
             // Set purchase_date to current date if not set
             if (empty($purchase->purchase_date)) {
                 $purchase->purchase_date = now()->format('Y-m-d');
+            }
+            
+            // Set default status if not provided
+            if (empty($purchase->status)) {
+                $purchase->status = PurchaseStatus::CONFIRMED->value;
+            }
+        });
+        
+        // Auto-process purchase after creation based on payment method
+        static::created(function ($purchase) {
+            // Only auto-process cash/immediate payments
+            if (in_array($purchase->payment_method, ['cash', 'bank_transfer', 'telebirr'])) {
+                $purchase->processPurchase();
             }
         });
 
@@ -204,7 +218,7 @@ class Purchase extends Model
      */
     public function processPurchase(): bool
     {
-        if ($this->status === 'received') {
+        if ($this->status === PurchaseStatus::RECEIVED->value) {
             return false; // Already processed
         }
 
@@ -274,7 +288,7 @@ class Purchase extends Model
             }
 
             // Update purchase status
-            $this->status = 'received';
+            $this->status = PurchaseStatus::RECEIVED->value;
             $this->save();
 
             // If the purchase is not fully paid, create a credit record
@@ -392,8 +406,8 @@ class Purchase extends Model
     }
 
     /**
-     * Update payment status based on payment amounts.
-     * Follows credit lifecycle status transitions.
+     * Update payment status based on payment amounts and method.
+     * Follows business logic for different payment types.
      */
     public function updatePaymentStatus(): void
     {
@@ -404,6 +418,7 @@ class Purchase extends Model
         } else {
             $this->payment_status = PaymentStatus::DUE->value;
         }
+        $this->save();
     }
 
     /**

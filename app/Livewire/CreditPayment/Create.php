@@ -84,7 +84,7 @@ class Create extends Component
         }
         
         $this->credit = $credit;
-        $this->amount = $credit->balance;
+        $this->amount = $credit->balance; // Simple: remaining = current balance
         $this->payment_date = date('Y-m-d');
         
         // Load bank accounts from centralized service
@@ -113,6 +113,18 @@ class Create extends Component
         // Load bank accounts if needed
         if ($value === 'bank_transfer') {
             $this->loadBankAccounts();
+        }
+    }
+    
+    public function updatedPaymentType($value)
+    {
+        // Reset amount to correct value based on payment type
+        if ($value === 'down_payment') {
+            // For regular payments: remaining = current balance
+            $this->amount = $this->credit->balance;
+        } elseif ($value === 'closing_payment' && $this->credit->credit_type === 'payable') {
+            // For closing payments: will be calculated when prices are entered
+            $this->amount = $this->credit->balance;
         }
     }
     
@@ -301,9 +313,12 @@ class Create extends Component
             $purchase = $this->credit->purchase;
             if ($purchase) {
                 foreach ($purchase->items as $item) {
-                    $unitQuantity = $item->item->unit_quantity ?: 1;
-                    $this->closingPrices[$item->item_id] = $item->unit_cost / $unitQuantity;
+                    // Initialize with original unit cost
+                    $this->closingPrices[$item->item_id] = $item->unit_cost;
                 }
+                
+                // Calculate initial payment amount
+                $this->calculateClosingPaymentAmount();
             }
         }
     }
@@ -316,22 +331,32 @@ class Create extends Component
     
     public function calculateClosingPaymentAmount()
     {
-        if ($this->credit->reference_type === 'purchase' && $this->credit->reference_id) {
-            $purchase = $this->credit->purchase;
-            if ($purchase) {
-                $totalClosingCost = 0;
-                foreach ($purchase->items as $item) {
-                    if (isset($this->closingPrices[$item->item_id]) && is_numeric($this->closingPrices[$item->item_id])) {
-                        $unitQuantity = $item->item->unit_quantity ?: 1;
-                        $closingPricePerUnit = (float) $this->closingPrices[$item->item_id];
-                        $totalClosingCost += $closingPricePerUnit * $unitQuantity * $item->quantity;
-                    }
-                }
-                
-                $remainingToPay = max(0, $totalClosingCost - $this->credit->paid_amount);
-                $this->amount = $remainingToPay;
+        // Only calculate for closing payments with negotiated prices
+        if ($this->paymentType !== 'closing_payment' || 
+            $this->credit->reference_type !== 'purchase' || 
+            !$this->credit->reference_id) {
+            return;
+        }
+        
+        $purchase = $this->credit->purchase;
+        if (!$purchase) {
+            return;
+        }
+        
+        $totalClosingCost = 0;
+        foreach ($purchase->items as $item) {
+            if (isset($this->closingPrices[$item->item_id]) && is_numeric($this->closingPrices[$item->item_id])) {
+                $closingPricePerUnit = (float) $this->closingPrices[$item->item_id];
+                $totalClosingCost += $closingPricePerUnit * $item->quantity;
             }
         }
+        
+        // Business Rule: Closing cost cannot exceed current balance
+        $maxAllowedCost = $this->credit->balance;
+        $totalClosingCost = min($totalClosingCost, $maxAllowedCost);
+        
+        // Payment amount = closing cost (cannot exceed what you owe)
+        $this->amount = $totalClosingCost;
     }
     
     public function processClosingPayment()
@@ -341,10 +366,23 @@ class Create extends Component
             'closingPrices.*' => 'required|numeric|min:0',
         ]);
         
+        // Validate total closing cost doesn't exceed credit amount
+        $totalClosingCost = 0;
+        foreach ($this->credit->purchase->items as $item) {
+            if (isset($this->closingPrices[$item->item_id])) {
+                $totalClosingCost += (float) $this->closingPrices[$item->item_id] * $item->quantity;
+            }
+        }
+        
+        if ($totalClosingCost > $this->credit->balance) {
+            $this->addError('closingPrices', 'Total closing cost (' . number_format($totalClosingCost, 2) . ' ETB) cannot exceed current balance (' . number_format($this->credit->balance, 2) . ' ETB)');
+            return;
+        }
+        
         $this->calculateClosingPaymentAmount();
         $this->showClosingPricesModal = false;
         
-        // Process payment directly for closing payments
+        // Process as regular payment with closing price tracking
         try {
             DB::beginTransaction();
             
@@ -353,12 +391,32 @@ class Create extends Component
                 $referenceNumber = $this->transaction_number;
             }
             
-            $payment = $this->credit->closeWithNegotiatedPrices(
-                $this->closingPrices,
+            // Update purchase items with closing prices for tracking
+            if ($this->credit->reference_type === 'purchase' && $this->credit->purchase) {
+                foreach ($this->credit->purchase->items as $item) {
+                    if (isset($this->closingPrices[$item->item_id])) {
+                        $closingPrice = (float) $this->closingPrices[$item->item_id];
+                        $item->update([
+                            'closing_unit_price' => $closingPrice,
+                            'total_closing_cost' => $closingPrice * $item->quantity,
+                            'profit_loss_per_item' => ($item->unit_cost - $closingPrice) * $item->quantity
+                        ]);
+                    }
+                }
+            }
+            
+            // Make regular payment - DO NOT change credit amount
+            $payment = $this->credit->addPayment(
+                $this->amount,
                 $this->payment_method,
                 $referenceNumber,
+                $this->reference . ' (Closing payment with negotiated prices)',
+                $this->payment_date,
+                'closing',
                 $this->reference,
-                $this->payment_date
+                $this->receiver_bank_name,
+                $this->receiver_account_holder,
+                $this->receiver_account_number
             );
             
             DB::commit();
@@ -369,6 +427,7 @@ class Create extends Component
             // Log closing payment completion
             \Log::info('Closing payment completed', [
                 'credit_id' => $this->credit->id,
+                'payment_amount' => $this->amount,
                 'final_status' => $this->credit->status,
                 'final_balance' => $this->credit->balance
             ]);
@@ -377,7 +436,7 @@ class Create extends Component
                 session()->flash('success', 'Credit fully paid.');
                 return redirect()->route('admin.credits.index');
             } else {
-                session()->flash('success', 'Credit partially paid.');
+                session()->flash('success', 'Partial payment made. Remaining balance: ' . number_format($this->credit->balance, 2) . ' ETB');
                 return redirect()->route('admin.credits.show', $this->credit->id);
             }
         } catch (\Exception $e) {

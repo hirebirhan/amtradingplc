@@ -230,9 +230,7 @@ Route::prefix('admin')->middleware(['auth', 'active'])->group(function () {
             return view('purchases-show', ['purchase' => $purchase]);
         })->middleware('permission:purchases.view')->name('show');
 
-        Route::get('/{purchase}/edit', function(App\Models\Purchase $purchase) {
-            return view('purchases-edit', ['purchase' => $purchase]);
-        })->middleware('permission:purchases.edit')->name('edit');
+
         
         Route::get('/{purchase}/pdf', [App\Http\Controllers\PurchasesController::class, 'generatePdf'])
             ->middleware('permission:purchases.view')

@@ -23,6 +23,7 @@ class Index extends Component
     public $branchFilter = '';
     public $warehouseFilter = '';
 
+
     protected $queryString = [
         'search' => ['except' => ''],
         'perPage' => ['except' => 10],
@@ -125,31 +126,7 @@ class Index extends Component
         return Purchase::forUser(Auth::user());
     }
 
-    public function delete($id)
-    {
-        // Find the purchase by its ID
-        $purchase = Purchase::findOrFail($id);
 
-        // Optional: Check for user authorization
-        // if (!Auth::user()->can('delete', $purchase)) {
-        //     session()->flash('error', 'You are not authorized to delete this purchase.');
-        //     return;
-        // }
-
-        try {
-            // The 'deleting' event on the Purchase model will handle the rest
-            $purchase->delete();
-            
-            session()->flash('success', 'Purchase ' . $purchase->reference_no . ' and all related records have been deleted successfully.');
-            
-            // Optional: Dispatch an event if needed by other components
-            $this->dispatch('purchaseDeleted');
-
-        } catch (\Exception $e) {
-            \Log::error('Failed to delete purchase: ' . $e->getMessage());
-            session()->flash('error', 'Failed to delete purchase. Please check the logs for more details.');
-        }
-    }
 
     /**
      * Get filtered purchases query with user-based access control

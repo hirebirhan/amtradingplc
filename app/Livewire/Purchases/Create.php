@@ -12,6 +12,7 @@ use App\Models\Branch;
 use App\Models\Stock;
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
+use App\Enums\PurchaseStatus;
 use App\Facades\UserHelperFacade as UserHelper;
 use Livewire\Component;
 use Livewire\Attributes\Layout;
@@ -199,18 +200,29 @@ class Create extends Component
     }
 
     /**
-     * Get warehouses that the current user can access based on their role and assignment
+     * Get branches that the current user can access based on their role and assignment
      */
     private function getAccessibleBranches()
     {
         $user = auth()->user();
-        if ($user->isSuperAdmin() || $user->isBranchManager()) {
+        
+        // SuperAdmin and GeneralManager can access all branches
+        if ($user->isSuperAdmin() || $user->isGeneralManager()) {
             return Branch::where('is_active', true)->orderBy('name')->get();
         }
+        
+        // BranchManager can access all branches (for inter-branch purchases)
+        if ($user->isBranchManager()) {
+            return Branch::where('is_active', true)->orderBy('name')->get();
+        }
+        
+        // Users assigned to a specific branch
         if ($user->branch_id) {
             return Branch::where('id', $user->branch_id)->where('is_active', true)->get();
         }
-        return collect();
+        
+        // Fallback: return all active branches if no specific assignment
+        return Branch::where('is_active', true)->orderBy('name')->get();
     }
 
     /**
@@ -504,18 +516,13 @@ class Create extends Component
 
         // Set payment status based on payment method
         if (in_array($value, [PaymentMethod::CASH->value, PaymentMethod::BANK_TRANSFER->value, PaymentMethod::TELEBIRR->value], true)) {
-            // For immediate payment methods, set to paid
             $this->form['payment_status'] = PaymentStatus::PAID->value;
-        } else if ($value === PaymentMethod::CREDIT_ADVANCE->value) {
-            // For credit with advance, set to partial
+        } elseif ($value === PaymentMethod::CREDIT_ADVANCE->value) {
             $this->form['payment_status'] = PaymentStatus::PARTIAL->value;
-
-            // Initialize advance amount with a percentage of the total (e.g., 20%)
             if ($this->totalAmount > 0) {
                 $this->form['advance_amount'] = round($this->totalAmount * 0.2, 2);
             }
-        } else if ($value === PaymentMethod::FULL_CREDIT->value) {
-            // For full credit, set to due
+        } elseif ($value === PaymentMethod::FULL_CREDIT->value) {
             $this->form['payment_status'] = PaymentStatus::DUE->value;
         }
 
@@ -616,14 +623,25 @@ class Create extends Component
             $purchase->purchase_date = $this->form['purchase_date'];
             $purchase->payment_method = $this->form['payment_method'];
             $purchase->payment_status = $this->form['payment_status'];
-            $purchase->status = 'received';
+            $purchase->status = PurchaseStatus::CONFIRMED->value;
             $purchase->discount = 0;
             $purchase->tax = $this->taxAmount;
             $purchase->total_amount = $this->totalAmount;
-            $purchase->paid_amount = $this->form['payment_method'] === PaymentMethod::FULL_CREDIT->value ? 0 : 
-                                    ($this->form['payment_method'] === PaymentMethod::CREDIT_ADVANCE->value ? $this->form['advance_amount'] : $this->totalAmount);
-            $purchase->due_amount = $this->form['payment_method'] === PaymentMethod::FULL_CREDIT->value ? $this->totalAmount : 
-                                   ($this->form['payment_method'] === PaymentMethod::CREDIT_ADVANCE->value ? $this->totalAmount - $this->form['advance_amount'] : 0);
+            // Set payment amounts based on payment method
+            if ($this->form['payment_method'] === PaymentMethod::FULL_CREDIT->value) {
+                $purchase->paid_amount = 0;
+                $purchase->due_amount = $this->totalAmount;
+                $purchase->payment_status = PaymentStatus::DUE->value;
+            } elseif ($this->form['payment_method'] === PaymentMethod::CREDIT_ADVANCE->value) {
+                $purchase->paid_amount = $this->form['advance_amount'];
+                $purchase->due_amount = $this->totalAmount - $this->form['advance_amount'];
+                $purchase->payment_status = PaymentStatus::PARTIAL->value;
+            } else {
+                // Cash, Bank Transfer, Telebirr - fully paid
+                $purchase->paid_amount = $this->totalAmount;
+                $purchase->due_amount = 0;
+                $purchase->payment_status = PaymentStatus::PAID->value;
+            }
             $purchase->notes = $this->form['notes'];
             
             // Handle payment type specific fields
@@ -719,36 +737,56 @@ class Create extends Component
             
             // Create credit record for credit-type payments
             if (in_array($this->form['payment_method'], [PaymentMethod::FULL_CREDIT->value, PaymentMethod::CREDIT_ADVANCE->value], true)) {
-                $dueAmount = $this->form['payment_method'] === PaymentMethod::FULL_CREDIT->value ? 
-                    $this->totalAmount : 
-                    ($this->totalAmount - $this->form['advance_amount']);
-                
-                if ($dueAmount > 0) {
-                    // Create credit record
+                if ($this->form['payment_method'] === PaymentMethod::FULL_CREDIT->value) {
+                    // Full Credit: entire amount becomes credit
                     $credit = \App\Models\Credit::create([
                         'supplier_id' => $purchase->supplier_id,
-                        'amount' => $dueAmount,
+                        'amount' => $this->totalAmount,
                         'paid_amount' => 0,
-                        'balance' => $dueAmount,
+                        'balance' => $this->totalAmount,
                         'reference_no' => $purchase->reference_no,
                         'reference_type' => 'purchase',
                         'reference_id' => $purchase->id,
                         'credit_type' => 'payable',
-                        'description' => 'Credit for purchase #' . $purchase->reference_no,
+                        'description' => 'Full credit for purchase #' . $purchase->reference_no,
                         'credit_date' => $purchase->purchase_date,
-                        'due_date' => now()->addDays(30), // Default 30-day term
+                        'due_date' => now()->addDays(30),
                         'status' => 'active',
                         'user_id' => auth()->id(),
                         'branch_id' => $branchId,
                         'warehouse_id' => $purchase->warehouse_id,
                     ]);
-                    
-                    \Log::info('Credit record created', [
-                        'credit_id' => $credit->id,
-                        'purchase_id' => $purchase->id,
-                        'amount' => $dueAmount
-                    ]);
+                } elseif ($this->form['payment_method'] === PaymentMethod::CREDIT_ADVANCE->value) {
+                    // Credit with Advance: remaining amount becomes credit
+                    $dueAmount = $this->totalAmount - $this->form['advance_amount'];
+                    if ($dueAmount > 0) {
+                        $credit = \App\Models\Credit::create([
+                            'supplier_id' => $purchase->supplier_id,
+                            'amount' => $this->totalAmount,
+                            'paid_amount' => $this->form['advance_amount'],
+                            'balance' => $dueAmount,
+                            'reference_no' => $purchase->reference_no,
+                            'reference_type' => 'purchase',
+                            'reference_id' => $purchase->id,
+                            'credit_type' => 'payable',
+                            'description' => 'Credit with advance for purchase #' . $purchase->reference_no,
+                            'credit_date' => $purchase->purchase_date,
+                            'due_date' => now()->addDays(30),
+                            'status' => 'partial',
+                            'user_id' => auth()->id(),
+                            'branch_id' => $branchId,
+                            'warehouse_id' => $purchase->warehouse_id,
+                        ]);
+                    }
                 }
+                
+                \Log::info('Credit record created', [
+                    'credit_id' => $credit->id ?? null,
+                    'purchase_id' => $purchase->id,
+                    'payment_method' => $this->form['payment_method'],
+                    'total_amount' => $this->totalAmount,
+                    'advance_amount' => $this->form['advance_amount'] ?? 0
+                ]);
             }
             
             // Commit transaction

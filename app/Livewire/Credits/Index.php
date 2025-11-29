@@ -312,19 +312,13 @@ class Index extends Component
             });
         }
 
-        // Apply status filtering
+        // Apply status filtering - hide paid credits by default
         if (!empty($this->filters['status'])) {
-            // If a specific status is selected, use it
             $query->where('status', $this->filters['status']);
-        } elseif (!$this->showPaidCredits) {
-            // Otherwise, if not showing paid, only show active credits
-            // Note: We'll filter by effective status after loading the data
-            $query->where(function($q) {
-                $q->whereIn('status', ['active', 'partial', 'overdue'])
-                  ->where('balance', '>', 0);
-            });
+        } else {
+            // Hide paid credits by default
+            $query->whereIn('status', ['active', 'partial', 'overdue']);
         }
-        // If no status is selected AND showPaidCredits is true, no status filter is applied (shows all)
         
         // Apply remaining filters
         if ($this->filters['type']) {
