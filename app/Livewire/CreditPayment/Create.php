@@ -366,12 +366,19 @@ class Create extends Component
             // Refresh credit to get updated status
             $this->credit->refresh();
             
+            // Log closing payment completion
+            \Log::info('Closing payment completed', [
+                'credit_id' => $this->credit->id,
+                'final_status' => $this->credit->status,
+                'final_balance' => $this->credit->balance
+            ]);
+            
             if ($this->credit->status === 'paid' || $this->credit->balance <= 0) {
                 session()->flash('success', 'Credit fully paid.');
                 return redirect()->route('admin.credits.index');
             } else {
                 session()->flash('success', 'Credit partially paid.');
-                return redirect()->route('admin.credits.index');
+                return redirect()->route('admin.credits.show', $this->credit->id);
             }
         } catch (\Exception $e) {
             DB::rollBack();
@@ -388,6 +395,14 @@ class Create extends Component
         
         try {
             DB::beginTransaction();
+            
+            // Log payment attempt
+            \Log::info('Credit payment attempt', [
+                'credit_id' => $this->credit->id,
+                'amount' => $this->amount,
+                'payment_method' => $this->payment_method,
+                'current_balance' => $this->credit->balance
+            ]);
             
             $referenceNumber = $this->reference_no;
             if ($this->payment_method === 'telebirr') {
@@ -416,16 +431,33 @@ class Create extends Component
             // Refresh credit to get updated status
             $this->credit->refresh();
             
+            // Log final status
+            \Log::info('Credit payment completed', [
+                'credit_id' => $this->credit->id,
+                'final_status' => $this->credit->status,
+                'final_balance' => $this->credit->balance,
+                'payment_id' => $payment->id
+            ]);
+            
             if ($this->credit->status === 'paid' || $this->credit->balance <= 0) {
                 session()->flash('success', 'Credit fully paid.');
                 return redirect()->route('admin.credits.index');
             } else {
                 session()->flash('success', 'Credit partially paid.');
-                return redirect()->route('admin.credits.index');
+                return redirect()->route('admin.credits.show', $this->credit->id);
             }
         } catch (\Exception $e) {
             DB::rollBack();
             $this->showConfirmation = false;
+            
+            // Log the error
+            \Log::error('Credit payment failed', [
+                'credit_id' => $this->credit->id,
+                'amount' => $this->amount,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
             $this->notifyError('Failed to record payment: ' . $e->getMessage());
         }
     }

@@ -54,74 +54,35 @@
         </div>
         <div class="card-body p-3">
             <div class="row g-2">
-                <!-- Source Location -->
+                <!-- Source Location (Read-only for branch managers) -->
                 <div class="col-12 col-md-6">
-                    <label class="form-label fw-medium small">Source Type</label>
-                    <select class="form-select form-select-sm @error('form.source_type') is-invalid @enderror" 
-                            wire:model.live="form.source_type"
-                            {{ count($items) > 0 ? 'disabled' : '' }}>
-                        <option value="warehouse">Warehouse</option>
-                        <option value="branch">Branch</option>
-                    </select>
-                    @error('form.source_type')
-                        <div class="invalid-feedback">{{ $message }}</div>
-                    @enderror
-                </div>
-
-                <div class="col-12 col-md-6">
-                    <label class="form-label fw-medium small">Source Location</label>
+                    <label class="form-label fw-medium small">From Branch</label>
                     <select class="form-select form-select-sm @error('form.source_id') is-invalid @enderror" 
                             wire:model.live="form.source_id"
-                            {{ count($items) > 0 ? 'disabled' : '' }}>
-                        <option value="">Select {{ ucfirst($form['source_type']) }}</option>
-                        @if($form['source_type'] === 'warehouse')
-                            @foreach($availableSourceWarehouses as $warehouse)
-                                <option value="{{ $warehouse->id }}">{{ $warehouse->name }}</option>
-                            @endforeach
-                        @else
-                            @foreach($availableSourceBranches as $branch)
-                                <option value="{{ $branch->id }}">{{ $branch->name }}</option>
-                            @endforeach
-                        @endif
+                            {{ count($items) > 0 || auth()->user()->isBranchManager() ? 'disabled' : '' }}>
+                        <option value="">Select Source Branch</option>
+                        @foreach($availableSourceBranches as $branch)
+                            <option value="{{ $branch->id }}">{{ $branch->name }}</option>
+                        @endforeach
                     </select>
                     @error('form.source_id')
                         <div class="invalid-feedback">{{ $message }}</div>
                     @enderror
+                    @if(auth()->user()->isBranchManager())
+                        <small class="text-muted">Your branch is automatically selected</small>
+                    @endif
                 </div>
 
                 <!-- Destination Location -->
                 <div class="col-12 col-md-6">
-                    <label class="form-label fw-medium small">Destination Type</label>
-                    <select class="form-select form-select-sm @error('form.destination_type') is-invalid @enderror" 
-                            wire:model.live="form.destination_type"
-                            {{ count($items) > 0 ? 'disabled' : '' }}>
-                        <option value="warehouse">Warehouse</option>
-                        <option value="branch">Branch</option>
-                    </select>
-                    @error('form.destination_type')
-                        <div class="invalid-feedback">{{ $message }}</div>
-                    @enderror
-                </div>
-
-                <div class="col-12 col-md-6">
-                    <label class="form-label fw-medium small">Destination Location</label>
+                    <label class="form-label fw-medium small">To Branch</label>
                     <select class="form-select form-select-sm @error('form.destination_id') is-invalid @enderror" 
                             wire:model.live="form.destination_id"
                             {{ count($items) > 0 ? 'disabled' : '' }}>
-                        <option value="">Select {{ ucfirst($form['destination_type']) }}</option>
-                        @if($form['destination_type'] === 'warehouse')
-                            @foreach($availableDestinationWarehouses as $warehouse)
-                                @if($form['source_type'] !== 'warehouse' || $warehouse->id != $form['source_id'])
-                                    <option value="{{ $warehouse->id }}">{{ $warehouse->name }}</option>
-                                @endif
-                            @endforeach
-                        @else
-                            @foreach($availableDestinationBranches as $branch)
-                                @if($form['source_type'] !== 'branch' || $branch->id != $form['source_id'])
-                                    <option value="{{ $branch->id }}">{{ $branch->name }}</option>
-                                @endif
-                            @endforeach
-                        @endif
+                        <option value="">Select Destination Branch</option>
+                        @foreach($availableDestinationBranches as $branch)
+                            <option value="{{ $branch->id }}">{{ $branch->name }}</option>
+                        @endforeach
                     </select>
                     @error('form.destination_id')
                         <div class="invalid-feedback">{{ $message }}</div>
@@ -201,36 +162,20 @@
                                     </button>
                                 </div>
                             @else
-                                <div class="position-relative" x-data="{ showItemDropdown: false }">
-                                    <input 
-                                        type="text" 
-                                        class="form-control @error('newItem.item_id') is-invalid @enderror" 
-                                        wire:model.live.debounce.300ms="itemSearchTerm" 
-                                        placeholder="Search item by name or SKU..."
-                                        autocomplete="off"
-                                        @focus="showItemDropdown = true"
-                                        @click="showItemDropdown = true"
-                                        @click.away="showItemDropdown = false"
-                                    >
-                                    <div x-show="showItemDropdown && {{ count($this->filteredItemOptions ?? []) }} > 0" 
-                                         class="position-absolute w-100 border rounded shadow-sm bg-body" 
-                                         style="top: 100%; z-index: 1000; max-height: 200px; overflow-y: auto;">
-                                        @foreach($this->filteredItemOptions as $option)
-                                            <div class="px-3 py-2 border-bottom cursor-pointer small" 
-                                                 wire:click="selectItem({{ $option['id'] }})"
-                                                 @click="showItemDropdown = false">
-                                                <div class="fw-medium">
-                                                    @php
-                                                        $labelParts = explode(' (', $option['label']);
-                                                        $itemName = $labelParts[0] ?? $option['label'];
-                                                    @endphp
-                                                    {{ $itemName }}
-                                                </div>
-                                                <small class="text-muted">Available: {{ number_format($option['available_stock'], 2) }}</small>
-                                            </div>
-                                        @endforeach
-                                    </div>
-                                </div>
+                                <!-- Simple Select Dropdown -->
+                                <select class="form-select @error('newItem.item_id') is-invalid @enderror" 
+                                        wire:model.live="newItem.item_id">
+                                    <option value="">Select an item...</option>
+                                    @foreach($itemOptions as $option)
+                                        <option value="{{ $option['id'] }}">
+                                            @php
+                                                $labelParts = explode(' (', $option['label']);
+                                                $itemName = $labelParts[0] ?? $option['label'];
+                                            @endphp
+                                            {{ $itemName }} - Available: {{ number_format($option['available_stock'], 2) }}
+                                        </option>
+                                    @endforeach
+                                </select>
                             @endif
                             @error('newItem.item_id') 
                                 <div class="invalid-feedback d-block">{{ $message }}</div> 
@@ -440,121 +385,37 @@
         </div>
     @endif
 
-    <!-- Enhanced Confirmation Modal -->
+    <!-- Confirmation Modal -->
     <div class="modal fade" id="confirmTransferModal" tabindex="-1" aria-labelledby="confirmTransferModalLabel" aria-hidden="true" wire:ignore.self>
-        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
-            <div class="modal-content bg-body border">
-                <div class="modal-header bg-primary text-white border-bottom">
-                    <h5 class="modal-title fw-semibold" id="confirmTransferModalLabel">
-                        📋 Review Transfer Details
-                    </h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="confirmTransferModalLabel">Confirm Transfer</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                
-                <div class="modal-body p-3 overflow-auto" style="max-height: 70vh;">
-                    @error('general')
-                        <div class="alert alert-danger mb-3">
-                            <i class="fas fa-exclamation-triangle me-2"></i>
-                            {{ $message }}
-                        </div>
-                    @enderror
-                    
-                    <!-- Transfer Info Summary -->
-                    <div class="row mb-3">
-                        <div class="col-12">
-                            <h6 class="fw-medium mb-2">Transfer Information</h6>
-                            <div class="row g-2 small">
-                                <div class="col-6">
-                                    <span class="text-muted">From:</span>
-                                    <span class="fw-medium d-block">
-                                        {{ $this->sourceLocationName }}
-                                    </span>
-                                    <small class="text-muted">{{ ucfirst($form['source_type']) }}</small>
-                                </div>
-                                <div class="col-6">
-                                    <span class="text-muted">To:</span>
-                                    <span class="fw-medium d-block">
-                                        {{ $this->destinationLocationName }}
-                                    </span>
-                                    <small class="text-muted">{{ ucfirst($form['destination_type']) }}</small>
-                                </div>
-                                @if(!empty($form['note']))
-                                <div class="col-12 mt-2">
-                                    <span class="text-muted">Notes:</span>
-                                    <span class="fw-medium d-block">
-                                        {{ $form['note'] }}
-                                    </span>
-                                </div>
-                                @endif
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Items Summary -->
-                    <div class="mb-3">
-                        <h6 class="fw-medium mb-2">Items to Transfer ({{ count($items) }})</h6>
-                        <div class="border rounded overflow-auto" style="max-height: 250px;">
-                            @foreach($items as $item)
-                            <div class="d-flex justify-content-between align-items-center border-bottom py-2 px-3">
-                                <div class="flex-grow-1">
-                                    <div class="fw-medium small">{{ $item['item_name'] }}</div>
-                                    <small class="text-muted">Available: {{ number_format($item['available_stock'], 2) }}</small>
-                                </div>
-                                <div class="text-end">
-                                    <div class="fw-semibold">{{ number_format($item['quantity'], 2) }}</div>
-                                    <small class="text-muted">{{ $item['unit'] ?? 'pcs' }}</small>
-                                </div>
-                            </div>
-                            @endforeach
-                        </div>
-                    </div>
-
-                    <!-- Transfer Summary -->
-                    <div class="row g-2 p-3 rounded bg-light border">
-                        <div class="col-6">
-                            <div class="text-muted small">Total Items:</div>
-                            <div class="fw-semibold h5 mb-0">{{ count($items) }}</div>
-                        </div>
-                        <div class="col-6">
-                            <div class="text-muted small">Total Quantity:</div>
-                            <div class="fw-semibold h5 mb-0 text-primary">{{ number_format(collect($items)->sum('quantity'), 2) }}</div>
-                        </div>
-                    </div>
-
-                    <!-- Warning Note -->
-                    <div class="alert alert-info mt-3 p-2 small">
-                        <strong>ℹ️ Important:</strong> This transfer will be completed immediately. Stock levels will be updated in real-time.
-                    </div>
-
-                    <!-- Stock Movement Preview -->
-                    <div class="alert alert-success mt-2 p-2 small">
-                        <strong>📦 Stock Movement:</strong>
-                        <ul class="mb-0 mt-1 small">
-                            <li><strong>Deduct</strong> items from {{ $this->sourceLocationName }}</li>
-                            <li><strong>Add</strong> items to {{ $this->destinationLocationName }}</li>
-                            <li><strong>Record</strong> complete audit trail</li>
-                            <li><strong>Update</strong> inventory levels immediately</li>
-                        </ul>
+                <div class="modal-body">
+                    <p><strong>From:</strong> {{ $this->sourceLocationName }}</p>
+                    <p><strong>To:</strong> {{ $this->destinationLocationName }}</p>
+                    <p><strong>Items:</strong> {{ count($items) }}</p>
+                    <p><strong>Total Quantity:</strong> {{ number_format(collect($items)->sum('quantity'), 2) }}</p>
+                    <div class="alert alert-info">
+                        <strong>Note:</strong> This transfer will be sent for approval to the destination branch manager.
                     </div>
                 </div>
-                
-                <div class="modal-footer border-top">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
-                        ❌ Cancel
-                    </button>
-                    <button type="button" class="btn btn-success" wire:click="save" wire:loading.attr="disabled" wire:target="save">
-                        <span wire:loading.remove wire:target="save">
-                            <i class="fas fa-check me-1"></i>✅ Complete Transfer
-                        </span>
-                        <span wire:loading wire:target="save">
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" wire:click="createPendingTransfer" wire:loading.attr="disabled" wire:target="createPendingTransfer">
+                        <span wire:loading.remove wire:target="createPendingTransfer">Send for Approval</span>
+                        <span wire:loading wire:target="createPendingTransfer">
                             <span class="spinner-border spinner-border-sm me-1"></span>
-                            Processing Transfer...
+                            Sending...
                         </span>
                     </button>
                 </div>
             </div>
         </div>
     </div>
+
 </div>
 
 @push('scripts')

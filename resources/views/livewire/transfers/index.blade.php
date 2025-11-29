@@ -84,9 +84,14 @@
                                         <a href="{{ route('admin.transfers.show', $transfer) }}" class="btn btn-outline-info" title="View">
                                             <i class="bi bi-eye"></i>
                                         </a>
-                                        <a href="{{ route('admin.transfers.edit', $transfer) }}" class="btn btn-outline-primary" title="Edit">
-                                            <i class="bi bi-pencil"></i>
-                                        </a>
+                                        @if($transfer->status === 'pending' && $transfer->destination_type === 'branch' && (auth()->user()->isSuperAdmin() || auth()->user()->isGeneralManager() || (auth()->user()->isBranchManager() && auth()->user()->branch_id === $transfer->destination_id)))
+                                            <button wire:click="approveTransfer({{ $transfer->id }})" class="btn btn-outline-success" title="Approve">
+                                                <i class="bi bi-check"></i>
+                                            </button>
+                                            <button wire:click="rejectTransfer({{ $transfer->id }})" class="btn btn-outline-danger" title="Reject">
+                                                <i class="bi bi-x"></i>
+                                            </button>
+                                        @endif
                                     </div>
                                 </td>
                             </tr>
