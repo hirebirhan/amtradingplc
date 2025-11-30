@@ -15,7 +15,7 @@ class Credit extends Model
     use HasFactory, SoftDeletes;
 
     protected $fillable = [
-'customer_id',
+        'customer_id',
         'supplier_id',
         'amount',
         'paid_amount',
@@ -35,6 +35,44 @@ class Credit extends Model
         'updated_by',
         'deleted_by',
     ];
+
+    /**
+     * Boot method to set default branch_id if not provided
+     */
+    protected static function boot()
+    {
+        parent::boot();
+        
+        static::creating(function ($credit) {
+            // Ensure branch_id is set
+            if (empty($credit->branch_id)) {
+                $credit->branch_id = static::getDefaultBranchId();
+            }
+        });
+    }
+
+    /**
+     * Get default branch ID for credits
+     */
+    private static function getDefaultBranchId(): ?int
+    {
+        // Try user's branch first
+        if (auth()->check() && auth()->user()->branch_id) {
+            return auth()->user()->branch_id;
+        }
+        
+        // Try user's warehouse branch
+        if (auth()->check() && auth()->user()->warehouse_id) {
+            $warehouse = \App\Models\Warehouse::with('branches')->find(auth()->user()->warehouse_id);
+            if ($warehouse && $warehouse->branches->isNotEmpty()) {
+                return $warehouse->branches->first()->id;
+            }
+        }
+        
+        // Fallback to first active branch
+        $branch = \App\Models\Branch::where('is_active', true)->first();
+        return $branch ? $branch->id : null;
+    }
 
     protected $casts = [
         'amount' => 'decimal:2',
@@ -174,6 +212,11 @@ class Credit extends Model
         // Update related purchase payment status if this is a purchase credit
         if ($this->reference_type === 'purchase' && $this->reference_id) {
             $this->updatePurchasePaymentStatus();
+        }
+        
+        // Update related sale payment status if this is a sale credit
+        if ($this->reference_type === 'sale' && $this->reference_id) {
+            $this->updateSalePaymentStatus();
         }
 
         return $payment;
@@ -350,5 +393,35 @@ class Credit extends Model
         }
         
         $purchase->save();
+    }
+    
+    /**
+     * Update the related sale payment status when credit payments are made
+     */
+    private function updateSalePaymentStatus(): void
+    {
+        if ($this->reference_type !== 'sale' || !$this->reference_id) {
+            return;
+        }
+
+        $sale = $this->sale;
+        if (!$sale) {
+            return;
+        }
+
+        // Update sale paid amount and status based on credit payments
+        $sale->paid_amount = $this->paid_amount;
+        $sale->due_amount = $this->balance;
+        
+        // Update sale payment status
+        if ($this->balance <= 0) {
+            $sale->payment_status = 'paid';
+        } elseif ($this->paid_amount > 0) {
+            $sale->payment_status = 'partial';
+        } else {
+            $sale->payment_status = 'due';
+        }
+        
+        $sale->save();
     }
 }

@@ -128,15 +128,15 @@ class Create extends Component
         }
 
         // Payment method specific validations
-        if ($this->form['payment_method'] === PaymentMethod::TELEBIRR->value) {
+        if ($this->form['payment_method'] === 'telebirr') {
             $rules['form.transaction_number'] = 'required|string|min:5';
         }
 
-        if ($this->form['payment_method'] === PaymentMethod::BANK_TRANSFER->value) {
+        if ($this->form['payment_method'] === 'bank_transfer') {
             $rules['form.bank_account_id'] = 'required|exists:bank_accounts,id';
         }
 
-        if ($this->form['payment_method'] === PaymentMethod::CREDIT_ADVANCE->value) {
+        if ($this->form['payment_method'] === 'credit_advance') {
             $rules['form.advance_amount'] = 'required|numeric|min:0.01|lt:' . $this->totalAmount;
         }
 
@@ -166,8 +166,8 @@ class Create extends Component
             'customer_id' => '',
             'warehouse_id' => '',
             'branch_id' => '',
-            'payment_method' => PaymentMethod::defaultForSales()->value,
-            'payment_status' => PaymentStatus::PAID->value,
+            'payment_method' => 'cash',
+            'payment_status' => 'paid',
             'tax' => 0,
             'shipping' => 0,
             'transaction_number' => '',
@@ -829,19 +829,19 @@ class Create extends Component
     private function updatePaymentStatus()
     {
         switch ($this->form['payment_method']) {
-            case PaymentMethod::CASH->value:
-            case PaymentMethod::BANK_TRANSFER->value:
-            case PaymentMethod::TELEBIRR->value:
-                $this->form['payment_status'] = PaymentStatus::PAID->value;
+            case 'cash':
+            case 'bank_transfer':
+            case 'telebirr':
+                $this->form['payment_status'] = 'paid';
                 break;
-            case PaymentMethod::CREDIT_ADVANCE->value:
-                $this->form['payment_status'] = PaymentStatus::PARTIAL->value;
+            case 'credit_advance':
+                $this->form['payment_status'] = 'partial';
                 if ($this->totalAmount > 0 && (empty($this->form['advance_amount']) || $this->form['advance_amount'] == 0)) {
                     $this->form['advance_amount'] = round($this->totalAmount * 0.2, 2); // Default 20%
                 }
                 break;
-            case PaymentMethod::FULL_CREDIT->value:
-                $this->form['payment_status'] = PaymentStatus::DUE->value;
+            case 'full_credit':
+                $this->form['payment_status'] = 'due';
                 break;
         }
     }
@@ -861,15 +861,30 @@ class Create extends Component
             if (empty($this->form['warehouse_id'])) {
                 throw new \Exception('Please select a warehouse.');
             }
+            
+            // Resolve branch_id for credit creation
+            $branchId = $this->resolveBranchId();
+            
+            if (!$branchId) {
+                throw new \Exception('Unable to determine branch for this sale. Please ensure warehouse is properly assigned to a branch.');
+            }
 
             DB::beginTransaction();
 
-            // Create sale
+            // Create sale - set either branch_id OR warehouse_id, not both
+            $branchId = $this->resolveBranchId();
             $sale = new Sale();
             $sale->reference_no = $this->form['reference_no'];
             $sale->customer_id = $this->form['customer_id'];
-            $sale->branch_id = $this->form['branch_id'] ?: null;
-            $sale->warehouse_id = $this->form['warehouse_id'] ?: null;
+            
+            // Set location: prefer warehouse_id if explicitly selected, otherwise use branch_id
+            if (!empty($this->form['warehouse_id'])) {
+                $sale->warehouse_id = $this->form['warehouse_id'];
+                $sale->branch_id = null;
+            } else {
+                $sale->branch_id = $branchId;
+                $sale->warehouse_id = null;
+            }
             $sale->user_id = auth()->id();
             $sale->sale_date = $this->form['sale_date'];
             $sale->payment_method = $this->form['payment_method'];
@@ -883,29 +898,29 @@ class Create extends Component
 
             // Set payment-specific fields
             switch ($this->form['payment_method']) {
-                case PaymentMethod::CASH->value:
-                case PaymentMethod::BANK_TRANSFER->value:
-                case PaymentMethod::TELEBIRR->value:
+                case 'cash':
+                case 'bank_transfer':
+                case 'telebirr':
                     $sale->paid_amount = $this->totalAmount;
                     $sale->due_amount = 0;
                     break;
-                case PaymentMethod::CREDIT_ADVANCE->value:
+                case 'credit_advance':
                     $sale->paid_amount = $this->form['advance_amount'];
                     $sale->advance_amount = $this->form['advance_amount'];
                     $sale->due_amount = $this->totalAmount - $this->form['advance_amount'];
                     break;
-                case PaymentMethod::FULL_CREDIT->value:
+                case 'credit_full':
                     $sale->paid_amount = 0;
                     $sale->due_amount = $this->totalAmount;
                     break;
             }
 
-            if ($this->form['payment_method'] === PaymentMethod::TELEBIRR->value) {
+            if ($this->form['payment_method'] === 'telebirr') {
                 $sale->transaction_number = $this->form['transaction_number'];
                 $sale->receipt_url = $this->form['receipt_url'];
             }
 
-            if ($this->form['payment_method'] === PaymentMethod::BANK_TRANSFER->value) {
+            if ($this->form['payment_method'] === 'bank_transfer') {
                 $sale->bank_account_id = $this->form['bank_account_id'];
             }
 
@@ -941,12 +956,7 @@ class Create extends Component
             // Process the sale (update stock)
             $sale->processSale();
 
-            // Handle credit creation for credit-based payment methods
-            if ($this->form['payment_method'] === PaymentMethod::CREDIT_ADVANCE->value && $this->form['advance_amount'] > 0) {
-                $this->createCreditAndAdvancePayment($sale);
-            } elseif ($this->form['payment_method'] === PaymentMethod::FULL_CREDIT->value) {
-                $this->createFullCredit($sale);
-            }
+            // Credit creation is handled by Sale model's processSale() method
 
             DB::commit();
             
@@ -998,11 +1008,14 @@ class Create extends Component
     /**
      * Create credit record and advance payment for credit_advance sales
      */
-    private function createCreditAndAdvancePayment(Sale $sale)
+    private function createCreditAndAdvancePayment(Sale $sale, ?int $branchId = null)
     {
         try {
             // Calculate remaining amount
             $remainingAmount = $this->totalAmount - $this->form['advance_amount'];
+            
+            // Resolve branch_id for credit (required for credits)
+            $creditBranchId = $sale->branch_id ?: $branchId ?: $this->resolveBranchId();
             
             // Create credit record for the remaining amount
             $credit = new Credit();
@@ -1010,16 +1023,16 @@ class Create extends Component
             $credit->amount = $remainingAmount;
             $credit->paid_amount = 0; // No payments yet on the credit
             $credit->balance = $remainingAmount;
-            $credit->reference_no = $sale->reference_no . '-CREDIT';
+            $credit->reference_no = $sale->reference_no;
             $credit->reference_type = 'sale';
             $credit->reference_id = $sale->id;
             $credit->credit_type = 'receivable';
-            $credit->description = "Credit for sale {$sale->reference_no} - Advance payment of " . number_format($this->form['advance_amount'], 2) . " ETB made";
+            $credit->description = "Credit for sale #{$sale->reference_no}";
             $credit->credit_date = $sale->sale_date;
-            $credit->due_date = null; // Can be set based on business rules
+            $credit->due_date = now()->addDays(30);
             $credit->status = 'active';
             $credit->user_id = auth()->id();
-            $credit->branch_id = $sale->branch_id;
+            $credit->branch_id = $creditBranchId;
             $credit->warehouse_id = $sale->warehouse_id;
             $credit->created_by = auth()->id();
             $credit->save();
@@ -1048,25 +1061,28 @@ class Create extends Component
     /**
      * Create full credit record for full_credit sales
      */
-    private function createFullCredit(Sale $sale)
+    private function createFullCredit(Sale $sale, ?int $branchId = null)
     {
         try {
+            // Resolve branch_id for credit (required for credits)
+            $creditBranchId = $sale->branch_id ?: $branchId ?: $this->resolveBranchId();
+            
             // Create credit record for the full amount
             $credit = new Credit();
             $credit->customer_id = $sale->customer_id;
             $credit->amount = $this->totalAmount;
             $credit->paid_amount = 0;
             $credit->balance = $this->totalAmount;
-            $credit->reference_no = $sale->reference_no . '-CREDIT';
+            $credit->reference_no = $sale->reference_no;
             $credit->reference_type = 'sale';
             $credit->reference_id = $sale->id;
             $credit->credit_type = 'receivable';
-            $credit->description = "Full credit for sale {$sale->reference_no}";
+            $credit->description = "Credit for sale #{$sale->reference_no}";
             $credit->credit_date = $sale->sale_date;
-            $credit->due_date = null; // Can be set based on business rules
+            $credit->due_date = now()->addDays(30);
             $credit->status = 'active';
             $credit->user_id = auth()->id();
-            $credit->branch_id = $sale->branch_id;
+            $credit->branch_id = $creditBranchId;
             $credit->warehouse_id = $sale->warehouse_id;
             $credit->created_by = auth()->id();
             $credit->save();
@@ -1559,6 +1575,46 @@ class Create extends Component
     }
 
 
+
+    /**
+     * Resolve branch_id from various sources
+     */
+    private function resolveBranchId(): ?int
+    {
+        // First priority: explicitly selected branch
+        if (!empty($this->form['branch_id'])) {
+            return (int)$this->form['branch_id'];
+        }
+        
+        // Second priority: get branch from selected warehouse
+        if (!empty($this->form['warehouse_id'])) {
+            $warehouse = Warehouse::with('branches')->find($this->form['warehouse_id']);
+            if ($warehouse && $warehouse->branches->isNotEmpty()) {
+                return (int)$warehouse->branches->first()->id;
+            }
+        }
+        
+        // Third priority: user's assigned branch
+        if (auth()->user()->branch_id) {
+            return (int)auth()->user()->branch_id;
+        }
+        
+        // Fourth priority: get branch from user's assigned warehouse
+        if (auth()->user()->warehouse_id) {
+            $warehouse = Warehouse::with('branches')->find(auth()->user()->warehouse_id);
+            if ($warehouse && $warehouse->branches->isNotEmpty()) {
+                return (int)$warehouse->branches->first()->id;
+            }
+        }
+        
+        // Last resort: get the first active branch
+        $firstBranch = Branch::where('is_active', true)->first();
+        if ($firstBranch) {
+            return (int)$firstBranch->id;
+        }
+        
+        return null;
+    }
 
     public function render()
     {

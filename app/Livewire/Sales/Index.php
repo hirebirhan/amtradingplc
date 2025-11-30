@@ -196,9 +196,29 @@ class Index extends Component
         return $this->applyBranchFiltering($query);
     }
 
+    public function createMissingCredits()
+    {
+        $salesWithoutCredits = Sale::whereIn('payment_status', ['due', 'partial'])
+            ->whereDoesntHave('credit')
+            ->where('due_amount', '>', 0)
+            ->get();
+            
+        $count = 0;
+        foreach ($salesWithoutCredits as $sale) {
+            try {
+                $sale->createCreditRecord();
+                $count++;
+            } catch (\Exception $e) {
+                \Log::error('Failed to create credit for sale ' . $sale->id . ': ' . $e->getMessage());
+            }
+        }
+        
+        session()->flash('success', 'Created ' . $count . ' missing credit records.');
+    }
+
     public function render()
     {
-        $sales = $this->getSalesQuery()->paginate($this->perPage);
+        $sales = $this->getSalesQuery()->with('credit')->paginate($this->perPage);
 
         // Get branches and warehouses for filters
         $branches = \App\Models\Branch::where('is_active', true)->orderBy('name')->get();

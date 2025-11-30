@@ -277,7 +277,7 @@ class Create extends Component
             return;
         }
         
-        if ($this->credit->credit_type === 'payable' && $this->paymentType === 'closing_payment') {
+        if ($this->paymentType === 'closing_payment') {
             // Show closing prices modal for closing payments
             $this->showClosingPricesModal = true;
             return;
@@ -320,6 +320,17 @@ class Create extends Component
                 // Calculate initial payment amount
                 $this->calculateClosingPaymentAmount();
             }
+        } elseif ($this->credit->reference_type === 'sale' && $this->credit->reference_id) {
+            $sale = $this->credit->sale;
+            if ($sale) {
+                foreach ($sale->items as $item) {
+                    // Initialize with original unit price
+                    $this->closingPrices[$item->item_id] = $item->unit_price;
+                }
+                
+                // Calculate initial payment amount
+                $this->calculateClosingPaymentAmount();
+            }
         }
     }
     
@@ -332,22 +343,35 @@ class Create extends Component
     public function calculateClosingPaymentAmount()
     {
         // Only calculate for closing payments with negotiated prices
-        if ($this->paymentType !== 'closing_payment' || 
-            $this->credit->reference_type !== 'purchase' || 
-            !$this->credit->reference_id) {
-            return;
-        }
-        
-        $purchase = $this->credit->purchase;
-        if (!$purchase) {
+        if ($this->paymentType !== 'closing_payment' || !$this->credit->reference_id) {
             return;
         }
         
         $totalClosingCost = 0;
-        foreach ($purchase->items as $item) {
-            if (isset($this->closingPrices[$item->item_id]) && is_numeric($this->closingPrices[$item->item_id])) {
-                $closingPricePerUnit = (float) $this->closingPrices[$item->item_id];
-                $totalClosingCost += $closingPricePerUnit * $item->quantity;
+        
+        if ($this->credit->reference_type === 'purchase') {
+            $purchase = $this->credit->purchase;
+            if (!$purchase) {
+                return;
+            }
+            
+            foreach ($purchase->items as $item) {
+                if (isset($this->closingPrices[$item->item_id]) && is_numeric($this->closingPrices[$item->item_id])) {
+                    $closingPricePerUnit = (float) $this->closingPrices[$item->item_id];
+                    $totalClosingCost += $closingPricePerUnit * $item->quantity;
+                }
+            }
+        } elseif ($this->credit->reference_type === 'sale') {
+            $sale = $this->credit->sale;
+            if (!$sale) {
+                return;
+            }
+            
+            foreach ($sale->items as $item) {
+                if (isset($this->closingPrices[$item->item_id]) && is_numeric($this->closingPrices[$item->item_id])) {
+                    $closingPricePerUnit = (float) $this->closingPrices[$item->item_id];
+                    $totalClosingCost += $closingPricePerUnit * $item->quantity;
+                }
             }
         }
         
@@ -368,9 +392,18 @@ class Create extends Component
         
         // Validate total closing cost doesn't exceed credit amount
         $totalClosingCost = 0;
-        foreach ($this->credit->purchase->items as $item) {
-            if (isset($this->closingPrices[$item->item_id])) {
-                $totalClosingCost += (float) $this->closingPrices[$item->item_id] * $item->quantity;
+        
+        if ($this->credit->reference_type === 'purchase' && $this->credit->purchase) {
+            foreach ($this->credit->purchase->items as $item) {
+                if (isset($this->closingPrices[$item->item_id])) {
+                    $totalClosingCost += (float) $this->closingPrices[$item->item_id] * $item->quantity;
+                }
+            }
+        } elseif ($this->credit->reference_type === 'sale' && $this->credit->sale) {
+            foreach ($this->credit->sale->items as $item) {
+                if (isset($this->closingPrices[$item->item_id])) {
+                    $totalClosingCost += (float) $this->closingPrices[$item->item_id] * $item->quantity;
+                }
             }
         }
         
@@ -391,7 +424,7 @@ class Create extends Component
                 $referenceNumber = $this->transaction_number;
             }
             
-            // Update purchase items with closing prices for tracking
+            // Update items with closing prices for tracking
             if ($this->credit->reference_type === 'purchase' && $this->credit->purchase) {
                 foreach ($this->credit->purchase->items as $item) {
                     if (isset($this->closingPrices[$item->item_id])) {
@@ -400,6 +433,17 @@ class Create extends Component
                             'closing_unit_price' => $closingPrice,
                             'total_closing_cost' => $closingPrice * $item->quantity,
                             'profit_loss_per_item' => ($item->unit_cost - $closingPrice) * $item->quantity
+                        ]);
+                    }
+                }
+            } elseif ($this->credit->reference_type === 'sale' && $this->credit->sale) {
+                foreach ($this->credit->sale->items as $item) {
+                    if (isset($this->closingPrices[$item->item_id])) {
+                        $closingPrice = (float) $this->closingPrices[$item->item_id];
+                        $item->update([
+                            'closing_unit_price' => $closingPrice,
+                            'total_closing_cost' => $closingPrice * $item->quantity,
+                            'profit_loss_per_item' => ($item->unit_price - $closingPrice) * $item->quantity
                         ]);
                     }
                 }
@@ -433,10 +477,10 @@ class Create extends Component
             ]);
             
             if ($this->credit->status === 'paid' || $this->credit->balance <= 0) {
-                session()->flash('success', 'Credit fully paid.');
+                session()->flash('success', 'Credit fully paid with closing prices.');
                 return redirect()->route('admin.credits.index');
             } else {
-                session()->flash('success', 'Partial payment made. Remaining balance: ' . number_format($this->credit->balance, 2) . ' ETB');
+                session()->flash('success', 'Partial payment made with closing prices. Remaining balance: ' . number_format($this->credit->balance, 2) . ' ETB');
                 return redirect()->route('admin.credits.show', $this->credit->id);
             }
         } catch (\Exception $e) {

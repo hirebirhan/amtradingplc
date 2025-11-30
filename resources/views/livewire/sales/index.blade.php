@@ -18,8 +18,14 @@
                 <a href="{{ route('admin.sales.create') }}" class="btn btn-primary btn-sm">
                     <i class="bi bi-plus-lg me-1"></i>
                     <span class="d-none d-sm-inline">New Sale</span>
-                    </a>
+                </a>
                 @endcan
+                @if(auth()->user()->isSuperAdmin())
+                <button wire:click="createMissingCredits" class="btn btn-outline-warning btn-sm">
+                    <i class="bi bi-arrow-repeat me-1"></i>
+                    <span class="d-none d-sm-inline">Sync Credits</span>
+                </button>
+                @endif
         </div>
     </div>
 
@@ -132,6 +138,16 @@
                                         <a href="{{ route('admin.sales.show', $sale) }}" class="btn btn-outline-info" title="View">
                                             <i class="bi bi-eye"></i>
                                         </a>
+                                        @if($sale->payment_status === 'due' || $sale->payment_status === 'partial')
+                                            @php
+                                                $credit = $sale->credit;
+                                            @endphp
+                                            @if($credit)
+                                                <a href="{{ route('admin.credits.payments.create', $credit) }}" class="btn btn-outline-success" title="Make Payment">
+                                                    <i class="bi bi-credit-card"></i>
+                                                </a>
+                                            @endif
+                                        @endif
                                         <a href="{{ route('admin.sales.print', $sale) }}" class="btn btn-outline-secondary" target="_blank" title="Print">
                                             <i class="bi bi-printer"></i>
                                         </a>

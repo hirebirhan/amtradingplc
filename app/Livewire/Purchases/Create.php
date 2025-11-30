@@ -238,8 +238,9 @@ class Create extends Component
         // Get items that are already in the cart
         $addedItemIds = collect($this->items)->pluck('item_id')->toArray();
         
+        // For purchases: Show ALL active items regardless of stock (purchases add stock)
         $this->itemOptions = Item::where('is_active', true)
-            ->whereNotIn('id', $addedItemIds) // Exclude items already in cart
+            ->whereNotIn('id', $addedItemIds) // Only exclude items already in cart
             ->orderBy('name')
             ->get()
             ->map(function ($item) {
@@ -1953,7 +1954,7 @@ class Create extends Component
     }
 
     /**
-     * Get filtered item options for search - excludes items already in cart
+     * Get filtered item options for search - shows all active items for purchases
      */
     public function getFilteredItemOptionsProperty()
     {
@@ -1966,9 +1967,9 @@ class Create extends Component
         
         $search = strtolower($this->itemSearch);
         
-        // Get items from database with fresh stock calculation
+        // For purchases: Show ALL active items regardless of stock (purchases add stock)
         $items = Item::where('is_active', true)
-            ->whereNotIn('id', $addedItemIds)
+            ->whereNotIn('id', $addedItemIds) // Only exclude items already in cart
             ->where(function ($query) use ($search) {
                 $query->where('name', 'like', '%' . $search . '%')
                       ->orWhere('sku', 'like', '%' . $search . '%');

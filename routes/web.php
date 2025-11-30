@@ -367,7 +367,7 @@ Route::prefix('admin')->middleware(['auth', 'active'])->group(function () {
 
         Route::get('/{supplier}', function(App\Models\Supplier $supplier) {
             return view('suppliers-show', ['supplier' => $supplier]);
-        })->middleware('permission:suppliers.view')->name('show');
+        })->middleware('permission:suppliers.edit')->name('show');
 
         Route::get('/{supplier}/edit', function(App\Models\Supplier $supplier) {
             return view('suppliers-edit', ['supplier' => $supplier]);
@@ -516,7 +516,6 @@ Route::prefix('admin')->middleware(['auth', 'active'])->group(function () {
 
 
 
-
     // Transfers Management
 });
 
@@ -524,11 +523,6 @@ Route::prefix('admin')->middleware(['auth', 'active'])->group(function () {
 Route::get('/stock-card', [App\Http\Controllers\StockCardController::class, 'index'])->name('stock-card.index');
 Route::get('/stock-card/print', [App\Http\Controllers\StockCardController::class, 'print'])->name('stock-card.print');
 
-// Test route for phone input validation (remove in production)
-Route::get('/test-phone', function () {
-    return view('test-phone');
-})->name('test-phone');
 
-// Test routes for flash messages (remove in production)
-Route::get('/test-flash', [App\Http\Controllers\TestFlashController::class, 'show'])->name('test.flash.show');
-Route::post('/test-flash', [App\Http\Controllers\TestFlashController::class, 'test'])->name('test.flash');
+
+
