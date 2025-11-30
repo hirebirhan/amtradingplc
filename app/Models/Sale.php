@@ -81,6 +81,18 @@ class Sale extends Model
         
         // Auto-create credit record after sale is saved with due amount
         static::saved(function ($sale) {
+            // Ensure paid_amount is never null
+            if ($sale->paid_amount === null) {
+                $sale->paid_amount = 0;
+                $sale->saveQuietly();
+            }
+            
+            // Ensure due_amount is calculated correctly
+            if ($sale->payment_status === 'due' && $sale->due_amount <= 0) {
+                $sale->due_amount = $sale->total_amount - ($sale->paid_amount ?? 0);
+                $sale->saveQuietly(); // Avoid infinite loop
+            }
+            
             if ($sale->due_amount > 0 && !$sale->credit()->exists()) {
                 try {
                     $sale->createCreditRecord();
@@ -345,12 +357,12 @@ class Sale extends Model
         
         // Create credit for any sale with outstanding balance
         if ($this->due_amount > 0) {
-            $status = $this->paid_amount > 0 ? 'partial' : 'active';
+            $status = ($this->paid_amount ?? 0) > 0 ? 'partial' : 'active';
             
             Credit::create([
                 'customer_id' => $this->customer_id,
                 'amount' => $this->total_amount,
-                'paid_amount' => $this->paid_amount,
+                'paid_amount' => $this->paid_amount ?? 0,
                 'balance' => $this->due_amount,
                 'reference_no' => $this->reference_no,
                 'reference_type' => 'sale',
