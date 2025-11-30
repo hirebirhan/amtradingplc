@@ -134,7 +134,7 @@ class Index extends Component
     protected function getPurchasesQuery()
     {
         $query = Purchase::forUser(Auth::user())
-            ->with(['supplier', 'warehouse', 'branch'])
+            ->with(['supplier', 'warehouse', 'branch', 'credit'])
             ->when($this->search, function ($query) {
                 $query->where('reference_no', 'like', '%' . $this->search . '%')
                     ->orWhereHas('supplier', function ($q) {
