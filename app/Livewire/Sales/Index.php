@@ -78,18 +78,30 @@ class Index extends Component
         $user = auth()->user();
         
         // SuperAdmin and GeneralManager can see all sales
-        if ($user->isSuperAdmin()) {
+        if ($user->isSuperAdmin() || $user->isGeneralManager()) {
             return $query;
         }
         
-        // Branch-specific users (BranchManager, Sales, etc.) see only their branch's sales
-        if ($user->branch_id) {
-            return $query->where('branch_id', $user->branch_id);
+        // Branch Manager sees only their branch's sales (both direct branch sales and warehouse sales)
+        if ($user->isBranchManager() && $user->branch_id) {
+            return $query->where(function($q) use ($user) {
+                $q->where('branch_id', $user->branch_id)
+                  ->orWhereHas('warehouse', function($warehouseQuery) use ($user) {
+                      $warehouseQuery->whereHas('branches', function($branchQuery) use ($user) {
+                          $branchQuery->where('branches.id', $user->branch_id);
+                      });
+                  });
+            });
         }
         
         // Warehouse-specific users see only their warehouse's sales
         if ($user->warehouse_id) {
             return $query->where('warehouse_id', $user->warehouse_id);
+        }
+        
+        // Other branch users see only their branch's direct sales
+        if ($user->branch_id) {
+            return $query->where('branch_id', $user->branch_id);
         }
         
         return $query;
@@ -177,8 +189,8 @@ class Index extends Component
             })
             ->when($this->branchFilter, function($query) {
                 $query->whereHas('warehouse', function($q) {
-                    $q->whereHas('branch', function($branchQuery) {
-                        $branchQuery->where('id', $this->branchFilter);
+                    $q->whereHas('branches', function($branchQuery) {
+                        $branchQuery->where('branches.id', $this->branchFilter);
                     });
                 });
             })
@@ -219,10 +231,29 @@ class Index extends Component
     public function render()
     {
         $sales = $this->getSalesQuery()->with('credit')->paginate($this->perPage);
+        $user = auth()->user();
 
-        // Get branches and warehouses for filters
-        $branches = \App\Models\Branch::where('is_active', true)->orderBy('name')->get();
-        $warehouses = \App\Models\Warehouse::orderBy('name')->get();
+        // Get branches and warehouses for filters based on user role
+        if ($user->isSuperAdmin() || $user->isGeneralManager()) {
+            // SuperAdmin and GeneralManager see all branches and warehouses
+            $branches = \App\Models\Branch::where('is_active', true)->orderBy('name')->get();
+            $warehouses = \App\Models\Warehouse::orderBy('name')->get();
+        } elseif ($user->isBranchManager() && $user->branch_id) {
+            // Branch Manager sees only their branch and its warehouses
+            $branches = \App\Models\Branch::where('id', $user->branch_id)->where('is_active', true)->get();
+            $warehouses = \App\Models\Warehouse::whereHas('branches', function($q) use ($user) {
+                $q->where('branches.id', $user->branch_id);
+            })->orderBy('name')->get();
+        } elseif ($user->warehouse_id) {
+            // Warehouse users see only their warehouse and its branches
+            $warehouse = \App\Models\Warehouse::with('branches')->find($user->warehouse_id);
+            $branches = $warehouse ? $warehouse->branches : collect([]);
+            $warehouses = collect([$warehouse])->filter();
+        } else {
+            // Default: no filters for other users
+            $branches = collect([]);
+            $warehouses = collect([]);
+        }
 
         return view('livewire.sales.index', [
             'sales' => $sales,
