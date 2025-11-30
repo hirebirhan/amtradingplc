@@ -96,8 +96,8 @@ class Item extends Model
             return $query;
         }
 
-        // SuperAdmin sees all items
-        if ($user->isSuperAdmin()) {
+        // SuperAdmin and GeneralManager see all items
+        if ($user->isSuperAdmin() || $user->isGeneralManager()) {
             return $query;
         }
 
@@ -286,8 +286,8 @@ class Item extends Model
             return $this->getTotalStockAttribute();
         }
 
-        // Super admin or no role restrictions - show all stock
-        if ($user->isSuperAdmin()) {
+        // Super admin and General Manager - show all stock
+        if ($user->isSuperAdmin() || $user->isGeneralManager()) {
             return $this->getTotalStockAttribute();
         }
 

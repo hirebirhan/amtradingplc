@@ -190,15 +190,27 @@ class Create extends Component
         // Auto-set location based on user assignment
         $user = auth()->user();
         
-        if ($user->branch_id) {
-            $this->form['branch_id'] = $user->branch_id;
-            $this->userLocationType = 'branch';
-            $this->userLocationId = $user->branch_id;
-            $this->loadItemsForLocation();
-        } elseif ($user->warehouse_id) {
+        if ($user->warehouse_id) {
+            // Warehouse user - auto-select their warehouse
             $this->form['warehouse_id'] = $user->warehouse_id;
             $this->userLocationType = 'warehouse';
             $this->userLocationId = $user->warehouse_id;
+            $this->loadItemsForLocation();
+        } elseif ($user->isBranchManager() && $user->branch_id) {
+            // Branch manager - auto-select first warehouse in their branch
+            $branchWarehouse = Warehouse::whereHas('branches', function($q) use ($user) {
+                $q->where('branches.id', $user->branch_id);
+            })->first();
+            
+            if ($branchWarehouse) {
+                $this->form['warehouse_id'] = $branchWarehouse->id;
+                $this->loadItemsForLocation();
+            }
+        } elseif ($user->branch_id) {
+            // Other branch users - set branch
+            $this->form['branch_id'] = $user->branch_id;
+            $this->userLocationType = 'branch';
+            $this->userLocationId = $user->branch_id;
             $this->loadItemsForLocation();
         } else {
             // Auto-select warehouse with most stock
@@ -240,8 +252,22 @@ class Create extends Component
 
     private function loadLocations()
     {
-        // Only load if user is not assigned to a specific location
-        if (!auth()->user()->branch_id && !auth()->user()->warehouse_id) {
+        $user = auth()->user();
+        
+        // SuperAdmin and GeneralManager see all locations
+        if ($user->isSuperAdmin() || $user->isGeneralManager()) {
+            $this->branches = Branch::orderBy('name')->get();
+            $this->warehouses = Warehouse::orderBy('name')->get();
+        }
+        // Branch Manager sees warehouses in their branch
+        elseif ($user->isBranchManager() && $user->branch_id) {
+            $this->branches = Branch::where('id', $user->branch_id)->get();
+            $this->warehouses = Warehouse::whereHas('branches', function($q) use ($user) {
+                $q->where('branches.id', $user->branch_id);
+            })->orderBy('name')->get();
+        }
+        // Users not assigned to specific location see all
+        elseif (!$user->branch_id && !$user->warehouse_id) {
             $this->branches = Branch::orderBy('name')->get();
             $this->warehouses = Warehouse::orderBy('name')->get();
         }
@@ -262,9 +288,13 @@ class Create extends Component
         }
         
         if ($this->form['warehouse_id']) {
-            // Load all active items and ensure stock records exist
-            $items = Item::where('is_active', true)
+            // Load only items that have stock in this warehouse
+            $items = Item::forUser(auth()->user())
+                ->where('is_active', true)
                 ->whereNotIn('id', $addedItemIds)
+                ->whereHas('stocks', function($q) {
+                    $q->where('warehouse_id', $this->form['warehouse_id']);
+                })
                 ->orderBy('name')
                 ->get();
 
@@ -340,9 +370,13 @@ class Create extends Component
             }
                 
             if (!empty($warehouseIds)) {
-                // Load all items and create/get stock records for branch warehouses
-                $items = Item::where('is_active', true)
+                // Load only items that have stock in branch warehouses
+                $items = Item::forUser(auth()->user())
+                    ->where('is_active', true)
                     ->whereNotIn('id', $addedItemIds)
+                    ->whereHas('stocks', function($q) use ($warehouseIds) {
+                        $q->whereIn('warehouse_id', $warehouseIds);
+                    })
                     ->orderBy('name')
                     ->get();
                     
@@ -1222,7 +1256,7 @@ class Create extends Component
 
     public function getFilteredItemOptionsProperty()
     {
-        if (empty($this->itemSearch) || strlen($this->itemSearch) < 2) {
+        if (empty($this->itemSearch) || strlen(trim($this->itemSearch)) < 1) {
             return [];
         }
         
@@ -1231,7 +1265,7 @@ class Create extends Component
             return [];
         }
         
-        $searchTerm = strtolower($this->itemSearch);
+        $searchTerm = trim($this->itemSearch);
         
         // Get items already in cart to exclude them
         $addedItemIds = [];
@@ -1242,13 +1276,14 @@ class Create extends Component
             }
         }
         
-        $results = Item::where('is_active', true)
+        $results = Item::forUser(auth()->user())
+            ->where('is_active', true)
             ->whereNotIn('id', $addedItemIds)
             ->where(function ($query) use ($searchTerm) {
-                $query->whereRaw('LOWER(name) LIKE ?', ["%{$searchTerm}%"])
-                      ->orWhereRaw('LOWER(sku) LIKE ?', ["%{$searchTerm}%"]);
+                $query->where('name', 'LIKE', "%{$searchTerm}%")
+                      ->orWhere('sku', 'LIKE', "%{$searchTerm}%");
             })
-            ->limit(8)
+            ->limit(10)
             ->get()
             ->map(function ($item) use ($warehouseId) {
                 // Get or create stock record
