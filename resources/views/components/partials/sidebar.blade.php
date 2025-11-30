@@ -12,7 +12,7 @@
         </div>
 
         <!-- Inventory Section -->
-        @if(auth()->user()->can('categories.view') || auth()->user()->can('items.view') || auth()->user()->can('transfers.view'))
+        @if(auth()->check() && (auth()->user()->can('categories.view') || auth()->user()->can('items.view') || auth()->user()->can('transfers.view')))
         <div>
             <button class="nav-link d-flex align-items-center justify-content-between w-100 px-3 py-2 rounded border-0 text-start {{ request()->routeIs('admin.inventory') ? 'bg-primary bg-opacity-10 text-primary' : 'text-body-secondary' }}"
                     type="button"
@@ -60,7 +60,7 @@
         </div>
         @endif
         <!-- Purchases Section -->
-        @if(auth()->user()->can('suppliers.view') || auth()->user()->can('purchases.view') || auth()->user()->can('purchases.create'))
+        @if(auth()->check() && (auth()->user()->can('suppliers.view') || auth()->user()->can('purchases.view') || auth()->user()->can('purchases.create')))
         <div>
             <button class="nav-link d-flex align-items-center justify-content-between w-100 px-3 py-2 rounded border-0 text-start {{ request()->routeIs('admin.purchases') ? 'bg-primary bg-opacity-10 text-primary' : 'text-body-secondary' }}"
                     type="button"
@@ -102,7 +102,7 @@
         @endif
 
         <!-- Sales Section -->
-        @if(auth()->user()->can('customers.view') || auth()->user()->can('sales.view') || auth()->user()->can('sales.create'))
+        @if(auth()->check() && (auth()->user()->can('customers.view') || auth()->user()->can('sales.view') || auth()->user()->can('sales.create')))
         <div>
             <button class="nav-link d-flex align-items-center justify-content-between w-100 px-3 py-2 rounded border-0 text-start {{ request()->routeIs('admin.sales') ? 'bg-primary bg-opacity-10 text-primary' : 'text-body-secondary' }}"
                     type="button"
@@ -164,7 +164,7 @@
         @endcan
 
         <!-- Divider -->
-        @if(auth()->user()->can('users.view') || auth()->user()->can('roles.view') || auth()->user()->can('settings.manage'))
+        @if(auth()->check() && (auth()->user()->can('users.view') || auth()->user()->can('roles.view') || auth()->user()->can('settings.manage')))
         <div class="border-top border-light my-3"></div>
         <div class="px-3 py-2">
             <small class="text-uppercase text-muted fw-bold" style="font-size:0.75rem; letter-spacing:0.5px;">Account Pages</small>
@@ -172,7 +172,7 @@
         @endif
 
         <!-- User Management -->
-        @if(auth()->user()->can('users.view') || auth()->user()->can('roles.view'))
+        @if(auth()->check() && (auth()->user()->can('users.view') || auth()->user()->can('roles.view')))
         <div>
             <button class="nav-link d-flex align-items-center justify-content-between w-100 px-3 py-2 rounded border-0 text-start {{ request()->routeIs('admin.users') ? 'bg-primary bg-opacity-10 text-primary' : 'text-body-secondary' }}"
                     type="button"
@@ -207,7 +207,7 @@
         @endif
 
         <!-- Settings -->
-        @if(auth()->user()->can('settings.manage') || auth()->user()->can('bank-accounts.view') || auth()->user()->can('warehouses.view') || auth()->user()->can('branches.view'))
+        @if(auth()->check() && (auth()->user()->can('settings.manage') || auth()->user()->can('bank-accounts.view') || auth()->user()->can('warehouses.view') || auth()->user()->can('branches.view')))
         <div>
             <button class="nav-link d-flex align-items-center justify-content-between w-100 px-3 py-2 rounded border-0 text-start {{ request()->routeIs('admin.settings') ? 'bg-primary bg-opacity-10 text-primary' : 'text-body-secondary' }}"
                     type="button"

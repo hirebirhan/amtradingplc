@@ -78,6 +78,17 @@ class Sale extends Model
                 throw new \InvalidArgumentException('Sale must have either branch_id OR warehouse_id, not both or neither.');
             }
         });
+        
+        // Auto-create credit record after sale is saved with due amount
+        static::saved(function ($sale) {
+            if ($sale->due_amount > 0 && !$sale->credit()->exists()) {
+                try {
+                    $sale->createCreditRecord();
+                } catch (\Exception $e) {
+                    \Log::error('Failed to auto-create credit for sale ' . $sale->id . ': ' . $e->getMessage());
+                }
+            }
+        });
     }
 
     /**
@@ -184,8 +195,8 @@ class Sale extends Model
             $this->status = 'completed';
             $this->save();
 
-            // If the sale is not fully paid, create a credit record
-            if (in_array($this->payment_status, [PaymentStatus::DUE->value, PaymentStatus::PARTIAL->value, 'credit'], true)) {
+            // Create credit record for credit-based payment methods
+            if (in_array($this->payment_method, ['full_credit', 'credit_advance'], true)) {
                 $this->createCreditRecord();
             }
 
@@ -213,26 +224,38 @@ class Sale extends Model
         $quantity = $saleItem->quantity;
         $unitCapacity = $item->unit_quantity ?? 1;
         
-        // Process based on sale method
+        // Process based on sale method (allow negative stock)
+        $piecesBefore = $stock->piece_count ?? 0;
+        $quantityBefore = $stock->quantity ?? 0;
+        
         if ($saleItem->isSoldByPiece()) {
-            $stock->sellByPiece(
-                (int)$quantity, 
-                $unitCapacity, 
-                'sale', 
-                $this->id, 
-                'Warehouse sale by piece - Sale #' . $this->reference_no, 
-                $this->user_id
-            );
+            // Selling by piece - allow negative stock
+            $piecesToDeduct = (int)$quantity;
+            $stock->piece_count = $piecesBefore - $piecesToDeduct;
+            $stock->quantity = $stock->piece_count;
+            $stock->total_units = max(0, ($stock->total_units ?? 0) - ($piecesToDeduct * $unitCapacity));
         } else {
-            $stock->sellByUnit(
-                $quantity, 
-                $unitCapacity, 
-                'sale', 
-                $this->id, 
-                'Warehouse sale by unit - Sale #' . $this->reference_no, 
-                $this->user_id
-            );
+            // Selling by unit - allow negative stock
+            $unitsToDeduct = $quantity;
+            $stock->total_units = ($stock->total_units ?? 0) - $unitsToDeduct;
+            $stock->piece_count = max(0, floor($stock->total_units / $unitCapacity));
+            $stock->quantity = $stock->piece_count;
         }
+        
+        $stock->save();
+        
+        // Create stock history
+        \App\Models\StockHistory::create([
+            'warehouse_id' => $stock->warehouse_id,
+            'item_id' => $item->id,
+            'quantity_before' => $quantityBefore,
+            'quantity_after' => $stock->quantity,
+            'quantity_change' => $stock->quantity - $quantityBefore,
+            'reference_type' => 'sale',
+            'reference_id' => $this->id,
+            'description' => 'Warehouse sale - Sale #' . $this->reference_no,
+            'user_id' => $this->user_id,
+        ]);
         
         // Also deduct from purchase quantity
         $this->deductFromPurchaseQuantity($item, $saleItem);
@@ -311,18 +334,20 @@ class Sale extends Model
     }
 
     /**
-     * Create credit with advance payment following the documented workflow.
-     * Creates Credit record and advance Payment record atomically.
+     * Create credit record following Purchase system pattern
      */
-    protected function createCreditRecord(): void
+    public function createCreditRecord(): void
     {
-        if ($this->due_amount <= 0) {
+        // Skip if credit already exists
+        if ($this->credit()->exists()) {
             return;
         }
-
-        DB::transaction(function () {
-            // Create credit record
-            $credit = Credit::create([
+        
+        // Create credit for any sale with outstanding balance
+        if ($this->due_amount > 0) {
+            $status = $this->paid_amount > 0 ? 'partial' : 'active';
+            
+            Credit::create([
                 'customer_id' => $this->customer_id,
                 'amount' => $this->total_amount,
                 'paid_amount' => $this->paid_amount,
@@ -333,25 +358,13 @@ class Sale extends Model
                 'credit_type' => 'receivable',
                 'description' => 'Credit for sale #' . $this->reference_no,
                 'credit_date' => $this->sale_date,
-                'due_date' => now()->addDays(30),
-                'status' => $this->paid_amount > 0 ? 'partially_paid' : 'active',
+                'due_date' => $this->sale_date->addDays(30),
+                'status' => $status,
                 'user_id' => $this->user_id,
                 'branch_id' => $this->branch_id,
                 'warehouse_id' => $this->warehouse_id,
             ]);
-
-            // Create advance payment record if advance was made
-            if ($this->advance_amount > 0) {
-                $credit->addPayment(
-                    $this->advance_amount,
-                    $this->payment_method ?? 'cash',
-                    $this->transaction_number,
-                    'Advance payment for sale #' . $this->reference_no,
-                    null, // payment_date (use default)
-                    'advance' // kind
-                );
-            }
-        });
+        }
     }
 
     /**
@@ -407,13 +420,17 @@ class Sale extends Model
             if ($credit->balance <= 0) {
                 $credit->status = 'paid';
             } elseif ($credit->paid_amount > 0) {
-                $credit->status = 'partially_paid';
+                $credit->status = 'partial';
             } else {
                 $credit->status = 'active';
             }
             
             $credit->save();
         }
+        
+        // Update sale payment status to sync with credit
+        $this->updatePaymentStatus();
+        $this->save();
 
         return $payment;
     }
@@ -438,7 +455,6 @@ class Sale extends Model
         } elseif ($this->paid_amount > 0) {
             $this->payment_status = PaymentStatus::PARTIAL->value;
         } else {
-            // For credit sales, maintain 'due' status until payment
             $this->payment_status = PaymentStatus::DUE->value;
         }
     }

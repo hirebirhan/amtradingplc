@@ -156,11 +156,19 @@
                                 >
                                     <option value="">Select selling location...</option>
                                     @foreach($warehouses as $warehouse)
+                                        @php
+                                            $stockCount = \App\Models\Stock::where('warehouse_id', $warehouse->id)->where('quantity', '>', 0)->count();
+                                        @endphp
                                         <option value="{{ $warehouse->id }}">
                                             @if($warehouse->branch)
                                                 {{ $warehouse->branch->name }} - {{ $warehouse->name }}
                                             @else
                                                 {{ $warehouse->name }}
+                                            @endif
+                                            @if($stockCount > 0)
+                                                ({{ $stockCount }} items in stock)
+                                            @else
+                                                (No stock)
                                             @endif
                                         </option>
                                     @endforeach
@@ -338,6 +346,9 @@
                             <button type="button" class="btn btn-outline-secondary btn-sm" wire:click="loadItemOptions" title="Refresh items">
                                 <i class="bi bi-arrow-clockwise"></i>
                             </button>
+                            <button type="button" class="btn btn-outline-info btn-sm" wire:click="debugStock" title="Debug stock data">
+                                <i class="bi bi-bug"></i>
+                            </button>
                             @php
                                 $itemCount = is_countable($items) ? count($items) : 0;
                             @endphp
@@ -355,18 +366,18 @@
                     <div class="border rounded p-3">
                         <div class="row g-3 align-items-end">
                             <!-- Item Selection -->
-                            <div class="col-12 {{ $selectedItem ? 'col-lg-2' : 'col-lg-10' }}">
+                            <div class="col-12 {{ ($selectedItem && !$stockWarningType) ? 'col-lg-2' : 'col-lg-10' }}">
                                 <label class="form-label fw-medium">
                                     Item <span class="text-primary">*</span>
                                 </label>
-                                @if($selectedItem)
+                                @if($selectedItem && !$stockWarningType)
                                     <div class="input-group">
                                         <input type="text" readonly class="form-control" value="{{ $selectedItem['name'] }}">
                                         <button class="btn btn-outline-danger" type="button" wire:click="clearSelectedItem" title="Clear item">
                                             <i class="bi bi-x-lg"></i>
                                         </button>
                                     </div>
-                                @else
+                                @elseif(!$stockWarningType)
                                     <div class="position-relative">
                                         <input type="text" 
                                                wire:model.live.debounce.300ms="itemSearch" 
@@ -386,21 +397,24 @@
                                                                     <small class="text-muted">{{ $item['sku'] }}</small>
                                                                 </div>
                                                                 <div class="text-end flex-shrink-0">
-                                                                    @if($item['quantity'] < 0)
+                                                                    @php
+                                                                        $stockQty = floatval($item['quantity'] ?? 0);
+                                                                    @endphp
+                                                                    @if($stockQty < 0)
                                                                         <span class="badge bg-dark text-white small">
-                                                                            Negative:<br>{{ $item['quantity'] }}
+                                                                            Negative:<br>{{ number_format($stockQty, 1) }}
                                                                         </span>
-                                                                    @elseif($item['quantity'] == 0)
-                                                                        <span class="badge bg-danger small">
+                                                                    @elseif($stockQty == 0)
+                                                                        <span class="badge bg-warning text-dark small">
                                                                             Out of<br>Stock
                                                                         </span>
-                                                                    @elseif($item['quantity'] <= 5)
+                                                                    @elseif($stockQty <= 5)
                                                                         <span class="badge bg-warning text-dark small">
-                                                                            Low Stock:<br>{{ $item['quantity'] }}
+                                                                            Available:<br>{{ number_format($stockQty, 1) }} ⚠️
                                                                         </span>
                                                                     @else
                                                                         <span class="badge bg-success small">
-                                                                            Stock:<br>{{ $item['quantity'] }}
+                                                                            Available:<br>{{ number_format($stockQty, 1) }}
                                                                         </span>
                                                                     @endif
                                                                 </div>
@@ -423,7 +437,7 @@
                                     </div>
                                 @endif
                             </div>
-                            @if($selectedItem)
+                            @if($selectedItem && !$stockWarningType)
                             <!-- Sale Method Toggle -->
                             <div class="col-12 col-lg-2">
                                 <label class="form-label fw-medium">Sale Method</label>
@@ -453,8 +467,16 @@
                                         @endif
                                     </span>
                                 </div>
-                                <small class="text-muted d-block mt-1">
-                                    Available: {{ number_format($this->getAvailableStockForMethod(), 2) }}
+                                @php
+                                    $availableStock = $this->getAvailableStockForMethod();
+                                    $requestedQty = floatval($newItem['quantity'] ?? 0);
+                                    $willBeNegative = $requestedQty > $availableStock;
+                                @endphp
+                                <small class="d-block mt-1 {{ $willBeNegative ? 'text-warning' : 'text-muted' }}">
+                                    Available: {{ number_format($availableStock, 2) }}
+                                    @if($willBeNegative && $requestedQty > 0)
+                                        <br><i class="bi bi-exclamation-triangle"></i> Will result in negative stock
+                                    @endif
                                 </small>
                             </div>
                             <!-- Unit Price -->
@@ -487,6 +509,7 @@
                             @endif
                         </div>
                         
+
 
                     </div>
                 </div>
@@ -764,32 +787,34 @@
                 @if($stockWarningType === 'out_of_stock')
                     <div class="modal-header bg-danger text-white">
                         <h5 class="modal-title">
-                            <i class="bi bi-exclamation-triangle me-2"></i>Out of Stock Warning
+                            <i class="bi bi-x-circle me-2"></i>Out of Stock
                         </h5>
                     </div>
                     <div class="modal-body">
-                        <p><strong>{{ $stockWarningItem['name'] ?? '' }}</strong> is out of stock.</p>
+                        <p><strong>{{ $stockWarningItem['name'] ?? '' }}</strong> is completely out of stock.</p>
                         
-                        <div class="row mb-3">
-                            <div class="col-6">
-                                <strong>Price:</strong> ETB {{ number_format($stockWarningItem['price'] ?? 0, 2) }}
-                            </div>
-                            <div class="col-6">
-                                <strong>Stock:</strong> {{ $stockWarningItem['stock'] ?? 0 }}
+                        <div class="alert alert-danger mb-3">
+                            <div class="row">
+                                <div class="col-6">
+                                    <strong>Current Stock:</strong> {{ $stockWarningItem['stock'] ?? 0 }}
+                                </div>
+                                <div class="col-6">
+                                    <strong>Unit Price:</strong> ETB {{ number_format($stockWarningItem['price'] ?? 0, 2) }}
+                                </div>
                             </div>
                         </div>
                         
-                        <p class="text-warning">
+                        <p class="text-danger mb-0">
                             <i class="bi bi-exclamation-triangle me-1"></i>
-                            Adding this item will cause negative inventory. Please restock soon.
+                            <strong>Warning:</strong> Selling this item will create negative inventory. Consider restocking first.
                         </p>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" wire:click="cancelStockWarning">
                             Cancel
                         </button>
-                        <button type="button" class="btn btn-warning" wire:click="proceedWithWarning">
-                            Add Anyway
+                        <button type="button" class="btn btn-danger" wire:click="proceedWithWarning">
+                            <i class="bi bi-exclamation-triangle me-1"></i>Sell Anyway
                         </button>
                     </div>
                 @else
@@ -799,10 +824,33 @@
                         </h5>
                     </div>
                     <div class="modal-body">
-                        <div class="alert alert-warning">
-                            <strong>{{ $stockWarningItem['name'] ?? '' }}</strong> has insufficient stock.
+                        <p><strong>{{ $stockWarningItem['name'] ?? '' }}</strong> has insufficient stock.</p>
+                        
+                        <div class="row mb-3">
+                            <div class="col-4">
+                                <div class="text-center">
+                                    <div class="fw-bold">Available</div>
+                                    <div class="fs-4 text-success">{{ $stockWarningItem['available'] ?? 0 }}</div>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="text-center">
+                                    <div class="fw-bold">Requested</div>
+                                    <div class="fs-4 text-primary">{{ $stockWarningItem['requested'] ?? 0 }}</div>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="text-center">
+                                    <div class="fw-bold">Deficit</div>
+                                    <div class="fs-4 text-danger">{{ $stockWarningItem['deficit'] ?? 0 }}</div>
+                                </div>
+                            </div>
                         </div>
-                        <p>Available: {{ $stockWarningItem['available'] ?? 0 }} | Requested: {{ $stockWarningItem['requested'] ?? 0 }}</p>
+                        
+                        <p class="text-warning mb-0">
+                            <i class="bi bi-exclamation-triangle me-1"></i>
+                            Proceeding will result in negative inventory.
+                        </p>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" wire:click="cancelStockWarning">

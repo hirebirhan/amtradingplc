@@ -15,7 +15,7 @@ class Credit extends Model
     use HasFactory, SoftDeletes;
 
     protected $fillable = [
-'customer_id',
+        'customer_id',
         'supplier_id',
         'amount',
         'paid_amount',
@@ -35,6 +35,44 @@ class Credit extends Model
         'updated_by',
         'deleted_by',
     ];
+
+    /**
+     * Boot method to set default branch_id if not provided
+     */
+    protected static function boot()
+    {
+        parent::boot();
+        
+        static::creating(function ($credit) {
+            // Ensure branch_id is set
+            if (empty($credit->branch_id)) {
+                $credit->branch_id = static::getDefaultBranchId();
+            }
+        });
+    }
+
+    /**
+     * Get default branch ID for credits
+     */
+    private static function getDefaultBranchId(): ?int
+    {
+        // Try user's branch first
+        if (auth()->check() && auth()->user()->branch_id) {
+            return auth()->user()->branch_id;
+        }
+        
+        // Try user's warehouse branch
+        if (auth()->check() && auth()->user()->warehouse_id) {
+            $warehouse = \App\Models\Warehouse::with('branches')->find(auth()->user()->warehouse_id);
+            if ($warehouse && $warehouse->branches->isNotEmpty()) {
+                return $warehouse->branches->first()->id;
+            }
+        }
+        
+        // Fallback to first active branch
+        $branch = \App\Models\Branch::where('is_active', true)->first();
+        return $branch ? $branch->id : null;
+    }
 
     protected $casts = [
         'amount' => 'decimal:2',
@@ -137,18 +175,10 @@ class Credit extends Model
      */
     public function addPayment(float $amount, string $paymentMethod, ?string $reference = null, ?string $notes = null, ?string $paymentDate = null, ?string $kind = 'regular', ?string $referenceField = null, ?string $receiverBankName = null, ?string $receiverAccountHolder = null, ?string $receiverAccountNumber = null): CreditPayment
     {
-        // Start timing for performance monitoring
-        $startTime = microtime(true);
-        
-        // Log before making any changes
-        \Log::info('Credit payment initiated', [
-            'credit_id' => $this->id,
-            'reference_no' => $this->reference_no,
-            'amount' => $amount,
-            'method' => $paymentMethod,
-            'current_balance' => $this->balance,
-            'current_status' => $this->status
-        ]);
+        // Validate payment amount
+        if ($amount > $this->balance) {
+            throw new \Exception('Payment amount cannot exceed current balance of ' . number_format($this->balance, 2));
+        }
 
         $payment = new CreditPayment([
             'amount' => $amount,
@@ -166,52 +196,28 @@ class Credit extends Model
 
         $this->payments()->save($payment);
 
-        // Recalculate paid amount and balance
-        $paidTotal = $this->paid_amount + $amount;
-        $newBalance = $this->amount - $paidTotal;
+        // Update credit amounts
+        $this->paid_amount += $amount;
+        $this->balance = max(0, $this->amount - $this->paid_amount);
         
-        // Update credit
-        $this->paid_amount = $paidTotal;
-        $this->balance = max(0, $newBalance); // Ensure balance doesn't go below zero
-        
-        // Update status following documented flow
+        // Update credit status based on balance
         if ($this->balance <= 0) {
             $this->status = 'paid';
         } else {
             $this->status = 'partial';
         }
         
-        // Save with monitoring
-        \Log::info('Credit before save', [
-            'credit_id' => $this->id,
-            'status' => $this->status, 
-            'paid_amount' => $this->paid_amount,
-            'balance' => $this->balance
-        ]);
+        $this->save();
         
-        $saveResult = $this->save();
-        
-        // Log any issues if save failed
-        if (!$saveResult) {
-            \Log::error('Credit payment save failed', [
-                'credit_id' => $this->id,
-                'status' => $this->status,
-                'paid_amount' => $this->paid_amount, 
-                'balance' => $this->balance
-            ]);
+        // Update related purchase payment status if this is a purchase credit
+        if ($this->reference_type === 'purchase' && $this->reference_id) {
+            $this->updatePurchasePaymentStatus();
         }
         
-        // Force refresh model from DB to ensure data is consistent
-        $this->refresh();
-        
-        // Log final state to verify proper update
-        \Log::info('Credit after payment', [
-            'credit_id' => $this->id,
-            'new_status' => $this->status,
-            'new_paid_amount' => $this->paid_amount,
-            'new_balance' => $this->balance,
-            'execution_time' => round((microtime(true) - $startTime) * 1000, 2) . 'ms'
-        ]);
+        // Update related sale payment status if this is a sale credit
+        if ($this->reference_type === 'sale' && $this->reference_id) {
+            $this->updateSalePaymentStatus();
+        }
 
         return $payment;
     }
@@ -234,15 +240,14 @@ class Credit extends Model
         $totalClosingCost = 0;
         foreach ($purchase->items as $item) {
             if (isset($negotiatedPrices[$item->item_id])) {
-                $unitQuantity = $item->item->unit_quantity ?: 1;
                 $closingPricePerUnit = (float) $negotiatedPrices[$item->item_id];
-                $totalClosingCost += $closingPricePerUnit * $unitQuantity * $item->quantity;
+                $totalClosingCost += $closingPricePerUnit * $item->quantity;
                 
                 // Update purchase item with closing price
                 $item->update([
-                    'closing_unit_price' => $closingPricePerUnit * $unitQuantity,
-                    'total_closing_cost' => $closingPricePerUnit * $unitQuantity * $item->quantity,
-                    'profit_loss_per_item' => ($item->unit_cost - ($closingPricePerUnit * $unitQuantity)) * $item->quantity
+                    'closing_unit_price' => $closingPricePerUnit,
+                    'total_closing_cost' => $closingPricePerUnit * $item->quantity,
+                    'profit_loss_per_item' => ($item->unit_cost - $closingPricePerUnit) * $item->quantity
                 ]);
             }
         }
@@ -354,5 +359,69 @@ class Credit extends Model
     public function deleter(): BelongsTo
     {
         return $this->belongsTo(User::class, 'deleted_by');
+    }
+
+    /**
+     * Update the related purchase payment status when credit payments are made
+     */
+    private function updatePurchasePaymentStatus(): void
+    {
+        if ($this->reference_type !== 'purchase' || !$this->reference_id) {
+            return;
+        }
+
+        $purchase = $this->purchase;
+        if (!$purchase) {
+            return;
+        }
+
+        // Update purchase paid amount and status based on credit payments
+        $purchase->paid_amount = $this->paid_amount;
+        $purchase->due_amount = $this->balance;
+        
+        // Update purchase payment status and method
+        if ($this->balance <= 0) {
+            $purchase->payment_status = 'paid';
+            // Change payment method from full_credit to cash when fully paid
+            if ($purchase->payment_method === 'full_credit') {
+                $purchase->payment_method = 'cash';
+            }
+        } elseif ($this->paid_amount > 0) {
+            $purchase->payment_status = 'partial';
+        } else {
+            $purchase->payment_status = 'due';
+        }
+        
+        $purchase->save();
+    }
+    
+    /**
+     * Update the related sale payment status when credit payments are made
+     */
+    private function updateSalePaymentStatus(): void
+    {
+        if ($this->reference_type !== 'sale' || !$this->reference_id) {
+            return;
+        }
+
+        $sale = $this->sale;
+        if (!$sale) {
+            return;
+        }
+
+        // Update sale paid amount and status based on credit payments
+        $sale->paid_amount = $this->paid_amount;
+        $sale->due_amount = $this->balance;
+        
+        // Update sale payment status
+        if ($this->balance <= 0) {
+            $sale->payment_status = 'paid';
+        } elseif ($this->paid_amount > 0) {
+            $sale->payment_status = 'partial';
+        } else {
+            $sale->payment_status = 'due';
+        }
+        
+        $sale->save();
     }
 }

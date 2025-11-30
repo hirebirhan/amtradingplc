@@ -11,7 +11,6 @@ enum PaymentMethod: string
     case TELEBIRR = 'telebirr';
     case CREDIT_ADVANCE = 'credit_advance';
     case FULL_CREDIT = 'full_credit';
-    case CREDIT_FULL = 'credit_full'; // For legacy/compatibility
     // Add more as needed (e.g., CHECK, MOBILE_MONEY, etc.)
 
     /**
@@ -76,7 +75,7 @@ enum PaymentMethod: string
             self::BANK_TRANSFER => 'Bank Transfer',
             self::TELEBIRR => 'Telebirr',
             self::CREDIT_ADVANCE => 'Credit with Advance',
-            self::FULL_CREDIT, self::CREDIT_FULL => 'Full Credit',
+            self::FULL_CREDIT => 'Full Credit',
         };
     }
 } 

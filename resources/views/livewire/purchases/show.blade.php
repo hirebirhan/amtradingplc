@@ -106,8 +106,23 @@
                     <h6 class="fw-semibold mb-3">Payment Status</h6>
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <span class="text-muted">Status:</span>
-                        <span class="badge bg-{{ $purchase->payment_status === 'paid' ? 'success' : ($purchase->payment_status === 'partial' ? 'warning' : 'danger') }}-subtle text-{{ $purchase->payment_status === 'paid' ? 'success' : ($purchase->payment_status === 'partial' ? 'warning' : 'danger') }}-emphasis rounded-1">
-                            {{ ucfirst(str_replace('_', ' ', $purchase->payment_status)) }}
+                        @php
+                            // Fix payment status logic based on actual amounts
+                            $actualStatus = 'due';
+                            if ($purchase->due_amount <= 0) {
+                                $actualStatus = 'paid';
+                            } elseif ($purchase->paid_amount > 0) {
+                                $actualStatus = 'partial';
+                            }
+                            
+                            $badgeClass = match($actualStatus) {
+                                'paid' => 'bg-success-subtle text-success-emphasis',
+                                'partial' => 'bg-warning-subtle text-warning-emphasis', 
+                                default => 'bg-danger-subtle text-danger-emphasis'
+                            };
+                        @endphp
+                        <span class="badge {{ $badgeClass }} rounded-1">
+                            {{ ucfirst($actualStatus) }}
                         </span>
                     </div>
                     <div class="d-flex justify-content-between align-items-center mb-3">

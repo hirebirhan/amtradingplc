@@ -12,6 +12,7 @@ use App\Models\Branch;
 use App\Models\Stock;
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
+use App\Enums\PurchaseStatus;
 use App\Facades\UserHelperFacade as UserHelper;
 use Livewire\Component;
 use Livewire\Attributes\Layout;
@@ -199,18 +200,29 @@ class Create extends Component
     }
 
     /**
-     * Get warehouses that the current user can access based on their role and assignment
+     * Get branches that the current user can access based on their role and assignment
      */
     private function getAccessibleBranches()
     {
         $user = auth()->user();
-        if ($user->isSuperAdmin() || $user->isBranchManager()) {
+        
+        // SuperAdmin and GeneralManager can access all branches
+        if ($user->isSuperAdmin() || $user->isGeneralManager()) {
             return Branch::where('is_active', true)->orderBy('name')->get();
         }
+        
+        // BranchManager can access all branches (for inter-branch purchases)
+        if ($user->isBranchManager()) {
+            return Branch::where('is_active', true)->orderBy('name')->get();
+        }
+        
+        // Users assigned to a specific branch
         if ($user->branch_id) {
             return Branch::where('id', $user->branch_id)->where('is_active', true)->get();
         }
-        return collect();
+        
+        // Fallback: return all active branches if no specific assignment
+        return Branch::where('is_active', true)->orderBy('name')->get();
     }
 
     /**
@@ -226,8 +238,9 @@ class Create extends Component
         // Get items that are already in the cart
         $addedItemIds = collect($this->items)->pluck('item_id')->toArray();
         
+        // For purchases: Show ALL active items regardless of stock (purchases add stock)
         $this->itemOptions = Item::where('is_active', true)
-            ->whereNotIn('id', $addedItemIds) // Exclude items already in cart
+            ->whereNotIn('id', $addedItemIds) // Only exclude items already in cart
             ->orderBy('name')
             ->get()
             ->map(function ($item) {
@@ -504,18 +517,13 @@ class Create extends Component
 
         // Set payment status based on payment method
         if (in_array($value, [PaymentMethod::CASH->value, PaymentMethod::BANK_TRANSFER->value, PaymentMethod::TELEBIRR->value], true)) {
-            // For immediate payment methods, set to paid
             $this->form['payment_status'] = PaymentStatus::PAID->value;
-        } else if ($value === PaymentMethod::CREDIT_ADVANCE->value) {
-            // For credit with advance, set to partial
+        } elseif ($value === PaymentMethod::CREDIT_ADVANCE->value) {
             $this->form['payment_status'] = PaymentStatus::PARTIAL->value;
-
-            // Initialize advance amount with a percentage of the total (e.g., 20%)
             if ($this->totalAmount > 0) {
                 $this->form['advance_amount'] = round($this->totalAmount * 0.2, 2);
             }
-        } else if ($value === PaymentMethod::FULL_CREDIT->value) {
-            // For full credit, set to due
+        } elseif ($value === PaymentMethod::FULL_CREDIT->value) {
             $this->form['payment_status'] = PaymentStatus::DUE->value;
         }
 
@@ -585,11 +593,11 @@ class Create extends Component
             return false;
         }
         
-            // Use our stored reference number which has already been validated for uniqueness
+            // Generate unique reference number
         $referenceNo = $this->generateUniqueReferenceNumber();
             
-            // Start a transaction to ensure all related operations succeed or fail together
-            \DB::beginTransaction();
+        // Start a transaction to ensure all related operations succeed or fail together
+        \DB::beginTransaction();
             
         try {
             \Log::info('Starting purchase save process', [
@@ -605,7 +613,15 @@ class Create extends Component
                 $branchId = auth()->user()->branch_id ?? (Branch::value('id') ?? 1);
             }
             // Resolve internal warehouse for branch
-            $warehouseId = $this->resolveWarehouseIdForBranch($branchId);
+            try {
+                $warehouseId = $this->resolveWarehouseIdForBranch($branchId);
+            } catch (\Exception $e) {
+                \Log::error('Failed to resolve warehouse for branch', [
+                    'branch_id' => $branchId,
+                    'error' => $e->getMessage()
+                ]);
+                throw new \Exception('Failed to resolve warehouse for branch: ' . $e->getMessage());
+            }
             
             $purchase = new Purchase();
             $purchase->reference_no = $referenceNo;
@@ -616,14 +632,25 @@ class Create extends Component
             $purchase->purchase_date = $this->form['purchase_date'];
             $purchase->payment_method = $this->form['payment_method'];
             $purchase->payment_status = $this->form['payment_status'];
-            $purchase->status = 'received';
+            $purchase->status = 'pending'; // Use valid database enum value
             $purchase->discount = 0;
             $purchase->tax = $this->taxAmount;
             $purchase->total_amount = $this->totalAmount;
-            $purchase->paid_amount = $this->form['payment_method'] === PaymentMethod::FULL_CREDIT->value ? 0 : 
-                                    ($this->form['payment_method'] === PaymentMethod::CREDIT_ADVANCE->value ? $this->form['advance_amount'] : $this->totalAmount);
-            $purchase->due_amount = $this->form['payment_method'] === PaymentMethod::FULL_CREDIT->value ? $this->totalAmount : 
-                                   ($this->form['payment_method'] === PaymentMethod::CREDIT_ADVANCE->value ? $this->totalAmount - $this->form['advance_amount'] : 0);
+            // Set payment amounts based on payment method
+            if ($this->form['payment_method'] === PaymentMethod::FULL_CREDIT->value) {
+                $purchase->paid_amount = 0;
+                $purchase->due_amount = $this->totalAmount;
+                $purchase->payment_status = PaymentStatus::DUE->value;
+            } elseif ($this->form['payment_method'] === PaymentMethod::CREDIT_ADVANCE->value) {
+                $purchase->paid_amount = $this->form['advance_amount'];
+                $purchase->due_amount = $this->totalAmount - $this->form['advance_amount'];
+                $purchase->payment_status = PaymentStatus::PARTIAL->value;
+            } else {
+                // Cash, Bank Transfer, Telebirr - fully paid
+                $purchase->paid_amount = $this->totalAmount;
+                $purchase->due_amount = 0;
+                $purchase->payment_status = PaymentStatus::PAID->value;
+            }
             $purchase->notes = $this->form['notes'];
             
             // Handle payment type specific fields
@@ -635,8 +662,14 @@ class Create extends Component
             }
             
             // Attempt to save the purchase
-                if (!$purchase->save()) {
-                $this->addError('general', 'Failed to save purchase record. Please try again.');
+            try {
+                $purchase->save();
+            } catch (\Exception $e) {
+                \Log::error('Failed to save purchase record', [
+                    'error' => $e->getMessage(),
+                    'purchase_data' => $purchase->toArray()
+                ]);
+                $this->addError('general', 'Failed to save purchase record: ' . $e->getMessage());
                 $this->notify('❌ Failed to save purchase record.', 'error');
                 \DB::rollBack();
                 return false;
@@ -683,11 +716,17 @@ class Create extends Component
                         $purchaseItem->notes = $item['notes'];
                     }
                     
-                    if (!$purchaseItem->save()) {
-                    $this->addError('items', "Failed to save purchase item {$index}. Please try again.");
-                    $this->notify('❌ Failed to save purchase item.', 'error');
-                    \DB::rollBack();
-                    return false;
+                    try {
+                        $purchaseItem->save();
+                    } catch (\Exception $e) {
+                        \Log::error('Failed to save purchase item', [
+                            'error' => $e->getMessage(),
+                            'item_data' => $purchaseItem->toArray()
+                        ]);
+                        $this->addError('items', "Failed to save purchase item {$index}: " . $e->getMessage());
+                        $this->notify('❌ Failed to save purchase item.', 'error');
+                        \DB::rollBack();
+                        return false;
                     }
                     
                     // Add to total
@@ -719,36 +758,56 @@ class Create extends Component
             
             // Create credit record for credit-type payments
             if (in_array($this->form['payment_method'], [PaymentMethod::FULL_CREDIT->value, PaymentMethod::CREDIT_ADVANCE->value], true)) {
-                $dueAmount = $this->form['payment_method'] === PaymentMethod::FULL_CREDIT->value ? 
-                    $this->totalAmount : 
-                    ($this->totalAmount - $this->form['advance_amount']);
-                
-                if ($dueAmount > 0) {
-                    // Create credit record
+                if ($this->form['payment_method'] === PaymentMethod::FULL_CREDIT->value) {
+                    // Full Credit: entire amount becomes credit
                     $credit = \App\Models\Credit::create([
                         'supplier_id' => $purchase->supplier_id,
-                        'amount' => $dueAmount,
+                        'amount' => $this->totalAmount,
                         'paid_amount' => 0,
-                        'balance' => $dueAmount,
+                        'balance' => $this->totalAmount,
                         'reference_no' => $purchase->reference_no,
                         'reference_type' => 'purchase',
                         'reference_id' => $purchase->id,
                         'credit_type' => 'payable',
-                        'description' => 'Credit for purchase #' . $purchase->reference_no,
+                        'description' => 'Full credit for purchase #' . $purchase->reference_no,
                         'credit_date' => $purchase->purchase_date,
-                        'due_date' => now()->addDays(30), // Default 30-day term
+                        'due_date' => now()->addDays(30),
                         'status' => 'active',
                         'user_id' => auth()->id(),
                         'branch_id' => $branchId,
                         'warehouse_id' => $purchase->warehouse_id,
                     ]);
-                    
-                    \Log::info('Credit record created', [
-                        'credit_id' => $credit->id,
-                        'purchase_id' => $purchase->id,
-                        'amount' => $dueAmount
-                    ]);
+                } elseif ($this->form['payment_method'] === PaymentMethod::CREDIT_ADVANCE->value) {
+                    // Credit with Advance: remaining amount becomes credit
+                    $dueAmount = $this->totalAmount - $this->form['advance_amount'];
+                    if ($dueAmount > 0) {
+                        $credit = \App\Models\Credit::create([
+                            'supplier_id' => $purchase->supplier_id,
+                            'amount' => $this->totalAmount,
+                            'paid_amount' => $this->form['advance_amount'],
+                            'balance' => $dueAmount,
+                            'reference_no' => $purchase->reference_no,
+                            'reference_type' => 'purchase',
+                            'reference_id' => $purchase->id,
+                            'credit_type' => 'payable',
+                            'description' => 'Credit with advance for purchase #' . $purchase->reference_no,
+                            'credit_date' => $purchase->purchase_date,
+                            'due_date' => now()->addDays(30),
+                            'status' => 'partial',
+                            'user_id' => auth()->id(),
+                            'branch_id' => $branchId,
+                            'warehouse_id' => $purchase->warehouse_id,
+                        ]);
+                    }
                 }
+                
+                \Log::info('Credit record created', [
+                    'credit_id' => $credit->id ?? null,
+                    'purchase_id' => $purchase->id,
+                    'payment_method' => $this->form['payment_method'],
+                    'total_amount' => $this->totalAmount,
+                    'advance_amount' => $this->form['advance_amount'] ?? 0
+                ]);
             }
             
             // Commit transaction
@@ -1473,10 +1532,11 @@ class Create extends Component
     private function updateStock($warehouseId, $itemId, $quantity, $purchaseId = null)
     {
         try {
-            \Log::info('Updating stock', [
+            \Log::info('Updating stock from purchase', [
                 'warehouse_id' => $warehouseId,
                 'item_id' => $itemId,
-                'quantity' => $quantity
+                'quantity' => $quantity,
+                'purchase_id' => $purchaseId
             ]);
             
             // Get the item to access unit_quantity
@@ -1488,54 +1548,78 @@ class Create extends Component
             $unitCapacity = $item->unit_quantity ?? 1;
             
             // Find existing stock record or create a new one
-            $stock = Stock::firstOrNew([
-                'warehouse_id' => $warehouseId,
-                'item_id' => $itemId,
-                'branch_id' => null  // Warehouse stock has no branch assignment
-            ]);
-            
-            // If it's a new record, initialize all values to 0
-            if (!$stock->exists) {
-                $stock->quantity = 0;
-                $stock->piece_count = 0;
-                $stock->total_units = 0;
-            }
-            
-            // Get the original values for logging
-            $originalPieces = $stock->piece_count;
-            $originalUnits = $stock->total_units;
-            
-            // Add pieces using the Stock model's method
-            $stock->addPieces(
-                (int)$quantity, 
-                $unitCapacity, 
-                'purchase', 
-                $purchaseId, 
-                'Stock added from purchase: ' . ($this->form['reference_no'] ?? 'N/A'), 
-                auth()->id()
+            $stock = Stock::firstOrCreate(
+                [
+                    'warehouse_id' => $warehouseId,
+                    'item_id' => $itemId
+                ],
+                [
+                    'quantity' => 0,
+                    'piece_count' => 0,
+                    'total_units' => 0,
+                    'current_piece_units' => $unitCapacity
+                ]
             );
             
-            \Log::info('Stock updated successfully', [
+            // Get the original values for logging
+            $originalPieces = $stock->piece_count ?? 0;
+            $originalQuantity = $stock->quantity ?? 0;
+            $originalUnits = $stock->total_units ?? 0;
+            
+            // Update stock - add the purchased quantity
+            $addedPieces = (int)$quantity;
+            $stock->piece_count = $originalPieces + $addedPieces;
+            $stock->quantity = $stock->piece_count; // Keep quantity in sync with piece_count
+            $stock->total_units = $originalUnits + ($addedPieces * $unitCapacity);
+            
+            // Ensure current_piece_units is set
+            if ($stock->current_piece_units === null) {
+                $stock->current_piece_units = $unitCapacity;
+            }
+            
+            $stock->save();
+            
+            // Create stock history record
+            \App\Models\StockHistory::create([
                 'warehouse_id' => $warehouseId,
                 'item_id' => $itemId,
+                'quantity_before' => $originalQuantity,
+                'quantity_after' => $stock->quantity,
+                'quantity_change' => $addedPieces,
+                'units_before' => $originalUnits,
+                'units_after' => $stock->total_units,
+                'units_change' => ($addedPieces * $unitCapacity),
+                'reference_type' => 'purchase',
+                'reference_id' => $purchaseId,
+                'description' => 'Stock added from purchase: ' . ($this->form['reference_no'] ?? 'N/A'),
+                'user_id' => auth()->id(),
+            ]);
+            
+            \Log::info('Stock updated successfully from purchase', [
+                'warehouse_id' => $warehouseId,
+                'item_id' => $itemId,
+                'item_name' => $item->name,
                 'previous_pieces' => $originalPieces,
+                'previous_quantity' => $originalQuantity,
                 'previous_units' => $originalUnits,
-                'added_pieces' => $quantity,
+                'added_pieces' => $addedPieces,
                 'new_pieces' => $stock->piece_count,
+                'new_quantity' => $stock->quantity,
                 'new_units' => $stock->total_units,
                 'unit_capacity' => $unitCapacity
             ]);
             
             return true;
         } catch (\Exception $e) {
-            \Log::error('Error updating stock', [
+            \Log::error('Error updating stock from purchase', [
                 'exception' => get_class($e),
                 'message' => $e->getMessage(),
                 'file' => $e->getFile(),
                 'line' => $e->getLine(),
                 'warehouse_id' => $warehouseId,
                 'item_id' => $itemId,
-                'quantity' => $quantity
+                'quantity' => $quantity,
+                'purchase_id' => $purchaseId
             ]);
             
             return false;
@@ -1870,7 +1954,7 @@ class Create extends Component
     }
 
     /**
-     * Get filtered item options for search - excludes items already in cart
+     * Get filtered item options for search - shows all active items for purchases
      */
     public function getFilteredItemOptionsProperty()
     {
@@ -1883,9 +1967,9 @@ class Create extends Component
         
         $search = strtolower($this->itemSearch);
         
-        // Get items from database with fresh stock calculation
+        // For purchases: Show ALL active items regardless of stock (purchases add stock)
         $items = Item::where('is_active', true)
-            ->whereNotIn('id', $addedItemIds)
+            ->whereNotIn('id', $addedItemIds) // Only exclude items already in cart
             ->where(function ($query) use ($search) {
                 $query->where('name', 'like', '%' . $search . '%')
                       ->orWhere('sku', 'like', '%' . $search . '%');

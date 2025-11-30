@@ -660,18 +660,30 @@
                     </h5>
                 </div>
                 <div class="modal-body">
-                    @if($credit->reference_type === 'purchase' && $credit->purchase)
+                    @if(($credit->reference_type === 'purchase' && $credit->purchase) || ($credit->reference_type === 'sale' && $credit->sale))
                         <!-- Payment Summary -->
                         @php
                             $totalClosingCost = 0;
-                            foreach($credit->purchase->items as $item) {
-                                if(isset($closingPrices[$item->item_id]) && is_numeric($closingPrices[$item->item_id])) {
-                                    $unitQuantity = $item->item->unit_quantity ?: 1;
-                                    $closingPricePerUnit = (float) $closingPrices[$item->item_id];
-                                    $totalClosingCost += $closingPricePerUnit * $unitQuantity * $item->quantity;
+                            if($credit->reference_type === 'purchase' && $credit->purchase) {
+                                foreach($credit->purchase->items as $item) {
+                                    if(isset($closingPrices[$item->item_id]) && is_numeric($closingPrices[$item->item_id])) {
+                                        $closingPricePerUnit = (float) $closingPrices[$item->item_id];
+                                        $totalClosingCost += $closingPricePerUnit * $item->quantity;
+                                    }
+                                }
+                            } elseif($credit->reference_type === 'sale' && $credit->sale) {
+                                foreach($credit->sale->items as $item) {
+                                    if(isset($closingPrices[$item->item_id]) && is_numeric($closingPrices[$item->item_id])) {
+                                        $closingPricePerUnit = (float) $closingPrices[$item->item_id];
+                                        $totalClosingCost += $closingPricePerUnit * $item->quantity;
+                                    }
                                 }
                             }
-                            $remainingToPay = max(0, $totalClosingCost - $credit->paid_amount);
+                            // Business Rule: Cannot exceed current balance (what you still owe)
+                            $maxAllowedCost = $credit->balance;
+                            $isExceeding = $totalClosingCost > $maxAllowedCost;
+                            $displayClosingCost = min($totalClosingCost, $maxAllowedCost);
+                            $remainingToPay = $displayClosingCost;
                         @endphp
                         
                         <div class="alert alert-info mb-3">
@@ -682,13 +694,32 @@
                                 </div>
                                 <div class="col-md-6">
                                     @if($totalClosingCost > 0)
-                                        <strong class="text-danger">Remaining to Pay:</strong> {{ number_format($remainingToPay, 2) }} ETB
+                                        <strong>Total Closing Cost:</strong> 
+                                        <span class="{{ $isExceeding ? 'text-danger' : '' }}">
+                                            {{ number_format($displayClosingCost, 2) }} ETB
+                                        </span>
+                                        @if($isExceeding)
+                                            <br><small class="text-danger">⚠️ Exceeds credit limit ({{ number_format($totalClosingCost, 2) }} ETB)</small>
+                                        @endif
+                                        <br><strong class="text-primary">Remaining to Pay:</strong> {{ number_format($remainingToPay, 2) }} ETB
                                     @else
                                         <strong class="text-muted">Enter item prices to see remaining amount</strong>
                                     @endif
                                 </div>
                             </div>
                         </div>
+                        
+                        @error('closingPrices')
+                            <div class="alert alert-danger">
+                                <i class="fas fa-exclamation-triangle me-2"></i>{{ $message }}
+                            </div>
+                        @enderror
+                        
+                        @if(empty($closingPrices) || array_filter($closingPrices) == [])
+                            <div class="alert alert-warning">
+                                <i class="fas fa-info-circle me-2"></i>The closing prices field is required.
+                            </div>
+                        @endif
                         
                         <div class="table-responsive">
                             <table class="table table-sm">
@@ -699,23 +730,51 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    @foreach($credit->purchase->items as $item)
+                                    @if($credit->reference_type === 'purchase' && $credit->purchase)
+                                        @foreach($credit->purchase->items as $item)
+                                            <tr>
+                                                <td class="fw-medium">{{ $item->item->name }}</td>
+                                                <td class="text-center">
+                                                    <input type="number" 
+                                                        wire:model.live="closingPrices.{{ $item->item_id }}" 
+                                                        class="form-control form-control-sm text-center @error('closingPrices.'.$item->item_id) is-invalid @enderror" 
+                                                        step="0.01" 
+                                                        min="0" 
+                                                        placeholder="Enter closing price"
+                                                        style="width: 120px; margin: 0 auto;">
+                                                    @error('closingPrices.'.$item->item_id)
+                                                        <div class="invalid-feedback">{{ $message }}</div>
+                                                    @enderror
+                                                </td>
+                                            </tr>
+                                        @endforeach
+                                    @elseif($credit->reference_type === 'sale' && $credit->sale)
+                                        @foreach($credit->sale->items as $item)
+                                            <tr>
+                                                <td class="fw-medium">{{ $item->item->name }}</td>
+                                                <td class="text-center">
+                                                    <input type="number" 
+                                                        wire:model.live="closingPrices.{{ $item->item_id }}" 
+                                                        class="form-control form-control-sm text-center @error('closingPrices.'.$item->item_id) is-invalid @enderror" 
+                                                        step="0.01" 
+                                                        min="0" 
+                                                        placeholder="Enter closing price"
+                                                        style="width: 120px; margin: 0 auto;">
+                                                    @error('closingPrices.'.$item->item_id)
+                                                        <div class="invalid-feedback">{{ $message }}</div>
+                                                    @enderror
+                                                </td>
+                                            </tr>
+                                        @endforeach
+                                    @else
                                         <tr>
-                                            <td class="fw-medium">{{ $item->item->name }}</td>
-                                            <td class="text-center">
-                                                <input type="number" 
-                                                    wire:model.live="closingPrices.{{ $item->item_id }}" 
-                                                    class="form-control form-control-sm text-center @error('closingPrices.'.$item->item_id) is-invalid @enderror" 
-                                                    step="0.01" 
-                                                    min="0" 
-                                                    placeholder="Enter price"
-                                                    style="width: 120px; margin: 0 auto;">
-                                                @error('closingPrices.'.$item->item_id)
-                                                    <div class="invalid-feedback">{{ $message }}</div>
-                                                @enderror
+                                            <td colspan="2" class="text-center text-muted">
+                                                <i class="fas fa-exclamation-triangle me-2"></i>
+                                                No items found for this credit.
                                             </td>
                                         </tr>
-                                    @endforeach
+                                    @endif
+
                                 </tbody>
                             </table>
                         </div>
