@@ -9,6 +9,11 @@ return new class extends Migration
 {
     public function up()
     {
+        // Skip if purchases table doesn't exist yet
+        if (!Schema::hasTable('purchases')) {
+            return;
+        }
+        
         // Update existing purchases with logical statuses based on business rules
         DB::transaction(function () {
             // Get current date for comparison

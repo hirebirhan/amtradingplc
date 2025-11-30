@@ -157,6 +157,16 @@
                                                 <i class="bi bi-eye"></i>
                                             </a>
                                         @endcan
+                                        
+                                        {{-- Make Payment Action for purchases with outstanding balance --}}
+                                        @if($purchase->due_amount > 0 && $purchase->credit)
+                                            @can('credits.edit')
+                                                <a href="{{ route('admin.credits.payments.create', $purchase->credit->id) }}" 
+                                                   class="btn btn-outline-success" title="Make Payment">
+                                                    <i class="bi bi-credit-card"></i>
+                                                </a>
+                                            @endcan
+                                        @endif
                                     </div>
                                 </td>
                             </tr>
