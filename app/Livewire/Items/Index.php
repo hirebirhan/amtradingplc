@@ -669,7 +669,7 @@ class Index extends Component
 
         // Group by items.id when using joins to avoid duplicates
         if ($this->sortField === 'stock' || $this->sortField === 'selling_price') {
-            $query->groupBy('items.id');
+            $query->select('items.*')->groupBy('items.id');
         }
         
         $items = $query->paginate($this->perPage);
