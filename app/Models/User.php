@@ -180,7 +180,7 @@ class User extends Authenticatable
     public function hasAccessToBranch($branchId): bool
     {
         // Super admins and General Managers have access to all branches
-        if ($this->isSuperAdmin()) {
+        if ($this->isSuperAdmin() || $this->isGeneralManager()) {
             return true;
         }
 
@@ -203,7 +203,7 @@ class User extends Authenticatable
     public function hasAccessToWarehouse($warehouseId): bool
     {
         // Super admins and General Managers have access to all warehouses
-        if ($this->isSuperAdmin()) {
+        if ($this->isSuperAdmin() || $this->isGeneralManager()) {
             return true;
         }
 
