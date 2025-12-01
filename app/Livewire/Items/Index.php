@@ -760,6 +760,58 @@ class Index extends Component
     }
 
     /**
+     * Get total units available for an item based on user's access level
+     */
+    public function getItemUnitsAvailable($item)
+    {
+        $user = auth()->user();
+        
+        // If user has specific warehouse access
+        if ($user->warehouse_id) {
+            $stocks = $item->stocks->where('warehouse_id', $user->warehouse_id);
+            return $stocks ? $stocks->sum('total_units') : 0;
+        }
+        
+        // If user has branch access
+        if ($user->branch_id) {
+            $warehouseIds = Warehouse::whereHas('branches', function($q) use ($user) {
+                $q->where('branches.id', $user->branch_id);
+            })->pluck('id')->toArray();
+            
+            return $item->stocks->whereIn('warehouse_id', $warehouseIds)->sum('total_units');
+        }
+        
+        // For super admin - show total units across all warehouses
+        return $item->stocks->sum('total_units');
+    }
+    
+    /**
+     * Get pieces available for an item based on user's access level
+     */
+    public function getItemPiecesAvailable($item)
+    {
+        $user = auth()->user();
+        
+        // If user has specific warehouse access
+        if ($user->warehouse_id) {
+            $stocks = $item->stocks->where('warehouse_id', $user->warehouse_id);
+            return $stocks ? $stocks->sum('piece_count') : 0;
+        }
+        
+        // If user has branch access
+        if ($user->branch_id) {
+            $warehouseIds = Warehouse::whereHas('branches', function($q) use ($user) {
+                $q->where('branches.id', $user->branch_id);
+            })->pluck('id')->toArray();
+            
+            return $item->stocks->whereIn('warehouse_id', $warehouseIds)->sum('piece_count');
+        }
+        
+        // For super admin - show total pieces across all warehouses
+        return $item->stocks->sum('piece_count');
+    }
+    
+    /**
      * Get stock status text for an item
      */
     public function getStockStatusText($item)

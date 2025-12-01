@@ -211,9 +211,9 @@ class Create extends Component
             return Branch::where('is_active', true)->orderBy('name')->get();
         }
         
-        // BranchManager can access all branches (for inter-branch purchases)
+        // BranchManager can ONLY access their own branch for purchases
         if ($user->isBranchManager()) {
-            return Branch::where('is_active', true)->orderBy('name')->get();
+            return Branch::where('id', $user->branch_id)->where('is_active', true)->get();
         }
         
         // Users assigned to a specific branch

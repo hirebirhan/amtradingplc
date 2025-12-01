@@ -42,7 +42,7 @@ class Create extends Component
     // Item being added
     public $newItem = [
         'item_id' => '',
-        'quantity' => 1,
+        'pieces' => 1,
     ];
 
     // Extra properties for search & editing
@@ -152,7 +152,7 @@ class Create extends Component
     {
         $this->selectedItem = null;
         $this->newItem['item_id'] = '';
-        $this->newItem['quantity'] = 1;
+        $this->newItem['pieces'] = 1;
         $this->availableStock = 0;
         $this->duplicateWarning = null;
         
@@ -188,11 +188,12 @@ class Create extends Component
         $item = $this->items[$index];
         $this->editingItemIndex = $index;
         $this->newItem['item_id'] = $item['item_id'];
-        $this->newItem['quantity'] = $item['quantity'];
+        $this->newItem['pieces'] = $item['pieces'];
         $this->availableStock = $item['available_stock'];
         $this->selectedItem = [
             'id'    => $item['item_id'],
             'label' => $item['item_name'] . ' (' . $item['item_sku'] . ')',
+            'unit'  => $item['unit'] ?? 'pcs'
         ];
     }
 
@@ -207,7 +208,7 @@ class Create extends Component
 
     private function resetNewItemForm()
     {
-        $this->newItem = ['item_id' => '', 'quantity' => 1];
+        $this->newItem = ['item_id' => '', 'pieces' => 1];
         $this->availableStock = 0;
         $this->selectedItem = null;
         $this->itemSearchTerm = '';
@@ -477,7 +478,7 @@ class Create extends Component
             'item_id'        => $item->id,
             'item_name'      => $item->name,
             'item_sku'       => $item->sku,
-            'quantity'       => $this->newItem['quantity'],
+            'pieces'         => $this->newItem['pieces'],
             'available_stock'=> $availableStock,
                 'unit'           => $item->unit ?? 'pcs',
                 'added_at'       => now()->toISOString()

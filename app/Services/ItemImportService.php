@@ -78,6 +78,11 @@ class ItemImportService
                     $item->category_id = Category::value('id'); // Fallback
                 }
                 
+                // Assign branch: null for SuperAdmin/GeneralManager, user's branch for others
+                $item->branch_id = auth()->user()->isSuperAdmin() || auth()->user()->isGeneralManager() 
+                    ? null 
+                    : auth()->user()->branch_id;
+                
                 $item->is_active = true;
                 $item->save();
 
@@ -194,6 +199,9 @@ class ItemImportService
                 'description' => $get('description') ?? '',
                 'is_active' => true,
                 'created_by' => auth()->id() ?? 1,
+                'branch_id' => auth()->user()->isSuperAdmin() || auth()->user()->isGeneralManager() 
+                    ? null 
+                    : auth()->user()->branch_id,
                 'branches' => $branchQuantities,
             ];
         }

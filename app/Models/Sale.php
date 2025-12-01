@@ -236,38 +236,26 @@ class Sale extends Model
         $quantity = $saleItem->quantity;
         $unitCapacity = $item->unit_quantity ?? 1;
         
-        // Process based on sale method (allow negative stock)
-        $piecesBefore = $stock->piece_count ?? 0;
-        $quantityBefore = $stock->quantity ?? 0;
-        
+        // Use the Stock model's built-in methods for proper unit/piece handling
         if ($saleItem->isSoldByPiece()) {
-            // Selling by piece - allow negative stock
-            $piecesToDeduct = (int)$quantity;
-            $stock->piece_count = $piecesBefore - $piecesToDeduct;
-            $stock->quantity = $stock->piece_count;
-            $stock->total_units = max(0, ($stock->total_units ?? 0) - ($piecesToDeduct * $unitCapacity));
+            $stock->sellByPiece(
+                (int)$quantity, 
+                $unitCapacity, 
+                'sale', 
+                $this->id, 
+                'Warehouse sale by piece - Sale #' . $this->reference_no, 
+                $this->user_id
+            );
         } else {
-            // Selling by unit - allow negative stock
-            $unitsToDeduct = $quantity;
-            $stock->total_units = ($stock->total_units ?? 0) - $unitsToDeduct;
-            $stock->piece_count = max(0, floor($stock->total_units / $unitCapacity));
-            $stock->quantity = $stock->piece_count;
+            $stock->sellByUnit(
+                $quantity, 
+                $unitCapacity, 
+                'sale', 
+                $this->id, 
+                'Warehouse sale by unit - Sale #' . $this->reference_no, 
+                $this->user_id
+            );
         }
-        
-        $stock->save();
-        
-        // Create stock history
-        \App\Models\StockHistory::create([
-            'warehouse_id' => $stock->warehouse_id,
-            'item_id' => $item->id,
-            'quantity_before' => $quantityBefore,
-            'quantity_after' => $stock->quantity,
-            'quantity_change' => $stock->quantity - $quantityBefore,
-            'reference_type' => 'sale',
-            'reference_id' => $this->id,
-            'description' => 'Warehouse sale - Sale #' . $this->reference_no,
-            'user_id' => $this->user_id,
-        ]);
         
         // Also deduct from purchase quantity
         $this->deductFromPurchaseQuantity($item, $saleItem);
@@ -292,17 +280,17 @@ class Sale extends Model
         $unitCapacity = $item->unit_quantity ?? 1;
         $remainingQuantity = $quantity;
 
-        foreach ($warehouseIds as $warehouseId) {
+        // Sort warehouses by stock availability (highest first)
+        $warehouseStocks = Stock::whereIn('warehouse_id', $warehouseIds)
+            ->where('item_id', $item->id)
+            ->orderBy($saleItem->isSoldByPiece() ? 'piece_count' : 'total_units', 'desc')
+            ->get();
+
+        foreach ($warehouseStocks as $stock) {
             if ($remainingQuantity <= 0) break;
 
-            $stock = Stock::where('warehouse_id', $warehouseId)
-                ->where('item_id', $item->id)
-                ->first();
-
-            if (!$stock) continue;
-
             if ($saleItem->isSoldByPiece()) {
-                $availablePieces = $stock->piece_count;
+                $availablePieces = $stock->piece_count ?? 0;
                 if ($availablePieces <= 0) continue;
                 
                 $deductPieces = min($remainingQuantity, $availablePieces);
@@ -318,7 +306,7 @@ class Sale extends Model
                 
                 $remainingQuantity -= $deductPieces;
             } else {
-                $availableUnits = $stock->total_units;
+                $availableUnits = $stock->total_units ?? 0;
                 if ($availableUnits <= 0) continue;
                 
                 $deductUnits = min($remainingQuantity, $availableUnits);
@@ -336,9 +324,10 @@ class Sale extends Model
             }
         }
 
+        // Allow negative stock - just log a warning if we couldn't fulfill completely
         if ($remainingQuantity > 0) {
             $method = $saleItem->isSoldByPiece() ? 'pieces' : 'units';
-            throw new \Exception("Insufficient stock for item '{$item->name}'. Could not fulfill {$remainingQuantity} {$method} from branch warehouses.");
+            \Log::warning("Partial stock fulfillment for item '{$item->name}'. Remaining {$remainingQuantity} {$method} will result in negative stock.");
         }
         
         // Also deduct from purchase quantity
