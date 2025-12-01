@@ -96,17 +96,12 @@ class Stock extends Model
      */
     public function sellByPiece(int $pieces, float $unitCapacity, string $referenceType, ?int $referenceId = null, ?string $description = null, ?int $userId = null): void
     {
-        if ($this->piece_count < $pieces) {
-            throw new \Exception("Insufficient pieces. Available: {$this->piece_count}, Requested: {$pieces}");
-        }
-        
-        $unitsToDeduct = $pieces * $unitCapacity;
-        if ($this->total_units < $unitsToDeduct) {
-            throw new \Exception("Insufficient units. Available: {$this->total_units}, Required: {$unitsToDeduct}");
-        }
+        // Allow negative stock - remove the insufficient stock checks
         
         $piecesBefore = $this->piece_count;
         $unitsBefore = $this->total_units;
+        
+        $unitsToDeduct = $pieces * $unitCapacity;
         
         $this->piece_count -= $pieces;
         $this->total_units -= $unitsToDeduct;
@@ -129,9 +124,7 @@ class Stock extends Model
      */
     public function sellByUnit(float $units, float $unitCapacity, string $referenceType, ?int $referenceId = null, ?string $description = null, ?int $userId = null): void
     {
-        if ($this->total_units < $units) {
-            throw new \Exception("Insufficient units. Available: {$this->total_units}, Requested: {$units}");
-        }
+        // Allow negative stock - remove the insufficient stock check
         
         $piecesBefore = $this->piece_count;
         $unitsBefore = $this->total_units;
@@ -143,43 +136,52 @@ class Stock extends Model
         
         $remainingUnits = $units;
         
-        // First, deduct from current piece units
-        if ($remainingUnits <= $this->current_piece_units) {
-            // Can fulfill from current piece without touching piece count
-            $this->current_piece_units -= $remainingUnits;
-            $remainingUnits = 0;
-        } else {
-            // Need to use multiple pieces
-            $remainingUnits -= $this->current_piece_units; // Use all units from current piece
-            $piecesToDeduct = 1; // Current piece is now empty
-            
-            // Calculate how many additional full pieces needed
-            $additionalFullPieces = floor($remainingUnits / $unitCapacity);
-            $piecesToDeduct += $additionalFullPieces;
-            
-            // Calculate remaining units for the next piece
-            $unitsFromNextPiece = $remainingUnits % $unitCapacity;
-            
-            // Deduct pieces from stock
-            $this->piece_count -= $piecesToDeduct;
-            
-            // Set current piece units for the new current piece
-            if ($this->piece_count > 0 && $unitsFromNextPiece > 0) {
-                $this->current_piece_units = $unitCapacity - $unitsFromNextPiece;
+        // If we have positive stock, deduct normally
+        if ($this->total_units > 0 && $this->piece_count > 0) {
+            // First, deduct from current piece units
+            if ($remainingUnits <= $this->current_piece_units) {
+                // Can fulfill from current piece without touching piece count
+                $this->current_piece_units -= $remainingUnits;
+                $remainingUnits = 0;
             } else {
-                $this->current_piece_units = $unitCapacity;
+                // Need to use multiple pieces
+                $remainingUnits -= $this->current_piece_units; // Use all units from current piece
+                $piecesToDeduct = 1; // Current piece is now empty
+                
+                // Calculate how many additional full pieces needed
+                $additionalFullPieces = floor($remainingUnits / $unitCapacity);
+                $piecesToDeduct += $additionalFullPieces;
+                
+                // Calculate remaining units for the next piece
+                $unitsFromNextPiece = $remainingUnits % $unitCapacity;
+                
+                // Deduct pieces from stock
+                $this->piece_count -= $piecesToDeduct;
+                
+                // Set current piece units for the new current piece
+                if ($this->piece_count > 0 && $unitsFromNextPiece > 0) {
+                    $this->current_piece_units = $unitCapacity - $unitsFromNextPiece;
+                } else {
+                    $this->current_piece_units = $unitCapacity;
+                }
+                
+                $remainingUnits -= ($additionalFullPieces * $unitCapacity + $unitsFromNextPiece);
             }
         }
         
-        // Update total units and quantity
+        // Update total units (allow negative)
         $this->total_units -= $units;
-        $this->quantity = $this->piece_count; // Stock level = piece count
         
-        // Ensure consistency
-        if ($this->piece_count === 0) {
-            $this->total_units = 0;
+        // If total_units goes negative, adjust piece_count accordingly
+        if ($this->total_units < 0) {
+            $this->piece_count = 0;
             $this->current_piece_units = 0;
+        } else {
+            // Ensure piece_count reflects available pieces
+            $this->piece_count = max(0, floor($this->total_units / $unitCapacity));
         }
+        
+        $this->quantity = $this->piece_count; // Stock level = piece count
         
         $this->save();
         

@@ -161,7 +161,7 @@
                             </th>
                             <th class="px-3 py-3 text-center cursor-pointer fw-semibold text-dark" wire:click="sortByStock">
                                 <div class="d-flex align-items-center justify-content-center gap-2">
-                                    <span>Purchase Qty</span>
+                                    <span>Pcs Available</span>
                                     <i class="bi bi-arrow-down-up text-secondary"></i>
                                 </div>
                             </th>
@@ -187,9 +187,14 @@
                                 <td class="px-3 py-3 text-center">
                                     <div class="d-flex flex-column align-items-center">
                                         <div class="d-flex align-items-center gap-1">
-                                            <span class="fw-medium">{{ number_format($item->total_purchase_quantity, 2) }}</span>
-                                            <span class="text-secondary">{{ $item->unit ?? 'pcs' }}</span>
+                                            <span class="fw-medium">{{ number_format($this->getItemPiecesAvailable($item)) }}</span>
+                                            <span class="text-secondary">pcs</span>
                                         </div>
+                                        @if($item->unit_quantity > 1)
+                                        <div class="d-flex align-items-center gap-1 mt-1">
+                                            <small class="text-muted">{{ number_format($this->getItemUnitsAvailable($item), 2) }} {{ $item->unit ?? 'units' }}</small>
+                                        </div>
+                                        @endif
                                     </div>
                                 </td>
                                 <td class="px-3 py-3 text-center">

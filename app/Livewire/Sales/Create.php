@@ -345,7 +345,8 @@ class Create extends Component
                     'selling_price_per_unit' => $item->selling_price_per_unit ?? 0,
                     'unit_quantity' => $item->unit_quantity ?? 1,
                     'item_unit' => $item->item_unit ?? 'piece',
-                    'quantity' => $stockValue,
+                    'quantity' => $stock->piece_count ?? 0, // Show pieces available
+                    'total_units' => $stock->total_units ?? 0, // Show total units available
                     'unit' => $item->unit ?? '',
                 ];
             })
@@ -413,7 +414,8 @@ class Create extends Component
                         'selling_price_per_unit' => $item->selling_price_per_unit ?? 0,
                         'unit_quantity' => $item->unit_quantity ?? 1,
                         'item_unit' => $item->item_unit ?? 'piece',
-                        'quantity' => $totalStock,
+                        'quantity' => $totalStock, // Total pieces across warehouses
+                        'total_units' => $totalStock * ($item->unit_quantity ?? 1), // Calculate total units
                         'unit' => $item->unit ?? '',
                     ];
                 })
@@ -1327,7 +1329,8 @@ class Create extends Component
                     'id' => $item->id,
                     'name' => $item->name,
                     'sku' => $item->sku,
-                    'quantity' => $stockValue,
+                    'quantity' => $stockValue, // Pieces available
+                    'total_units' => $stockValue * ($item->unit_quantity ?? 1), // Total units available
                     'selling_price_per_unit' => $item->selling_price_per_unit ?? 0,
                     'unit_quantity' => $item->unit_quantity ?? 1,
                     'item_unit' => $item->item_unit ?? 'piece',
@@ -1562,7 +1565,7 @@ class Create extends Component
      */
     public function updatedNewItemUnitPrice($value)
     {
-        // Price is always unit_price (per piece or per unit depending on sale method)
+        // Update price to match unit_price
         $this->newItem['price'] = (float)$value;
     }
     

@@ -394,15 +394,21 @@
                                                             <div class="d-flex justify-content-between align-items-center">
                                                                 <div class="flex-grow-1 me-2">
                                                                     <div class="fw-medium text-truncate">{{ $item['name'] }}</div>
-                                                                    <small class="text-muted">{{ $item['sku'] }}</small>
+                                                                    <small class="text-muted">{{ $item['sku'] }}
+                                                                        @if(($item['unit_quantity'] ?? 1) > 1)
+                                                                            • 1 pcs = {{ $item['unit_quantity'] }} {{ $item['item_unit'] ?? 'units' }}
+                                                                        @endif
+                                                                    </small>
                                                                 </div>
                                                                 <div class="text-end flex-shrink-0">
                                                                     @php
                                                                         $stockQty = floatval($item['quantity'] ?? 0);
+                                                                        $unitQty = $item['unit_quantity'] ?? 1;
+                                                                        $totalUnits = $stockQty * $unitQty;
                                                                     @endphp
                                                                     @if($stockQty < 0)
                                                                         <span class="badge bg-dark text-white small">
-                                                                            Negative:<br>{{ number_format($stockQty, 1) }}
+                                                                            Negative:<br>{{ number_format($stockQty, 0) }} pcs
                                                                         </span>
                                                                     @elseif($stockQty == 0)
                                                                         <span class="badge bg-warning text-dark small">
@@ -410,11 +416,18 @@
                                                                         </span>
                                                                     @elseif($stockQty <= 5)
                                                                         <span class="badge bg-warning text-dark small">
-                                                                            Available:<br>{{ number_format($stockQty, 1) }} ⚠️
+                                                                            {{ number_format($stockQty, 0) }} pcs<br>
+                                                                            @if($unitQty > 1)
+                                                                                {{ number_format($totalUnits, 1) }} {{ $item['item_unit'] ?? 'units' }}
+                                                                            @endif
+                                                                            ⚠️
                                                                         </span>
                                                                     @else
                                                                         <span class="badge bg-success small">
-                                                                            Available:<br>{{ number_format($stockQty, 1) }}
+                                                                            {{ number_format($stockQty, 0) }} pcs<br>
+                                                                            @if($unitQty > 1)
+                                                                                {{ number_format($totalUnits, 1) }} {{ $item['item_unit'] ?? 'units' }}
+                                                                            @endif
                                                                         </span>
                                                                     @endif
                                                                 </div>
@@ -481,7 +494,13 @@
                             </div>
                             <!-- Unit Price -->
                             <div class="col-6 col-lg-2">
-                                <label class="form-label fw-medium">Unit<br>Price</label>
+                                <label class="form-label fw-medium">
+                                    @if($newItem['sale_method'] === 'piece')
+                                        Price per<br>piece
+                                    @else
+                                        Price per<br>{{ $selectedItem['item_unit'] ?? 'unit' }}
+                                    @endif
+                                </label>
                                 <input type="number" wire:model.live="newItem.unit_price" class="form-control" min="0" step="0.01" placeholder="0.00">
                             </div>
                             <!-- Total Price -->
