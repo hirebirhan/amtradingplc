@@ -102,9 +102,25 @@
                         <!-- Customer Selection -->
                         <div class="col-12 col-md-4">
                             <label for="customer_id" class="form-label fw-medium">
-                                Customer <span class="text-primary">*</span>
+                                Customer <span class="text-primary {{ $form['is_walking_customer'] ? 'd-none' : '' }}">*</span>
                             </label>
-                            @if($selectedCustomer)
+                            
+                            <!-- Walking Customer Checkbox -->
+                            <div class="form-check mb-2">
+                                <input 
+                                    class="form-check-input" 
+                                    type="checkbox" 
+                                    wire:model.live="form.is_walking_customer" 
+                                    id="walking_customer"
+                                >
+                                <label class="form-check-label small text-muted" for="walking_customer">
+                                    <i class="bi bi-person-walking me-1"></i>Walking Customer
+                                </label>
+                            </div>
+                            
+                            @if($form['is_walking_customer'])
+                                <input type="text" class="form-control" value="Walking Customer" readonly>
+                            @elseif($selectedCustomer)
                                 <div class="input-group">
                                     <input type="text" readonly class="form-control" value="{{ $selectedCustomer['name'] }}">
                                     <button class="btn btn-outline-danger" type="button" wire:click="clearCustomer" title="Clear customer">
@@ -116,7 +132,7 @@
                                     wire:model.live="form.customer_id" 
                                     id="customer_id" 
                                     class="form-select @error('form.customer_id') is-invalid @enderror" 
-                                    required 
+                                    {{ $form['is_walking_customer'] ? 'disabled' : 'required' }}
                                 >
                                     <option value="">Select a customer...</option>
                                     @foreach($this->filteredCustomers as $customer)
@@ -193,7 +209,11 @@
                                 required
                             >
                                 @foreach(\App\Enums\PaymentMethod::forSales() as $method)
-                                    <option value="{{ $method->value }}">
+                                    @php
+                                        $isCreditMethod = in_array($method->value, ['full_credit', 'credit_advance']);
+                                        $isDisabled = $form['is_walking_customer'] && $isCreditMethod;
+                                    @endphp
+                                    <option value="{{ $method->value }}" {{ $isDisabled ? 'disabled' : '' }}>
                                         @switch($method)
                                             @case(\App\Enums\PaymentMethod::CASH)
                                                 💵 Cash Payment
@@ -205,10 +225,10 @@
                                                 📱 Telebirr
                                                 @break
                                             @case(\App\Enums\PaymentMethod::CREDIT_ADVANCE)
-                                                💳 Credit with Advance
+                                                💳 Credit with Advance{{ $form['is_walking_customer'] ? ' (Not available for walking customers)' : '' }}
                                                 @break
                                             @case(\App\Enums\PaymentMethod::FULL_CREDIT)
-                                                📋 Full Credit
+                                                📋 Full Credit{{ $form['is_walking_customer'] ? ' (Not available for walking customers)' : '' }}
                                                 @break
                                             @default
                                                 {{ $method->label() }}
@@ -302,8 +322,8 @@
                                 <div class="invalid-feedback">{{ $message }}</div> 
                             @enderror
                         </div>
-                        <!-- Advance Amount (if credit_advance) -->
-                        @if($form['payment_method'] === 'credit_advance')
+                        <!-- Advance Amount (if credit_advance and not walking customer) -->
+                        @if($form['payment_method'] === 'credit_advance' && !$form['is_walking_customer'])
                             <div class="col-12 col-md-4">
                                 <label for="advance_amount" class="form-label fw-medium">
                                     Advance Amount <span class="text-primary">*</span>
@@ -322,6 +342,16 @@
                                 @error('form.advance_amount') 
                                     <div class="invalid-feedback">{{ $message }}</div> 
                                 @enderror
+                            </div>
+                        @endif
+                        
+                        <!-- Walking Customer Credit Warning -->
+                        @if($form['is_walking_customer'] && in_array($form['payment_method'], ['full_credit', 'credit_advance']))
+                            <div class="col-12">
+                                <div class="alert alert-warning mb-0">
+                                    <i class="bi bi-exclamation-triangle me-2"></i>
+                                    <strong>Credit payments are not available for walking customers.</strong> Please select a different payment method.
+                                </div>
                             </div>
                         @endif
                     </div>
@@ -658,7 +688,11 @@
                             <div class="mb-2">
                                 <span class="text-muted small">Customer:</span>
                                 <span class="fw-semibold ms-1">
-                                    @if($selectedCustomer)
+                                    @if($form['is_walking_customer'])
+                                        <span class="badge bg-info-subtle text-info-emphasis">
+                                            <i class="bi bi-person-walking me-1"></i>Walking Customer
+                                        </span>
+                                    @elseif($selectedCustomer)
                                         {{ $selectedCustomer['name'] }}
                                     @else
                                         <span class="text-muted">Not selected</span>
