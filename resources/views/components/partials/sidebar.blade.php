@@ -50,9 +50,14 @@
                     @endcan
                     @can('transfers.view')
                     <a href="{{ route('admin.transfers.pending') }}"
-                       class="nav-link d-flex align-items-center gap-3 px-3 py-2 rounded text-decoration-none {{ request()->routeIs('admin.transfers.pending') ? 'bg-primary bg-opacity-10 text-primary' : 'text-body-secondary' }}">
-                        <i class="bi bi-clock-history fs-6"></i>
-                        <span>Pending Approvals</span>
+                       class="nav-link d-flex align-items-center justify-content-between px-3 py-2 rounded text-decoration-none {{ request()->routeIs('admin.transfers.pending') ? 'bg-primary bg-opacity-10 text-primary' : 'text-body-secondary' }}">
+                        <div class="d-flex align-items-center gap-3">
+                            <i class="bi bi-clock-history fs-6"></i>
+                            <span>Pending Approvals</span>
+                        </div>
+                        @if(isset($pendingTransfersCount) && $pendingTransfersCount > 0)
+                        <span class="badge bg-danger rounded-pill">{{ $pendingTransfersCount }}</span>
+                        @endif
                     </a>
                     @endcan
                 </div>

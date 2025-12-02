@@ -79,9 +79,19 @@
                                 <td class="px-4 py-3"><span class="small">{{ $transfer->destination_location_name }}</span></td>
                                 <td class="px-4 py-3"><span class="small">{{ $transfer->date_initiated->format('M d, Y') }}</span></td>
                                 <td class="px-4 py-3">
-                                    <span class="fw-medium small text-{{ $transfer->status === 'completed' ? 'success' : ($transfer->status === 'pending' ? 'warning' : 'secondary') }}">
-                                        {{ ucfirst($transfer->status) }}
-                                    </span>
+                                    @if($transfer->status === 'pending')
+                                        <span class="badge" style="background-color: #ffc107; color: #000;">{{ ucfirst($transfer->status) }}</span>
+                                    @elseif($transfer->status === 'completed')
+                                        <span class="badge bg-success">{{ ucfirst($transfer->status) }}</span>
+                                    @elseif($transfer->status === 'approved')
+                                        <span class="badge bg-info">{{ ucfirst($transfer->status) }}</span>
+                                    @elseif($transfer->status === 'in_transit')
+                                        <span class="badge bg-primary">{{ ucfirst($transfer->status) }}</span>
+                                    @elseif($transfer->status === 'rejected')
+                                        <span class="badge bg-danger">{{ ucfirst($transfer->status) }}</span>
+                                    @else
+                                        <span class="badge bg-secondary">{{ ucfirst($transfer->status) }}</span>
+                                    @endif
                                 </td>
                                 <td class="px-4 py-3 text-end pe-5">
                                     <div class="btn-group btn-group-sm">

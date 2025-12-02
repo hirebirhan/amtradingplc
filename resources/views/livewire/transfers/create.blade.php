@@ -162,20 +162,40 @@
                                     </button>
                                 </div>
                             @else
-                                <!-- Simple Select Dropdown -->
-                                <select class="form-select @error('newItem.item_id') is-invalid @enderror" 
-                                        wire:model.live="newItem.item_id">
-                                    <option value="">Select an item...</option>
-                                    @foreach($itemOptions as $option)
-                                        <option value="{{ $option['id'] }}">
-                                            @php
-                                                $labelParts = explode(' (', $option['label']);
-                                                $itemName = $labelParts[0] ?? $option['label'];
-                                            @endphp
-                                            {{ $itemName }} - Available: {{ number_format($option['available_stock'], 2) }}
-                                        </option>
-                                    @endforeach
-                                </select>
+                                <!-- Searchable Item Dropdown -->
+                                <div class="position-relative">
+                                    <input 
+                                        type="text" 
+                                        class="form-control @error('newItem.item_id') is-invalid @enderror" 
+                                        wire:model.live.debounce.300ms="itemSearchTerm"
+                                        placeholder="Search items by name or SKU..."
+                                        autocomplete="off"
+                                    >
+                                    
+                                    @if($itemSearchTerm && $this->filteredItemOptions)
+                                        <div class="dropdown-menu show w-100 shadow-sm" style="max-height: 300px; overflow-y: auto;">
+                                            @forelse($this->filteredItemOptions as $option)
+                                                <button 
+                                                    type="button" 
+                                                    class="dropdown-item d-flex justify-content-between align-items-center" 
+                                                    wire:click="selectItem({{ $option['id'] }})"
+                                                >
+                                                    <div>
+                                                        <div class="fw-medium">{{ $option['name'] }}</div>
+                                                        <small class="text-muted">{{ $option['sku'] }}</small>
+                                                    </div>
+                                                    <div class="text-end">
+                                                        <small class="badge bg-success">{{ number_format($option['available_stock'], 2) }} available</small>
+                                                    </div>
+                                                </button>
+                                            @empty
+                                                <div class="dropdown-item-text text-muted">
+                                                    <i class="bi bi-search me-1"></i>No items found
+                                                </div>
+                                            @endforelse
+                                        </div>
+                                    @endif
+                                </div>
                             @endif
                             @error('newItem.item_id') 
                                 <div class="invalid-feedback d-block">{{ $message }}</div> 

@@ -8,6 +8,7 @@ use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Support\Facades\View;
 use Livewire\Livewire;
 use App\Services\Dashboard\Contracts\{
     StatsServiceInterface,
@@ -78,5 +79,8 @@ class AppServiceProvider extends ServiceProvider
         // Register Livewire components
         Livewire::component('purchases.create', \App\Livewire\Purchases\Create::class);
         Livewire::component('items.create', \App\Livewire\Items\Create::class);
+
+        // Register View Composers
+        View::composer('components.partials.sidebar', \App\Http\View\Composers\SidebarComposer::class);
     }
 }

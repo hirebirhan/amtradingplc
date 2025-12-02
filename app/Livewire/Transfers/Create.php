@@ -42,7 +42,7 @@ class Create extends Component
     // Item being added
     public $newItem = [
         'item_id' => '',
-        'pieces' => 1,
+        'quantity' => 1,
     ];
 
     // Extra properties for search & editing
@@ -104,27 +104,27 @@ class Create extends Component
                 'source_location' => 'branch:' . $this->form['source_id']
             ]);
 
-        $this->newItem['item_id'] = (int) $itemId;
-        
-        // Find selected item in options to get pre-calculated available stock
-        $selectedItemOption = collect($this->itemOptions)->firstWhere('id', $itemId);
-        $this->availableStock = $selectedItemOption['available_stock'] ?? $this->getAvailableStock($itemId);
+            $this->newItem['item_id'] = (int) $itemId;
             
+            // Find selected item in options to get pre-calculated available stock
+            $selectedItemOption = collect($this->itemOptions)->firstWhere('id', $itemId);
+            $this->availableStock = $selectedItemOption['available_stock'] ?? $this->getAvailableStock($itemId);
+                
             // Get item details for enhanced display
             $item = Item::find($itemId);
             if (!$item) {
                 throw new \Exception("Item not found: {$itemId}");
             }
         
-        $this->selectedItem = [
-            'id'    => (int) $itemId,
+            $this->selectedItem = [
+                'id'    => (int) $itemId,
                 'name'  => $item->name,
                 'sku'   => $item->sku,
                 'label' => $item->name . ' (' . config('app.sku_prefix', 'CODE-') . $item->sku . ')',
                 'unit'  => $item->unit ?? 'pcs'
-        ];
-            
-        $this->itemSearchTerm = '';
+            ];
+                
+            $this->itemSearchTerm = '';
             $this->duplicateWarning = null;
             
             Log::info('Transfer Create: Item selected successfully', [
@@ -152,7 +152,7 @@ class Create extends Component
     {
         $this->selectedItem = null;
         $this->newItem['item_id'] = '';
-        $this->newItem['pieces'] = 1;
+        $this->newItem['quantity'] = 1;
         $this->availableStock = 0;
         $this->duplicateWarning = null;
         
@@ -167,13 +167,22 @@ class Create extends Component
     public function getFilteredItemOptionsProperty()
     {
         if (empty($this->itemSearchTerm)) {
-            return $this->itemOptions;
+            return [];
         }
         
         $searchTerm = strtolower($this->itemSearchTerm);
         return collect($this->itemOptions)->filter(function ($option) use ($searchTerm) {
-            return str_contains(strtolower($option['label']), $searchTerm);
-        })->take(10)->toArray(); // Limit to 10 results for performance
+            return str_contains(strtolower($option['label']), $searchTerm) ||
+                   str_contains(strtolower($option['name'] ?? ''), $searchTerm) ||
+                   str_contains(strtolower($option['sku'] ?? ''), $searchTerm);
+        })->map(function ($option) {
+            return [
+                'id' => $option['id'],
+                'name' => explode(' (', $option['label'])[0] ?? $option['label'],
+                'sku' => $option['sku'] ?? '',
+                'available_stock' => $option['available_stock']
+            ];
+        })->take(8)->toArray();
     }
 
     /**
@@ -188,7 +197,7 @@ class Create extends Component
         $item = $this->items[$index];
         $this->editingItemIndex = $index;
         $this->newItem['item_id'] = $item['item_id'];
-        $this->newItem['pieces'] = $item['pieces'];
+        $this->newItem['quantity'] = $item['quantity'];
         $this->availableStock = $item['available_stock'];
         $this->selectedItem = [
             'id'    => $item['item_id'],
@@ -208,7 +217,7 @@ class Create extends Component
 
     private function resetNewItemForm()
     {
-        $this->newItem = ['item_id' => '', 'pieces' => 1];
+        $this->newItem = ['item_id' => '', 'quantity' => 1];
         $this->availableStock = 0;
         $this->selectedItem = null;
         $this->itemSearchTerm = '';
@@ -377,6 +386,8 @@ class Create extends Component
             
             return [
                 'id'    => $item->id,
+                'name'  => $item->name,
+                'sku'   => $item->sku,
                 'label' => $item->name . ' (' . config('app.sku_prefix', 'CODE-') . $item->sku . ') - Available: ' . number_format($availableStock, 2) . ($availableStock < 10 ? ' ⚠️' : ''),
                 'available_stock' => $availableStock,
             ];
@@ -478,7 +489,7 @@ class Create extends Component
             'item_id'        => $item->id,
             'item_name'      => $item->name,
             'item_sku'       => $item->sku,
-            'pieces'         => $this->newItem['pieces'],
+            'quantity'       => $this->newItem['quantity'],
             'available_stock'=> $availableStock,
                 'unit'           => $item->unit ?? 'pcs',
                 'added_at'       => now()->toISOString()
@@ -757,12 +768,15 @@ class Create extends Component
             // Use standardized flash message
             session()->flash('success', 'Transfer sent for approval successfully.');
             
+            // Reset form for next transfer
+            $this->resetForm();
+            
             // Dispatch success event for cleanup
             $this->dispatch('transferCreated', ['transfer_id' => $transfer->id]);
             
-            // Close the modal and redirect
+            // Close the modal and redirect to create page to allow creating another transfer
             $this->dispatch('closeModal');
-            return $this->redirect(route('admin.transfers.index'), navigate: true);
+            return $this->redirect(route('admin.transfers.create'), navigate: true);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
             $this->isSubmitting = false;
@@ -947,6 +961,39 @@ class Create extends Component
                 'error' => $e->getMessage(),
                 'user_id' => auth()->id()
             ]);
+        }
+    }
+
+    /**
+     * Reset form after successful transfer
+     */
+    public function resetForm()
+    {
+        $this->form = [
+            'source_type' => 'branch',
+            'source_id' => auth()->user()->branch_id ?? '',
+            'destination_type' => 'branch', 
+            'destination_id' => '',
+            'note' => '',
+        ];
+        
+        $this->items = [];
+        $this->itemOptions = [];
+        $this->newItem = [
+            'item_id' => '',
+            'quantity' => 1,
+        ];
+        
+        $this->selectedItem = null;
+        $this->itemSearchTerm = '';
+        $this->availableStock = 0;
+        $this->editingItemIndex = null;
+        $this->duplicateWarning = null;
+        
+        // Reload available locations and items
+        $this->updateAvailableLocations();
+        if (!empty($this->form['source_id'])) {
+            $this->loadAvailableItems();
         }
     }
 

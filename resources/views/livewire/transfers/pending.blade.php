@@ -100,7 +100,7 @@
                                                 </td>
                                                 <td>{{ $transfer->date_initiated->format('M d, Y') }}</td>
                                                 <td>
-                                                    <span class="badge bg-warning">Pending</span>
+                                                    <span class="badge" style="background-color: #ffc107; color: #000;">Pending</span>
                                                 </td>
                                                 <td>
                                                     <div class="d-flex gap-2">

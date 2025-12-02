@@ -732,7 +732,7 @@ class Create extends Component
                     // Add to total
                     $itemTotal += $subtotal;
                     
-                    // Update stock - quantity is treated as pieces
+                    // Update stock - quantity represents pieces to add
                     $this->updateStock($purchase->warehouse_id, $itemId, $quantity, $purchase->id);
                     
                     // Update item cost prices automatically
@@ -1557,7 +1557,8 @@ class Create extends Component
                     'quantity' => 0,
                     'piece_count' => 0,
                     'total_units' => 0,
-                    'current_piece_units' => $unitCapacity
+                    'current_piece_units' => $unitCapacity,
+                    'created_by' => auth()->id()
                 ]
             );
             
@@ -1566,11 +1567,12 @@ class Create extends Component
             $originalQuantity = $stock->quantity ?? 0;
             $originalUnits = $stock->total_units ?? 0;
             
-            // Update stock - add the purchased quantity
+            // Update stock - add the purchased quantity (pieces)
             $addedPieces = (int)$quantity;
             $stock->piece_count = $originalPieces + $addedPieces;
             $stock->quantity = $stock->piece_count; // Keep quantity in sync with piece_count
             $stock->total_units = $originalUnits + ($addedPieces * $unitCapacity);
+            $stock->updated_by = auth()->id();
             
             // Ensure current_piece_units is set
             if ($stock->current_piece_units === null) {

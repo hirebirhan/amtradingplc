@@ -308,7 +308,7 @@ class Create extends Component
 
             DB::commit();
 
-            session()->flash('message', 'Item created successfully!');
+            session()->flash('success', 'Item created successfully!');
 
             // Redirect back to purchase if called from purchase flow
             if ($this->fromPurchase) {
