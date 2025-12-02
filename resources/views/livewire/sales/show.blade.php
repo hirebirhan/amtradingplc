@@ -36,7 +36,15 @@
                         </div>
                         <div class="col-md-3">
                             <div class="text-center">
-                                <div class="h5 mb-1">{{ $sale->customer->name }}</div>
+                                @if($sale->is_walking_customer)
+                                    <div class="h5 mb-1">
+                                        <span class="badge bg-info-subtle text-info-emphasis">
+                                            <i class="bi bi-person-walking me-1"></i>Walking Customer
+                                        </span>
+                                    </div>
+                                @else
+                                    <div class="h5 mb-1">{{ $sale->customer->name ?? 'N/A' }}</div>
+                                @endif
                                 <small class="text-muted">Customer</small>
                             </div>
                         </div>
@@ -238,9 +246,18 @@
                     
                     <div class="mb-3">
                         <div class="text-muted small mb-1">Customer</div>
-                        <div class="fw-medium">{{ $sale->customer->name }}</div>
-                        @if($sale->customer->phone)
-                            <div class="small text-muted">{{ $sale->customer->phone }}</div>
+                        @if($sale->is_walking_customer)
+                            <div class="fw-medium">
+                                <span class="badge bg-info-subtle text-info-emphasis">
+                                    <i class="bi bi-person-walking me-1"></i>Walking Customer
+                                </span>
+                            </div>
+                            <div class="small text-muted">No customer information recorded</div>
+                        @else
+                            <div class="fw-medium">{{ $sale->customer->name ?? 'N/A' }}</div>
+                            @if($sale->customer && $sale->customer->phone)
+                                <div class="small text-muted">{{ $sale->customer->phone }}</div>
+                            @endif
                         @endif
                     </div>
                     

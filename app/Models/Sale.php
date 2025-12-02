@@ -23,6 +23,7 @@ class Sale extends Model
     protected $fillable = [
 'reference_no',
         'customer_id',
+        'is_walking_customer',
         'warehouse_id',
         'branch_id',
         'user_id',
@@ -49,6 +50,7 @@ class Sale extends Model
 
     protected $casts = [
         'sale_date' => 'date',
+        'is_walking_customer' => 'boolean',
         'total_amount' => 'decimal:2',
         'paid_amount' => 'decimal:2',
         'advance_amount' => 'decimal:2',
@@ -109,6 +111,26 @@ class Sale extends Model
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class);
+    }
+
+    /**
+     * Get the customer name or walking customer label.
+     */
+    public function getCustomerNameAttribute(): string
+    {
+        if ($this->is_walking_customer) {
+            return 'Walking Customer';
+        }
+        
+        return $this->customer ? $this->customer->name : 'N/A';
+    }
+
+    /**
+     * Check if this is a walking customer sale.
+     */
+    public function isWalkingCustomer(): bool
+    {
+        return (bool) $this->is_walking_customer;
     }
 
     /**
@@ -344,8 +366,14 @@ class Sale extends Model
             return;
         }
         
+        // Skip credit creation for walking customers with credit payment methods
+        if ($this->is_walking_customer && in_array($this->payment_method, ['full_credit', 'credit_advance'])) {
+            \Log::warning("Attempted to create credit for walking customer sale #{$this->reference_no}. Credits not allowed for walking customers.");
+            return;
+        }
+        
         // Create credit for any sale with outstanding balance
-        if ($this->due_amount > 0) {
+        if ($this->due_amount > 0 && !$this->is_walking_customer) {
             $status = ($this->paid_amount ?? 0) > 0 ? 'partial' : 'active';
             
             Credit::create([

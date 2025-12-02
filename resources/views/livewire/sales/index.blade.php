@@ -112,7 +112,15 @@
                         @forelse($sales as $sale)
                             <tr>
                                 <td class="py-3 px-4">
-                                    <div class="fw-medium">{{ $sale->customer->name }}</div>
+                                    @if($sale->is_walking_customer)
+                                        <div class="fw-medium">
+                                            <span class="badge bg-info-subtle text-info-emphasis">
+                                                <i class="bi bi-person-walking me-1"></i>Walking Customer
+                                            </span>
+                                        </div>
+                                    @else
+                                        <div class="fw-medium">{{ $sale->customer->name ?? 'N/A' }}</div>
+                                    @endif
                                 </td>
                                 <td class="py-3 px-3">{{ $sale->sale_date->format('M d, Y') }}</td>
                                 <td class="text-center py-3 px-3">

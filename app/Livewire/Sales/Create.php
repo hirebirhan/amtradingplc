@@ -15,6 +15,7 @@ use App\Models\StockHistory;
 use App\Models\CreditPayment;
 use App\Facades\UserHelperFacade as UserHelper;
 use App\Traits\HasFlashMessages;
+use App\Traits\HasItemSelection;
 use Livewire\Component;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\On;
@@ -29,7 +30,7 @@ use App\Enums\PaymentStatus;
 
 class Create extends Component
 {
-    use HasFlashMessages;
+    use HasFlashMessages, HasItemSelection;
     protected $listeners = [
         'customerSelected',
         'itemSelected',
@@ -45,6 +46,7 @@ class Create extends Component
     public $form = [
         'reference_no' => '',
         'customer_id' => '',
+        'is_walking_customer' => false,
         'warehouse_id' => '',
         'branch_id' => '',
         'sale_date' => '',
@@ -65,9 +67,8 @@ class Create extends Component
     public $warehouses = [];
     public $branches = [];
     public $bankAccounts = [];
-    public $itemOptions = [];
 
-    // Item being added
+    // Item being added (extended from trait)
     public $newItem = [
         'item_id' => '',
         'quantity' => 1,
@@ -79,13 +80,9 @@ class Create extends Component
 
     // Search and selection
     public $customerSearch = '';
-    public $itemSearch = '';
     public $selectedCustomer = null;
-    public $selectedItem = null;
-    public $availableStock = 0;
     
     // UI state
-    public $editingItemIndex = null;
     public $showConfirmModal = false;
     public $stockWarningType = null;
     public $stockWarningItem = null;
@@ -102,7 +99,8 @@ class Create extends Component
     {
         $rules = [
             'form.sale_date' => 'required|date',
-            'form.customer_id' => 'required|exists:customers,id',
+            'form.customer_id' => $this->form['is_walking_customer'] ? 'nullable' : 'required|exists:customers,id',
+            'form.is_walking_customer' => 'boolean',
             'form.payment_method' => ['required', \Illuminate\Validation\Rule::enum(PaymentMethod::class)],
             'form.tax' => 'nullable|numeric|min:0|max:100',
             'form.shipping' => 'nullable|numeric|min:0',
@@ -144,7 +142,7 @@ class Create extends Component
     }
 
     protected $messages = [
-        'form.customer_id.required' => 'Please select a customer.',
+        'form.customer_id.required' => 'Please select a customer or check walking customer.',
         'form.branch_id.required_without' => 'Please select either a branch or warehouse.',
         'form.warehouse_id.required_without' => 'Please select either a branch or warehouse.',
         'items.required' => 'Please add at least one item to the sale.',
@@ -164,6 +162,7 @@ class Create extends Component
             'sale_date' => date('Y-m-d'),
             'reference_no' => $this->generateReferenceNumber(),
             'customer_id' => '',
+            'is_walking_customer' => false,
             'warehouse_id' => '',
             'branch_id' => '',
             'payment_method' => 'cash',
@@ -195,7 +194,7 @@ class Create extends Component
             $this->form['warehouse_id'] = $user->warehouse_id;
             $this->userLocationType = 'warehouse';
             $this->userLocationId = $user->warehouse_id;
-            $this->loadItemsForLocation();
+            $this->loadAvailableItems();
         } elseif ($user->isBranchManager() && $user->branch_id) {
             // Branch manager - auto-select first warehouse in their branch
             $branchWarehouse = Warehouse::whereHas('branches', function($q) use ($user) {
@@ -204,14 +203,14 @@ class Create extends Component
             
             if ($branchWarehouse) {
                 $this->form['warehouse_id'] = $branchWarehouse->id;
-                $this->loadItemsForLocation();
+                $this->loadAvailableItems();
             }
         } elseif ($user->branch_id) {
             // Other branch users - set branch
             $this->form['branch_id'] = $user->branch_id;
             $this->userLocationType = 'branch';
             $this->userLocationId = $user->branch_id;
-            $this->loadItemsForLocation();
+            $this->loadAvailableItems();
         } else {
             // Auto-select warehouse with most stock
             $warehouseWithStock = Warehouse::select('warehouses.*')
@@ -223,13 +222,13 @@ class Create extends Component
                 
             if ($warehouseWithStock) {
                 $this->form['warehouse_id'] = $warehouseWithStock->id;
-                $this->loadItemsForLocation();
+                $this->loadAvailableItems();
             } else {
                 // Fallback to first warehouse
                 $firstWarehouse = Warehouse::first();
                 if ($firstWarehouse) {
                     $this->form['warehouse_id'] = $firstWarehouse->id;
-                    $this->loadItemsForLocation();
+                    $this->loadAvailableItems();
                 }
             }
         }
@@ -452,11 +451,21 @@ class Create extends Component
         $this->loadCustomers();
     }
 
+    public function updatedFormIsWalkingCustomer($value)
+    {
+        if ($value) {
+            // Clear customer selection when walking customer is checked
+            $this->form['customer_id'] = '';
+            $this->selectedCustomer = null;
+            $this->customerSearch = '';
+        }
+    }
+
     public function updatedFormBranchId($value)
     {
         if ($value) {
             $this->form['warehouse_id'] = ''; // Clear warehouse when branch is selected
-            $this->loadItemsForLocation();
+            $this->loadAvailableItems();
         }
     }
 
@@ -464,7 +473,7 @@ class Create extends Component
     {
         if ($value) {
             $this->form['branch_id'] = ''; // Clear branch when warehouse is selected
-            $this->loadItemsForLocation();
+            $this->loadAvailableItems();
         }
     }
 
@@ -478,15 +487,7 @@ class Create extends Component
                 $this->form['warehouse_id'] = str_replace('warehouse_', '', $value);
                 $this->form['branch_id'] = '';
             }
-            $this->loadItemsForLocation();
-        }
-    }
-
-    public function updatedItemSearch()
-    {
-        // Force reload items if search is not empty and no items loaded
-        if (!empty($this->itemSearch) && empty($this->itemOptions)) {
-            $this->loadItemsForLocation();
+            $this->loadAvailableItems();
         }
     }
 
@@ -911,7 +912,8 @@ class Create extends Component
             $branchId = $this->resolveBranchId();
             $sale = new Sale();
             $sale->reference_no = $this->form['reference_no'];
-            $sale->customer_id = $this->form['customer_id'];
+            $sale->customer_id = $this->form['is_walking_customer'] ? null : $this->form['customer_id'];
+            $sale->is_walking_customer = $this->form['is_walking_customer'];
             
             // Set location: prefer warehouse_id if explicitly selected, otherwise use branch_id
             if (!empty($this->form['warehouse_id'])) {
@@ -1379,8 +1381,8 @@ class Create extends Component
             $validationErrors['items'] = 'No items found for this sale. Please add at least one item.';
         }
 
-        if (empty($this->form['customer_id'])) {
-            $validationErrors['form.customer_id'] = 'Please select a customer.';
+        if (!$this->form['is_walking_customer'] && empty($this->form['customer_id'])) {
+            $validationErrors['form.customer_id'] = 'Please select a customer or check walking customer.';
         }
 
         if (empty($this->form['warehouse_id']) && empty($this->form['branch_id'])) {
@@ -1439,8 +1441,8 @@ class Create extends Component
             $validationErrors['items'] = 'Cannot create sale: No items added';
         }
 
-        if (empty($this->form['customer_id'])) {
-            $validationErrors['form.customer_id'] = 'Cannot create sale: Please select a customer';
+        if (!$this->form['is_walking_customer'] && empty($this->form['customer_id'])) {
+            $validationErrors['form.customer_id'] = 'Cannot create sale: Please select a customer or check walking customer';
         }
 
         if (empty($this->form['warehouse_id']) && empty($this->form['branch_id'])) {
