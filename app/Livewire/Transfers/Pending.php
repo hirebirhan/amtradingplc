@@ -179,7 +179,7 @@ class Pending extends Component
     }
 
     /**
-     * Process transfer approval with stock movement and item creation
+     * Process transfer approval with proper stock movement
      */
     private function processTransferApproval($transfer, $user)
     {
@@ -231,7 +231,7 @@ class Pending extends Component
                 $item = $transferItem->item;
                 $quantity = $transferItem->quantity;
                 
-                // Deduct from source warehouses
+                // Deduct from source warehouses using proper stock methods
                 $remainingToDeduct = $quantity;
                 foreach ($sourceWarehouses as $warehouse) {
                     if ($remainingToDeduct <= 0) break;
@@ -240,9 +240,19 @@ class Pending extends Component
                         ->where('warehouse_id', $warehouse->id)
                         ->first();
                     
-                    if ($stock && $stock->quantity > 0) {
-                        $deductAmount = min($remainingToDeduct, $stock->quantity);
-                        $stock->decrement('quantity', $deductAmount);
+                    if ($stock && $stock->piece_count > 0) {
+                        $deductAmount = min($remainingToDeduct, $stock->piece_count);
+                        
+                        // Use proper stock deduction method like sales
+                        $stock->sellByPiece(
+                            $deductAmount,
+                            $item->unit_quantity,
+                            'transfer',
+                            $transfer->id,
+                            "Transfer to {$destinationBranch->name}",
+                            $user->id
+                        );
+                        
                         $remainingToDeduct -= $deductAmount;
                     }
                 }
@@ -272,25 +282,39 @@ class Pending extends Component
                     ]);
                 }
                 
-                // Create purchase item record
+                // Create purchase item record - quantity represents pieces
                 PurchaseItem::create([
                     'purchase_id' => $purchase->id,
                     'item_id' => $destinationItem->id,
-                    'quantity' => $quantity,
+                    'quantity' => $quantity, // Pieces transferred
                     'unit_cost' => $item->cost_price,
                     'subtotal' => $quantity * $item->cost_price,
                 ]);
                 
-                // Add to destination warehouse stock
+                // Add to destination warehouse stock using proper stock methods
                 $destinationStock = Stock::firstOrCreate(
                     [
                         'item_id' => $destinationItem->id,
                         'warehouse_id' => $destinationWarehouse->id,
                     ],
-                    ['quantity' => 0, 'branch_id' => $destinationBranch->id]
+                    [
+                        'quantity' => 0,
+                        'piece_count' => 0,
+                        'total_units' => 0,
+                        'current_piece_units' => $destinationItem->unit_quantity,
+                        'branch_id' => $destinationBranch->id
+                    ]
                 );
                 
-                $destinationStock->increment('quantity', $quantity);
+                // Use proper stock addition method like purchases
+                $destinationStock->addPieces(
+                    $quantity,
+                    $destinationItem->unit_quantity,
+                    'transfer',
+                    $transfer->id,
+                    "Transfer from {$sourceBranch->name}",
+                    $user->id
+                );
             }
             
             // Update purchase total amount

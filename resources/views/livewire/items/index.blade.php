@@ -192,7 +192,7 @@
                                         </div>
                                         @if($item->unit_quantity > 1)
                                         <div class="d-flex align-items-center gap-1 mt-1">
-                                            <small class="text-muted">{{ number_format($this->getItemUnitsAvailable($item), 2) }} {{ $item->unit ?? 'units' }}</small>
+                                            <small class="text-muted">{{ number_format($this->getItemUnitsAvailable($item), 2) }} units</small>
                                         </div>
                                         @endif
                                     </div>

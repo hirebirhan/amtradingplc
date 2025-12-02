@@ -9,6 +9,14 @@
             <a href="{{ route('admin.transfers.index') }}" class="btn btn-outline-secondary btn-sm">
                 <i class="bi bi-arrow-left me-1"></i>Back
             </a>
+            @if($transfer->status === 'pending' && $this->canApproveTransfer())
+                <button wire:click="showConfirmModal('approve')" class="btn btn-success btn-sm">
+                    <i class="bi bi-check me-1"></i>Approve
+                </button>
+                <button wire:click="showConfirmModal('reject')" class="btn btn-danger btn-sm">
+                    <i class="bi bi-x me-1"></i>Reject
+                </button>
+            @endif
             <button wire:click="printTransfer" class="btn btn-primary btn-sm">
                 <i class="bi bi-printer me-1"></i>Print
             </button>
@@ -45,7 +53,9 @@
                     <div class="col-md-6">
                         <div class="d-flex justify-content-between align-items-center">
                             <span class="text-muted">Status</span>
-                            <span class="badge bg-success">Completed</span>
+                            <span class="badge {{ $this->statusBadgeClass }}" @if($this->statusBadgeStyle) style="{{ $this->statusBadgeStyle }}" @endif>
+                                {{ ucfirst($transfer->status) }}
+                            </span>
                         </div>
                     </div>
                     <div class="col-md-6">
@@ -92,7 +102,9 @@
                     </div>
                     <div class="d-flex justify-content-between align-items-center p-2 rounded">
                         <span class="text-muted">Status</span>
-                        <span class="badge bg-success">Completed</span>
+                        <span class="badge {{ $this->statusBadgeClass }}" @if($this->statusBadgeStyle) style="{{ $this->statusBadgeStyle }}" @endif>
+                            {{ ucfirst($transfer->status) }}
+                        </span>
                     </div>
                     <div class="d-flex justify-content-between align-items-center p-2 rounded">
                         <span class="text-muted">Total Items</span>
@@ -216,6 +228,42 @@
             </div>
         </div>
     </div>
+    @endif
+
+    <!-- Confirmation Modal -->
+    @if($showModal)
+        <div class="modal fade show" style="display: block;" tabindex="-1">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">
+                            {{ $modalAction === 'approve' ? 'Approve Transfer' : 'Reject Transfer' }}
+                        </h5>
+                        <button type="button" class="btn-close" wire:click="closeModal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p>Are you sure you want to {{ $modalAction }} transfer <strong>{{ $transfer->reference_code }}</strong>?</p>
+                        <div class="alert alert-info">
+                            <strong>From:</strong> {{ $transfer->source_location_name }}<br>
+                            <strong>To:</strong> {{ $transfer->destination_location_name }}<br>
+                            <strong>Items:</strong> {{ $transferItems->count() }} items
+                        </div>
+                        @if($modalAction === 'approve')
+                            <div class="alert alert-warning">
+                                <strong>Note:</strong> Approving this transfer will immediately move the stock from source to destination and cannot be undone.
+                            </div>
+                        @endif
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" wire:click="closeModal">Cancel</button>
+                        <button type="button" class="btn btn-{{ $modalAction === 'approve' ? 'success' : 'danger' }}" wire:click="confirmAction">
+                            {{ $modalAction === 'approve' ? 'Approve' : 'Reject' }} Transfer
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-backdrop fade show"></div>
     @endif
 
     <script>
