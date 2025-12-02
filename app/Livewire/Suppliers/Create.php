@@ -3,6 +3,7 @@
 namespace App\Livewire\Suppliers;
 
 use App\Models\Supplier;
+use App\Models\Branch;
 use App\Traits\HasFlashMessages;
 use Livewire\Component;
 use Livewire\Attributes\Layout;
@@ -13,79 +14,142 @@ use Illuminate\Database\QueryException;
 class Create extends Component
 {
     use HasFlashMessages;
-    // Only keep the required field to simplify supplier creation
     public $form = [
         'name' => '',
-        'phone' => '',
-        'address' => '',
-        'reference_no' => '',
+        'company' => '',
         'email' => '',
+        'phone' => '',
+        'branch_id' => '',
+        'address' => '',
         'notes' => '',
+    ];
+
+    public $isSubmitting = false;
+    public $branches = [];
+
+    protected function rules()
+    {
+        return [
+            'form.name' => [
+                'required',
+                'string',
+                'max:255',
+                'min:2',
+                'regex:/^[a-zA-Z\s\-\'\.\.]+$/',
+            ],
+            'form.company' => 'nullable|string|max:255',
+            'form.email' => [
+                'nullable',
+                'email',
+                'max:255',
+                'unique:suppliers,email,NULL,id,deleted_at,NULL'
+            ],
+            'form.phone' => 'nullable|string|max:20|regex:/^\+?[0-9]+$/',
+            'form.branch_id' => 'nullable|exists:branches,id',
+            'form.address' => 'nullable|string|max:500',
+            'form.notes' => 'nullable|string|max:1000',
+        ];
+    }
+
+    protected $messages = [
+        'form.name.required' => 'Supplier name is required.',
+        'form.name.regex' => 'Supplier name cannot include numbers or special characters.',
+        'form.phone.regex' => 'Phone number can only contain digits and + symbol.',
+        'form.email.email' => 'Please enter a valid email address.',
+        'form.email.unique' => 'This email is already registered.',
+        'form.branch_id.exists' => 'Please select a valid branch.',
+        'form.notes.max' => 'Notes cannot exceed 1000 characters.',
     ];
 
     public function mount()
     {
-        $this->form['reference_no'] = $this->generateUniqueReferenceNumber();
+        $this->branches = Branch::where('is_active', true)->orderBy('name')->get();
     }
 
-    private function generateUniqueReferenceNumber()
+    public function updated($propertyName)
     {
-        return 'SUP-' . date('Ymd') . '-' . str_pad(rand(1, 99999), 5, '0', STR_PAD_LEFT);
+        if (in_array($propertyName, ['form.name', 'form.company', 'form.email', 'form.phone', 'form.branch_id', 'form.address', 'form.notes'])) {
+            $this->validateOnly($propertyName);
+        }
+
+        if ($propertyName === 'form.phone') {
+            $this->form['phone'] = $this->formatPhoneNumber($this->form['phone']);
+        }
     }
 
-    protected $rules = [
-        'form.name' => 'required|string|max:255|regex:/^[^0-9]+$/',
-        'form.phone' => 'required|string|max:20',
-        'form.address' => 'required|string|max:255',
-        'form.email' => 'nullable|email|max:255|unique:suppliers,email',
-    ];
-
-    protected $messages = [
-        'form.name.required' => 'The supplier name is required.',
-        'form.phone.required' => 'The phone number is required.',
-        'form.address.required' => 'The address is required.',
-        'form.name.regex' => 'The name may not contain numbers.',
-        'form.email.email' => 'Please enter a valid email address.',
-        'form.email.unique' => 'This email address is already registered.',
-    ];
+    private function formatPhoneNumber($phone)
+    {
+        $phone = preg_replace('/[^0-9+]/', '', $phone);
+        
+        if (str_contains($phone, '+')) {
+            $phone = '+' . str_replace('+', '', $phone);
+        }
+        
+        if (strlen($phone) === 10 && !str_starts_with($phone, '+')) {
+            $phone = '+251' . substr($phone, 1);
+        }
+        
+        return $phone;
+    }
 
     public function create()
     {
-        // Check permissions
+        if ($this->isSubmitting) {
+            return;
+        }
+
         if (!Auth::user()->can('create', Supplier::class)) {
             $this->dispatch('notify', type: 'error', message: 'You are not authorized to create suppliers.');
             return;
         }
 
+        $this->isSubmitting = true;
+
         try {
             $this->validate();
 
             $supplier = Supplier::create([
-                'name' => $this->form['name'],
-                'phone' => $this->form['phone'],
-                'address' => $this->form['address'],
-                'reference_no' => $this->form['reference_no'],
-                'email' => $this->form['email'] ?: null,
-                'notes' => $this->form['notes'],
+                'name' => trim($this->form['name']),
+                'company' => empty($this->form['company']) ? null : trim($this->form['company']),
+                'email' => empty($this->form['email']) ? null : strtolower(trim($this->form['email'])),
+                'phone' => empty($this->form['phone']) ? null : $this->formatPhoneNumber($this->form['phone']),
+                'branch_id' => empty($this->form['branch_id']) ? null : $this->form['branch_id'],
+                'address' => empty($this->form['address']) ? null : trim($this->form['address']),
+                'notes' => empty($this->form['notes']) ? null : trim($this->form['notes']),
                 'is_active' => true,
                 'created_by' => Auth::id(),
             ]);
 
+            $this->reset('form');
             session()->flash('success', 'Supplier created successfully.');
             return redirect()->route('admin.suppliers.show', $supplier->id);
 
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            $this->isSubmitting = false;
+            throw $e;
         } catch (QueryException $e) {
+            $this->isSubmitting = false;
             if ($e->errorInfo[1] === 1062 && str_contains($e->getMessage(), 'email')) {
                 $this->addError('form.email', 'This email address is already registered.');
                 return;
             }
             $this->dispatch('notify', type: 'error', message: 'Database error occurred. Please try again.');
+        } catch (\Exception $e) {
+            $this->isSubmitting = false;
+            $this->dispatch('notify', type: 'error', message: 'An error occurred while creating the supplier.');
         }
+    }
+
+    public function resetForm()
+    {
+        $this->reset('form');
+        $this->isSubmitting = false;
     }
 
     public function render()
     {
-        // Render the simplified view (no need to pass branches since the dropdown was removed)
-        return view('livewire.suppliers.create')->title('Create Supplier');
+        return view('livewire.suppliers.create', [
+            'branches' => $this->branches
+        ])->title('Create Supplier');
     }
 }
