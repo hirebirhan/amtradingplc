@@ -12,6 +12,7 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 #[Layout('components.layouts.app')]
 class Create extends Component
@@ -225,12 +226,22 @@ class Create extends Component
         return date('Ymd') . strtoupper(Str::random(2)) . $timestamp;
     }
 
-    // Real-time validation for cost and selling price
+    // Real-time validation
     public function updated($propertyName)
     {
-        // Format item name on change
+        // Format item name on change and validate uniqueness
         if ($propertyName === 'form.name' && !empty($this->form['name'])) {
             $this->form['name'] = ucwords(strtolower($this->form['name']));
+            
+            // Real-time duplicate check
+            if (strlen($this->form['name']) >= 2) {
+                $exists = Item::where('name', $this->form['name'])->exists();
+                if ($exists) {
+                    $this->addError('form.name', 'This item name already exists. Please choose a different name.');
+                } else {
+                    $this->resetErrorBag('form.name');
+                }
+            }
         }
         
         // Ensure unit quantity is at least 1
@@ -239,8 +250,6 @@ class Create extends Component
                 $this->form['unit_quantity'] = 1;
             }
         }
-
-
     }
 
 
@@ -256,24 +265,35 @@ class Create extends Component
         $this->isSubmitting = true;
         
         // Debug: Log the form data
-        \Log::info('Item creation attempt', [
+        Log::info('Item creation attempt', [
             'form_data' => $this->form,
             'user_id' => Auth::id(),
         ]);
 
         try {
             $validated = $this->validate([
-                'form.name' => 'required|string|max:255|min:2',
+                'form.name' => 'required|string|max:255|min:2|unique:items,name',
                 'form.category_id' => 'required|exists:categories,id',
                 'form.description' => 'nullable|string|max:1000',
                 'form.unit' => 'required|string|in:piece',
                 'form.unit_quantity' => 'required|integer|min:1|max:99999',
                 'form.item_unit' => 'required|string|in:' . implode(',', ItemUnit::values()),
+            ], [
+                'form.name.required' => 'Item name is required.',
+                'form.name.min' => 'Item name must be at least 2 characters.',
+                'form.name.max' => 'Item name cannot exceed 255 characters.',
+                'form.name.unique' => 'This item name already exists. Please choose a different name.',
+                'form.category_id.required' => 'Please select a category.',
+                'form.category_id.exists' => 'Selected category is invalid.',
+                'form.unit_quantity.required' => 'Items per piece is required.',
+                'form.unit_quantity.min' => 'Items per piece must be at least 1.',
+                'form.unit_quantity.max' => 'Items per piece cannot exceed 99,999.',
+                'form.item_unit.required' => 'Please select an item unit.',
+                'form.item_unit.in' => 'Selected item unit is invalid.',
+                'form.description.max' => 'Description cannot exceed 1000 characters.',
             ]);
 
-            \Log::info('Validation passed', ['validated' => $validated]);
-
-
+            Log::info('Validation passed', ['validated' => $validated]);
 
             DB::beginTransaction();
 
@@ -281,7 +301,7 @@ class Create extends Component
             $sku = $this->generateUniqueSku();
             $barcode = $this->generateUniqueBarcode();
 
-            \Log::info('Generated identifiers', ['sku' => $sku, 'barcode' => $barcode]);
+            Log::info('Generated identifiers', ['sku' => $sku, 'barcode' => $barcode]);
 
             // Set default pricing values
             $costPrice = 0;
@@ -299,12 +319,12 @@ class Create extends Component
                 'branch_id' => Auth::user()->isSuperAdmin() ? null : Auth::user()->branch_id,
             ]);
 
-            \Log::info('Item data prepared', ['itemData' => $itemData]);
+            Log::info('Item data prepared', ['itemData' => $itemData]);
 
             // Create the item
             $item = Item::create($itemData);
 
-            \Log::info('Item created successfully', ['item_id' => $item->id]);
+            Log::info('Item created successfully', ['item_id' => $item->id]);
 
             DB::commit();
 
@@ -319,7 +339,13 @@ class Create extends Component
 
         } catch (\Illuminate\Validation\ValidationException $e) {
             $this->isSubmitting = false;
-            \Log::error('Validation failed', ['errors' => $e->errors()]);
+            Log::error('Validation failed', ['errors' => $e->errors()]);
+            
+            // Check for duplicate name error and provide helpful message
+            if (isset($e->errors()['form.name']) && str_contains($e->errors()['form.name'][0], 'already been taken')) {
+                session()->flash('error', 'An item with this name already exists. Please choose a different name.');
+            }
+            
             throw $e;
         } catch (\Exception $e) {
             DB::rollBack();
@@ -328,7 +354,7 @@ class Create extends Component
             session()->flash('message', 'An error occurred while creating the item. Please try again.');
 
             // Log the error for troubleshooting
-            \Log::error('Item creation failed: ' . $e->getMessage(), [
+            Log::error('Item creation failed: ' . $e->getMessage(), [
                 'user_id' => Auth::id(),
                 'form_data' => $this->form,
                 'trace' => $e->getTraceAsString(),

@@ -227,7 +227,7 @@ class ItemsImport implements ToCollection, WithHeadingRow, WithValidation, WithB
     public function rules(): array
     {
         return [
-            'name' => 'required|string|max:255',
+            'name' => 'required|string|max:255|unique:items,name',
             'sku' => 'nullable|string|max:100|unique:items,sku',
             'barcode' => 'nullable|string|max:100|unique:items,barcode',
             'category' => 'nullable|string|max:255',
@@ -246,6 +246,7 @@ class ItemsImport implements ToCollection, WithHeadingRow, WithValidation, WithB
         return [
             'name.required' => 'Item name is required.',
             'name.max' => 'Item name cannot exceed 255 characters.',
+            'name.unique' => 'Item name already exists.',
             'sku.max' => 'SKU cannot exceed 100 characters.',
             'sku.unique' => 'SKU already exists.',
             'barcode.max' => 'Barcode cannot exceed 100 characters.',
