@@ -62,7 +62,12 @@ class CustomerPolicy
      */
     public function delete(User $user, Customer $customer): bool
     {
-        // Only SuperAdmin can delete customers
+        // All managers can delete customers
+        if ($user->isManager()) {
+            return true;
+        }
+        
+        // Or users with explicit delete permission
         return $user->hasPermissionTo('customers.delete');
     }
 
