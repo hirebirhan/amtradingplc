@@ -64,7 +64,7 @@ class Edit extends Component
     public function save()
     {
         $validated = $this->validate([
-            'form.name' => 'required|string|max:255',
+            'form.name' => 'required|string|max:255|unique:items,name,' . $this->item->id,
             'form.category_id' => 'required|exists:categories,id',
             'form.description' => 'nullable|string',
             'form.cost_price_per_unit' => 'required|numeric|min:0|max:999999.99',
@@ -73,11 +73,30 @@ class Edit extends Component
             'form.unit_quantity' => 'required|integer|min:1|max:99999',
             'form.item_unit' => 'required|string|in:' . implode(',', ItemUnit::values()),
             'form.reorder_level' => 'nullable|integer|min:0|max:99999',
+        ], [
+            'form.name.required' => 'Item name is required.',
+            'form.name.max' => 'Item name cannot exceed 255 characters.',
+            'form.name.unique' => 'This item name already exists. Please choose a different name.',
+            'form.category_id.required' => 'Please select a category.',
+            'form.category_id.exists' => 'Selected category is invalid.',
+            'form.cost_price_per_unit.required' => 'Cost price per unit is required.',
+            'form.cost_price_per_unit.min' => 'Cost price per unit cannot be negative.',
+            'form.cost_price_per_unit.max' => 'Cost price per unit is too high.',
+            'form.selling_price_per_unit.required' => 'Selling price per unit is required.',
+            'form.selling_price_per_unit.min' => 'Selling price per unit cannot be negative.',
+            'form.selling_price_per_unit.max' => 'Selling price per unit is too high.',
+            'form.unit_quantity.required' => 'Items per piece is required.',
+            'form.unit_quantity.min' => 'Items per piece must be at least 1.',
+            'form.unit_quantity.max' => 'Items per piece cannot exceed 99,999.',
+            'form.item_unit.required' => 'Please select an item unit.',
+            'form.item_unit.in' => 'Selected item unit is invalid.',
+            'form.reorder_level.min' => 'Reorder level cannot be negative.',
+            'form.reorder_level.max' => 'Reorder level cannot exceed 99,999.',
         ]);
 
         // Additional validation to ensure selling price is higher than cost price
         if ((float)$validated['form']['selling_price_per_unit'] <= (float)$validated['form']['cost_price_per_unit']) {
-            $this->addError('form.selling_price_per_unit', 'Selling price per unit must be higher than cost price per unit');
+            $this->addError('form.selling_price_per_unit', 'Selling price must be higher than cost price.');
             return;
         }
 
