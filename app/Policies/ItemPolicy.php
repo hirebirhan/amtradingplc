@@ -67,7 +67,12 @@ class ItemPolicy
      */
     public function delete(User $user, Item $item): bool
     {
-        // Only SuperAdmin can delete items
+        // All managers can delete items
+        if ($user->isManager()) {
+            return true;
+        }
+        
+        // Or users with explicit delete permission
         return $user->hasPermissionTo('items.delete');
     }
 
