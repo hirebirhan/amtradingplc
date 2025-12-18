@@ -272,156 +272,19 @@ class Create extends Component
         }
     }
 
-    private function loadItemsForLocation()
+    private function loadAvailableItems()
     {
-        // Clear existing items
-        $this->itemOptions = [];
-        
-        // Get items already in cart
-        $addedItemIds = [];
-        if (is_array($this->items)) {
-            $collection = collect($this->items);
-            if (method_exists($collection, 'pluck')) {
-                $addedItemIds = $collection->pluck('item_id')->toArray();
-            }
-        }
-        
-        if ($this->form['warehouse_id']) {
-            // Load only items that have stock in this warehouse
-            $items = Item::forUser(auth()->user())
-                ->where('is_active', true)
-                ->whereNotIn('id', $addedItemIds)
-                ->whereHas('stocks', function($q) {
-                    $q->where('warehouse_id', $this->form['warehouse_id']);
-                })
-                ->orderBy('name')
-                ->get();
+        // This method is called when warehouse/branch selection changes
+        // Items are loaded dynamically via getFilteredItemOptionsProperty
+    }
 
-            
-            $this->itemOptions = $items->map(function ($item) {
-                // Get or create stock record
-                $stock = Stock::firstOrCreate(
-                    [
-                        'warehouse_id' => $this->form['warehouse_id'],
-                        'item_id' => $item->id
-                    ],
-                    [
-                        'quantity' => 0,
-                        'piece_count' => 0,
-                        'total_units' => 0,
-                        'current_piece_units' => $item->unit_quantity ?? 1
-                    ]
-                );
-                
-                // Calculate actual stock value
-                $stockValue = max(
-                    $stock->piece_count ?? 0,
-                    $stock->quantity ?? 0
-                );
-                
-                // If stock is 0, check purchase history and sync
-                if ($stockValue <= 0) {
-                    $totalPurchased = \DB::table('purchase_items')
-                        ->join('purchases', 'purchase_items.purchase_id', '=', 'purchases.id')
-                        ->where('purchase_items.item_id', $item->id)
-                        ->where('purchases.warehouse_id', $this->form['warehouse_id'])
-                        ->sum('purchase_items.quantity');
-                    
-                    if ($totalPurchased > 0) {
-                        $stock->update([
-                            'quantity' => $totalPurchased,
-                            'piece_count' => $totalPurchased
-                        ]);
-                        $stockValue = $totalPurchased;
-                    }
-                }
-                
-                return [
-                    'id' => $item->id,
-                    'name' => $item->name,
-                    'sku' => $item->sku,
-                    'selling_price' => $item->selling_price ?? 0,
-                    'selling_price_per_unit' => $item->selling_price_per_unit ?? 0,
-                    'unit_quantity' => $item->unit_quantity ?? 1,
-                    'item_unit' => $item->item_unit ?? 'piece',
-                    'quantity' => $stock->piece_count ?? 0, // Show pieces available
-                    'total_units' => $stock->total_units ?? 0, // Show total units available
-                    'unit' => $item->unit ?? '',
-                ];
-            })
-            ->values()
-            ->toArray();
-                
-        } elseif ($this->form['branch_id']) {
-            // Load items available in warehouses serving this branch
-            $warehouseIds = [];
-            try {
-                $branch = Branch::with('warehouses:id')->find($this->form['branch_id']);
-                if ($branch && method_exists($branch, 'warehouses')) {
-                    $warehouseIds = $branch->warehouses()->pluck('warehouses.id')->toArray();
-                } else {
-                    $warehouseIds = DB::table('branch_warehouse')
-                        ->where('branch_id', $this->form['branch_id'])
-                        ->pluck('warehouse_id')
-                        ->toArray();
-                }
-            } catch (\Exception $e) {
-                $warehouseIds = [];
-            }
-                
-            if (!empty($warehouseIds)) {
-                // Load only items that have stock in branch warehouses
-                $items = Item::forUser(auth()->user())
-                    ->where('is_active', true)
-                    ->whereNotIn('id', $addedItemIds)
-                    ->whereHas('stocks', function($q) use ($warehouseIds) {
-                        $q->whereIn('warehouse_id', $warehouseIds);
-                    })
-                    ->orderBy('name')
-                    ->get();
-                    
-                $this->itemOptions = $items->map(function ($item) use ($warehouseIds) {
-                    // Calculate total stock across all branch warehouses
-                    $totalStock = 0;
-                    foreach ($warehouseIds as $warehouseId) {
-                        $stock = Stock::firstOrCreate(
-                            [
-                                'warehouse_id' => $warehouseId,
-                                'item_id' => $item->id
-                            ],
-                            [
-                                'quantity' => 0,
-                                'piece_count' => 0,
-                                'total_units' => 0,
-                                'current_piece_units' => $item->unit_quantity ?? 1
-                            ]
-                        );
-                        
-                        $stockValue = max(
-                            $stock->piece_count ?? 0,
-                            $stock->quantity ?? 0
-                        );
-                        
-                        $totalStock += $stockValue;
-                    }
-                    
-                    return [
-                        'id' => $item->id,
-                        'name' => $item->name,
-                        'sku' => $item->sku,
-                        'selling_price' => $item->selling_price ?? 0,
-                        'selling_price_per_unit' => $item->selling_price_per_unit ?? 0,
-                        'unit_quantity' => $item->unit_quantity ?? 1,
-                        'item_unit' => $item->item_unit ?? 'piece',
-                        'quantity' => $totalStock, // Total pieces across warehouses
-                        'total_units' => $totalStock * ($item->unit_quantity ?? 1), // Calculate total units
-                        'unit' => $item->unit ?? '',
-                    ];
-                })
-                ->values()
-                ->toArray();
-            }
-        }
+    /**
+     * Implementation of abstract method from HasItemSelection trait
+     */
+    protected function loadItemsForLocation()
+    {
+        // Items are loaded dynamically via computed property getFilteredItemOptionsProperty
+        // This method satisfies the trait requirement but actual loading is handled elsewhere
     }
 
     public function updatedCustomerSearch()
@@ -704,7 +567,6 @@ class Create extends Component
 
         $this->updateTotals();
         $this->clearSelectedItem();
-        $this->loadItemsForLocation();
     }
     
     public function editItem($index)
@@ -790,7 +652,6 @@ class Create extends Component
         $this->items = array_values($this->items);
         
         $this->updateTotals();
-        $this->loadItemsForLocation();
         
         $this->notify($removedItem['name'] . ' removed from cart', 'success');
     }
@@ -799,13 +660,12 @@ class Create extends Component
     {
         $this->items = [];
         $this->updateTotals();
-        $this->loadItemsForLocation();
         $this->notify('Cart cleared', 'success');
     }
 
     public function loadItemOptions()
     {
-        $this->loadItemsForLocation();
+        // Items are loaded dynamically via computed property
         $this->notify('Items refreshed successfully', 'success');
     }
 
@@ -1043,94 +903,7 @@ class Create extends Component
         };
     }
 
-    /**
-     * Create credit record and advance payment for credit_advance sales
-     */
-    private function createCreditAndAdvancePayment(Sale $sale, ?int $branchId = null)
-    {
-        try {
-            // Calculate remaining amount
-            $remainingAmount = $this->totalAmount - $this->form['advance_amount'];
-            
-            // Resolve branch_id for credit (required for credits)
-            $creditBranchId = $sale->branch_id ?: $branchId ?: $this->resolveBranchId();
-            
-            // Create credit record for the remaining amount
-            $credit = new Credit();
-            $credit->customer_id = $sale->customer_id;
-            $credit->amount = $remainingAmount;
-            $credit->paid_amount = 0; // No payments yet on the credit
-            $credit->balance = $remainingAmount;
-            $credit->reference_no = $sale->reference_no;
-            $credit->reference_type = 'sale';
-            $credit->reference_id = $sale->id;
-            $credit->credit_type = 'receivable';
-            $credit->description = "Credit for sale #{$sale->reference_no}";
-            $credit->credit_date = $sale->sale_date;
-            $credit->due_date = now()->addDays(30);
-            $credit->status = 'active';
-            $credit->user_id = auth()->id();
-            $credit->branch_id = $creditBranchId;
-            $credit->warehouse_id = $sale->warehouse_id;
-            $credit->created_by = auth()->id();
-            $credit->save();
 
-            // Create advance payment record
-            $advancePayment = new CreditPayment();
-            $advancePayment->credit_id = $credit->id;
-            $advancePayment->amount = $this->form['advance_amount'];
-            $advancePayment->payment_method = $this->form['payment_method'];
-            $advancePayment->reference_no = $sale->reference_no . '-ADVANCE';
-            $advancePayment->payment_date = $sale->sale_date;
-            $advancePayment->notes = "Advance payment for sale {$sale->reference_no}";
-            $advancePayment->user_id = auth()->id();
-            $advancePayment->save();
-
-            // Update credit with the advance payment
-            $credit->addPayment($this->form['advance_amount'], $this->form['payment_method'], $sale->reference_no . '-ADVANCE', "Advance payment for sale {$sale->reference_no}");
-
-
-
-        } catch (\Exception $e) {
-            throw new \Exception('Failed to create credit record and advance payment: ' . $e->getMessage());
-        }
-    }
-
-    /**
-     * Create full credit record for full_credit sales
-     */
-    private function createFullCredit(Sale $sale, ?int $branchId = null)
-    {
-        try {
-            // Resolve branch_id for credit (required for credits)
-            $creditBranchId = $sale->branch_id ?: $branchId ?: $this->resolveBranchId();
-            
-            // Create credit record for the full amount
-            $credit = new Credit();
-            $credit->customer_id = $sale->customer_id;
-            $credit->amount = $this->totalAmount;
-            $credit->paid_amount = 0;
-            $credit->balance = $this->totalAmount;
-            $credit->reference_no = $sale->reference_no;
-            $credit->reference_type = 'sale';
-            $credit->reference_id = $sale->id;
-            $credit->credit_type = 'receivable';
-            $credit->description = "Credit for sale #{$sale->reference_no}";
-            $credit->credit_date = $sale->sale_date;
-            $credit->due_date = now()->addDays(30);
-            $credit->status = 'active';
-            $credit->user_id = auth()->id();
-            $credit->branch_id = $creditBranchId;
-            $credit->warehouse_id = $sale->warehouse_id;
-            $credit->created_by = auth()->id();
-            $credit->save();
-
-
-
-        } catch (\Exception $e) {
-            throw new \Exception('Failed to create credit record: ' . $e->getMessage());
-        }
-    }
 
     /**
      * Get descriptive error message based on exception type
