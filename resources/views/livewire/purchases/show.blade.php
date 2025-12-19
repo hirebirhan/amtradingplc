@@ -129,10 +129,46 @@
                         <span class="text-muted">Order Status:</span>
                         <span class="badge bg-secondary-subtle text-secondary-emphasis border rounded-1">{{ ucfirst($purchase->status) }}</span>
                     </div>
-                    <div class="d-flex justify-content-between align-items-center">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
                         <span class="text-muted">Payment Method:</span>
                         <span class="fw-medium">{{ ucfirst(str_replace('_', ' ', $purchase->payment_method)) }}</span>
                     </div>
+                    
+                    @if(in_array($purchase->payment_method, ['telebirr', 'bank_transfer']) && $purchase->transaction_number)
+                    <div class="border-top pt-3 mt-3">
+                        <h6 class="fw-semibold mb-2">Payment Details</h6>
+                        <div class="mb-2">
+                            <div class="text-muted small mb-1">Transaction Number:</div>
+                            <div class="fw-medium">{{ $purchase->transaction_number }}</div>
+                        </div>
+                        @if($purchase->payment_method === 'telebirr' && $purchase->receiver_account_holder)
+                        <div class="mb-2">
+                            <div class="text-muted small mb-1">Account Holder Name:</div>
+                            <div class="fw-medium">{{ $purchase->receiver_account_holder }}</div>
+                        </div>
+                        @endif
+                        @if($purchase->payment_method === 'bank_transfer')
+                            @if($purchase->receiver_bank_name)
+                            <div class="mb-2">
+                                <div class="text-muted small mb-1">Bank Name:</div>
+                                <div class="fw-medium">{{ $purchase->receiver_bank_name }}</div>
+                            </div>
+                            @endif
+                            @if($purchase->receiver_account_holder)
+                            <div class="mb-2">
+                                <div class="text-muted small mb-1">Account Holder Name:</div>
+                                <div class="fw-medium">{{ $purchase->receiver_account_holder }}</div>
+                            </div>
+                            @endif
+                            @if($purchase->receiver_account_number)
+                            <div class="mb-2">
+                                <div class="text-muted small mb-1">Account Number:</div>
+                                <div class="fw-medium">{{ $purchase->receiver_account_number }}</div>
+                            </div>
+                            @endif
+                        @endif
+                    </div>
+                    @endif
                 </div>
             </div>
 

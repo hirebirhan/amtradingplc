@@ -121,6 +121,42 @@
                         <span class="text-muted">Payment Method:</span>
                         <span class="fw-medium">{{ ucfirst(str_replace('_', ' ', $sale->payment_method)) }}</span>
                     </div>
+                    
+                    @if(in_array($sale->payment_method, ['telebirr', 'bank_transfer']) && $sale->transaction_number)
+                    <div class="border-top pt-3 mt-3">
+                        <h6 class="fw-semibold mb-2">Payment Details</h6>
+                        <div class="mb-2">
+                            <div class="text-muted small mb-1">Transaction Number:</div>
+                            <div class="fw-medium">{{ $sale->transaction_number }}</div>
+                        </div>
+                        @if($sale->payment_method === 'telebirr' && $sale->receiver_account_holder)
+                        <div class="mb-2">
+                            <div class="text-muted small mb-1">Account Holder Name:</div>
+                            <div class="fw-medium">{{ $sale->receiver_account_holder }}</div>
+                        </div>
+                        @endif
+                        @if($sale->payment_method === 'bank_transfer')
+                            @if($sale->receiver_bank_name)
+                            <div class="mb-2">
+                                <div class="text-muted small mb-1">Bank Name:</div>
+                                <div class="fw-medium">{{ $sale->receiver_bank_name }}</div>
+                            </div>
+                            @endif
+                            @if($sale->receiver_account_holder)
+                            <div class="mb-2">
+                                <div class="text-muted small mb-1">Account Holder Name:</div>
+                                <div class="fw-medium">{{ $sale->receiver_account_holder }}</div>
+                            </div>
+                            @endif
+                            @if($sale->receiver_account_number)
+                            <div class="mb-2">
+                                <div class="text-muted small mb-1">Account Number:</div>
+                                <div class="fw-medium">{{ $sale->receiver_account_number }}</div>
+                            </div>
+                            @endif
+                        @endif
+                    </div>
+                    @endif
                 </div>
             </div>
 

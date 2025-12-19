@@ -153,6 +153,36 @@
                                                         @if($payment->reference)
                                                             <span class="text-secondary small">{{ Str::limit($payment->reference, 30) }}</span>
                                                         @endif
+                                                        @if(in_array($payment->payment_method, ['telebirr', 'bank_transfer']))
+                                                            <div class="mt-2 pt-2 border-top">
+                                                                @if($payment->payment_method === 'telebirr' && $payment->receiver_account_holder)
+                                                                    <div class="small">
+                                                                        <span class="text-muted">Account Holder:</span>
+                                                                        <span class="fw-medium">{{ $payment->receiver_account_holder }}</span>
+                                                                    </div>
+                                                                @endif
+                                                                @if($payment->payment_method === 'bank_transfer')
+                                                                    @if($payment->receiver_bank_name)
+                                                                        <div class="small">
+                                                                            <span class="text-muted">Bank:</span>
+                                                                            <span class="fw-medium">{{ $payment->receiver_bank_name }}</span>
+                                                                        </div>
+                                                                    @endif
+                                                                    @if($payment->receiver_account_holder)
+                                                                        <div class="small">
+                                                                            <span class="text-muted">Account Holder:</span>
+                                                                            <span class="fw-medium">{{ $payment->receiver_account_holder }}</span>
+                                                                        </div>
+                                                                    @endif
+                                                                    @if($payment->receiver_account_number)
+                                                                        <div class="small">
+                                                                            <span class="text-muted">Account Number:</span>
+                                                                            <span class="fw-medium">{{ $payment->receiver_account_number }}</span>
+                                                                        </div>
+                                                                    @endif
+                                                                @endif
+                                                            </div>
+                                                        @endif
                                                     </div>
                                                 </td>
                                             </tr>
