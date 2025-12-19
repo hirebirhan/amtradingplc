@@ -332,7 +332,6 @@
                                             class="form-control @error('amount') is-invalid @enderror" 
                                             step="0.01" 
                                             min="0.01" 
-                                            max="{{ $credit->balance }}" 
                                             required>
                                     </div>
                                     @error('amount')
@@ -340,7 +339,7 @@
                                             <div class="invalid-feedback d-block">{{ $message }}</div>
                                         @endif
                                     @enderror
-                                    <div class="form-text">Maximum payment amount: {{ number_format($credit->balance, 2) }} ETB</div>
+                                    <div class="form-text">Current credit balance: {{ number_format($credit->balance, 2) }} ETB</div>
                                 </div>
 
                                 <div class="col-12 col-md-6">
@@ -391,19 +390,18 @@
                                             @enderror
                                         @elseif($payment_method === 'bank_transfer')
                                             <!-- For Bank Transfer -->
-                                            <label for="bank_account_id" class="form-label">Bank Account</label>
-                                            <select wire:model.defer="bank_account_id" id="bank_account_id" class="form-select @error('bank_account_id') is-invalid @enderror" required>
-                                                <option value="">Select Bank Account</option>
-                                                @foreach($bankAccounts as $account)
-                                                    <option value="{{ $account->id }}">{{ $account->account_name }} - {{ $account->bank_name }}</option>
-                                                @endforeach
-                                            </select>
-                                            @error('bank_account_id')
-                                                <div class="invalid-feedback d-block">{{ $message }}</div>
-                                            @enderror
+                                            <label for="reference_no" class="form-label">Transaction Number (Optional)</label>
+                                        <input type="text" 
+                                            wire:model.defer="reference_no" 
+                                            id="reference_no" 
+                                            class="form-control @error('reference_no') is-invalid @enderror" 
+                                            placeholder="Enter transaction number">
+                                        @error('reference_no')
+                                            <div class="invalid-feedback d-block">{{ $message }}</div>
+                                        @enderror
                                         @elseif($payment_method === 'telebirr')
                                             <!-- For Telebirr -->
-                                            <label for="transaction_number" class="form-label">Transaction Number</label>
+                                            <label for="transaction_number" class="form-label">Transaction Number <span class="text-danger">*</span></label>
                                             <input type="text" 
                                                 wire:model.defer="transaction_number" 
                                                 id="transaction_number" 
@@ -441,14 +439,15 @@
                                 </div>
                             @endif
 
-                            <!-- Bank Details Section - Only for Bank Transfer and Telebirr -->
-                            @if(in_array($payment_method, ['bank_transfer', 'telebirr']))
+                            <!-- Bank Details Section - Only for Bank Transfer -->
+                            @if($payment_method === 'bank_transfer')
                                 <div class="row g-3">
                                     <div class="col-12 col-md-4">
-                                        <label for="receiver_bank_name" class="form-label">Receiver Bank Name</label>
+                                        <label for="receiver_bank_name" class="form-label">Receiver Bank Name <span class="text-danger">*</span></label>
                                         <select wire:model.defer="receiver_bank_name" 
                                             id="receiver_bank_name" 
-                                            class="form-select @error('receiver_bank_name') is-invalid @enderror">
+                                            class="form-select @error('receiver_bank_name') is-invalid @enderror"
+                                            required>
                                             <option value="">Select Bank</option>
                                             @foreach($this->banks as $bank)
                                                 <option value="{{ $bank }}">{{ $bank }}</option>
@@ -460,25 +459,45 @@
                                     </div>
 
                                     <div class="col-12 col-md-4">
-                                        <label for="receiver_account_holder" class="form-label">Account Holder Name</label>
+                                        <label for="receiver_account_holder" class="form-label">Account Holder Name <span class="text-danger">*</span></label>
                                         <input type="text" 
                                             wire:model.defer="receiver_account_holder" 
                                             id="receiver_account_holder" 
                                             class="form-control @error('receiver_account_holder') is-invalid @enderror" 
-                                            placeholder="Account holder name">
+                                            placeholder="Account holder name"
+                                            required>
                                         @error('receiver_account_holder')
                                             <div class="invalid-feedback d-block">{{ $message }}</div>
                                         @enderror
                                     </div>
 
                                     <div class="col-12 col-md-4">
-                                        <label for="receiver_account_number" class="form-label">Account Number</label>
+                                        <label for="receiver_account_number" class="form-label">Account Number <span class="text-danger">*</span></label>
                                         <input type="text" 
                                             wire:model.defer="receiver_account_number" 
                                             id="receiver_account_number" 
                                             class="form-control @error('receiver_account_number') is-invalid @enderror" 
-                                            placeholder="Account number">
+                                            placeholder="Account number"
+                                            required>
                                         @error('receiver_account_number')
+                                            <div class="invalid-feedback d-block">{{ $message }}</div>
+                                        @enderror
+                                    </div>
+                                </div>
+                            @endif
+
+                            <!-- Telebirr Account Holder Section -->
+                            @if($payment_method === 'telebirr')
+                                <div class="row g-3">
+                                    <div class="col-12 col-md-6">
+                                        <label for="receiver_account_holder" class="form-label">Account Holder Name <span class="text-danger">*</span></label>
+                                        <input type="text" 
+                                            wire:model.defer="receiver_account_holder" 
+                                            id="receiver_account_holder" 
+                                            class="form-control @error('receiver_account_holder') is-invalid @enderror" 
+                                            placeholder="Account holder name"
+                                            required>
+                                        @error('receiver_account_holder')
                                             <div class="invalid-feedback d-block">{{ $message }}</div>
                                         @enderror
                                     </div>
@@ -533,17 +552,17 @@
                                 <div><strong>Method:</strong> {{ ucfirst(str_replace('_', ' ', $payment_method)) }}</div>
                                 <div><strong>Date:</strong> {{ \Carbon\Carbon::parse($payment_date)->format('M d, Y') }}</div>
                                 
-                                @if($payment_method === 'bank_transfer' && $bank_account_id)
-                                    @php
-                                        $selectedAccount = $bankAccounts->firstWhere('id', $bank_account_id);
-                                    @endphp
-                                    @if($selectedAccount)
-                                        <div><strong>Bank Account:</strong> {{ $selectedAccount->account_name }} - {{ $selectedAccount->bank_name }}</div>
-                                    @endif
-                                @endif
                                 
                                 @if($payment_method === 'telebirr' && $transaction_number)
                                     <div><strong>Transaction ID:</strong> {{ $transaction_number }}</div>
+                                @endif
+                                
+                                @if($payment_method === 'telebirr' && $receiver_account_holder)
+                                    <div><strong>Account Holder:</strong> {{ $receiver_account_holder }}</div>
+                                @endif
+                                
+                                @if($payment_method === 'bank_transfer' && $reference_no)
+                                    <div><strong>Transaction Number:</strong> {{ $reference_no }}</div>
                                 @endif
                                 
                                 @if(in_array($payment_method, ['cash', 'check']) && $reference_no)
@@ -559,21 +578,21 @@
                                 <div><strong>Already Paid:</strong> {{ number_format($credit->paid_amount, 2) }} ETB</div>
                                 <div><strong>Current Balance:</strong> {{ number_format($credit->balance, 2) }} ETB</div>
                                 <div><strong>Payment Amount:</strong> 
-                                    <span class="text-primary fw-bold">{{ number_format($amount, 2) }} ETB</span>
+                                    <span class="text-primary fw-bold">{{ number_format((float)$amount, 2) }} ETB</span>
                                 </div>
                                 <div><strong>Remaining After Payment:</strong> 
-                                    <span class="{{ ($credit->balance - $amount) <= 0 ? 'text-success' : 'text-warning' }} fw-bold">
-                                        {{ number_format(max(0, $credit->balance - $amount), 2) }} ETB
+                                    <span class="{{ ($credit->balance - (float)$amount) <= 0 ? 'text-success' : 'text-warning' }} fw-bold">
+                                        {{ number_format(max(0, $credit->balance - (float)$amount), 2) }} ETB
                                     </span>
                                 </div>
-                                @if($credit->balance - $amount <= 0)
+                                @if($credit->balance - (float)$amount <= 0)
                                     <div><span class="badge bg-success">Credit will be fully paid</span></div>
                                 @endif
                             </div>
                         </div>
                     </div>
                     
-                    @if($receiver_bank_name || $receiver_account_holder || $receiver_account_number)
+                    @if($payment_method === 'bank_transfer' && ($receiver_bank_name || $receiver_account_holder || $receiver_account_number))
                         <div class="mt-3">
                             <h6 class="text-muted mb-2">Bank Details</h6>
                             @if($receiver_bank_name)
@@ -679,10 +698,8 @@
                                     }
                                 }
                             }
-                            // Business Rule: Cannot exceed current balance (what you still owe)
-                            $maxAllowedCost = $credit->balance;
-                            $isExceeding = $totalClosingCost > $maxAllowedCost;
-                            $displayClosingCost = min($totalClosingCost, $maxAllowedCost);
+                            // Allow any closing cost amount
+                            $displayClosingCost = $totalClosingCost;
                             $remainingToPay = $displayClosingCost;
                         @endphp
                         
@@ -695,15 +712,10 @@
                                 <div class="col-md-6">
                                     @if($totalClosingCost > 0)
                                         <strong>Total Closing Cost:</strong> 
-                                        <span class="{{ $isExceeding ? 'text-danger' : '' }}">
-                                            {{ number_format($displayClosingCost, 2) }} ETB
-                                        </span>
-                                        @if($isExceeding)
-                                            <br><small class="text-danger">⚠️ Exceeds credit limit ({{ number_format($totalClosingCost, 2) }} ETB)</small>
-                                        @endif
-                                        <br><strong class="text-primary">Remaining to Pay:</strong> {{ number_format($remainingToPay, 2) }} ETB
+                                        {{ number_format($displayClosingCost, 2) }} ETB
+                                        <br><strong class="text-primary">Payment Amount:</strong> {{ number_format($remainingToPay, 2) }} ETB
                                     @else
-                                        <strong class="text-muted">Enter item prices to see remaining amount</strong>
+                                        <strong class="text-muted">Enter item prices to see payment amount</strong>
                                     @endif
                                 </div>
                             </div>

@@ -35,8 +35,9 @@ return new class extends Migration
         ];
 
         foreach ($permissions as $name => $description) {
-            Permission::create([
-                'name' => $name,
+            Permission::firstOrCreate([
+                'name' => $name
+            ], [
                 'description' => $description,
             ]);
         }

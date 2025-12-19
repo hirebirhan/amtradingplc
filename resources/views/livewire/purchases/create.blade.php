@@ -179,14 +179,14 @@
                             @enderror
                         </div>
                         <!-- Payment Method Specific Fields (show only if needed) -->
-                        @if($form['payment_method'] === 'telebirr')
+                        @if(in_array($form['payment_method'], ['telebirr', 'bank_transfer']))
                             <div class="col-12 col-md-4">
                                 <label for="transaction_number" class="form-label fw-medium">
                                     Transaction Number <span class="text-primary">*</span>
                                 </label>
                                 <input 
                                     type="text" 
-                                    wire:model="form.transaction_number" 
+                                    wire:model.live="form.transaction_number" 
                                     id="transaction_number" 
                                     class="form-control @error('form.transaction_number') is-invalid @enderror" 
                                     placeholder="Enter transaction number" 
@@ -197,23 +197,20 @@
                                 @enderror
                             </div>
                         @endif
-                        @if($form['payment_method'] === 'bank_transfer')
+                        @if($form['payment_method'] === 'telebirr')
                             <div class="col-12 col-md-4">
-                                <label for="bank_account_id" class="form-label fw-medium">
-                                    Bank Account <span class="text-primary">*</span>
+                                <label for="receiver_account_holder" class="form-label fw-medium">
+                                    Account Holder Name <span class="text-primary">*</span>
                                 </label>
-                                <select 
-                                    wire:model="form.bank_account_id" 
-                                    id="bank_account_id" 
-                                    class="form-select @error('form.bank_account_id') is-invalid @enderror" 
+                                <input 
+                                    type="text" 
+                                    wire:model="form.receiver_account_holder" 
+                                    id="receiver_account_holder" 
+                                    class="form-control @error('form.receiver_account_holder') is-invalid @enderror" 
+                                    placeholder="Enter account holder name" 
                                     required
                                 >
-                                    <option value="">Select bank account...</option>
-                                    @foreach($bankAccounts as $account)
-                                        <option value="{{ $account->id }}">{{ $account->account_name }} - {{ $account->bank_name }}</option>
-                                    @endforeach
-                                </select>
-                                @error('form.bank_account_id') 
+                                @error('form.receiver_account_holder') 
                                     <div class="invalid-feedback">{{ $message }}</div> 
                                 @enderror
                             </div>
@@ -253,22 +250,62 @@
                                 <div class="invalid-feedback">{{ $message }}</div> 
                             @enderror
                         </div>
-                        <!-- Receipt URL (if bank transfer) -->
+                        <!-- Bank Transfer Details -->
                         @if($form['payment_method'] === 'bank_transfer')
-                            <div class="col-12 col-md-4">
-                                <label for="receipt_url" class="form-label fw-medium">
-                                    Receipt URL
-                                </label>
-                                <input 
-                                    type="url" 
-                                    wire:model="form.receipt_url" 
-                                    id="receipt_url" 
-                                    class="form-control @error('form.receipt_url') is-invalid @enderror" 
-                                    placeholder="Receipt URL (optional)"
-                                >
-                                @error('form.receipt_url') 
-                                    <div class="invalid-feedback">{{ $message }}</div> 
-                                @enderror
+                            <div class="col-12">
+                                <div class="row g-3">
+                                    <div class="col-12 col-md-4">
+                                        <label for="receiver_bank_name" class="form-label fw-medium">
+                                            Choose a Bank <span class="text-primary">*</span>
+                                        </label>
+                                        <select 
+                                            wire:model="form.receiver_bank_name" 
+                                            id="receiver_bank_name" 
+                                            class="form-select @error('form.receiver_bank_name') is-invalid @enderror" 
+                                            required
+                                        >
+                                            <option value="">Select Bank</option>
+                                            @foreach($this->banks as $bank)
+                                                <option value="{{ $bank }}">{{ $bank }}</option>
+                                            @endforeach
+                                        </select>
+                                        @error('form.receiver_bank_name') 
+                                            <div class="invalid-feedback">{{ $message }}</div> 
+                                        @enderror
+                                    </div>
+                                    <div class="col-12 col-md-4">
+                                        <label for="receiver_account_holder" class="form-label fw-medium">
+                                            Account Holder Name <span class="text-primary">*</span>
+                                        </label>
+                                        <input 
+                                            type="text" 
+                                            wire:model="form.receiver_account_holder" 
+                                            id="receiver_account_holder" 
+                                            class="form-control @error('form.receiver_account_holder') is-invalid @enderror" 
+                                            placeholder="Enter account holder name" 
+                                            required
+                                        >
+                                        @error('form.receiver_account_holder') 
+                                            <div class="invalid-feedback">{{ $message }}</div> 
+                                        @enderror
+                                    </div>
+                                    <div class="col-12 col-md-4">
+                                        <label for="receiver_account_number" class="form-label fw-medium">
+                                            Account Number <span class="text-primary">*</span>
+                                        </label>
+                                        <input 
+                                            type="text" 
+                                            wire:model="form.receiver_account_number" 
+                                            id="receiver_account_number" 
+                                            class="form-control @error('form.receiver_account_number') is-invalid @enderror" 
+                                            placeholder="Enter account number" 
+                                            required
+                                        >
+                                        @error('form.receiver_account_number') 
+                                            <div class="invalid-feedback">{{ $message }}</div> 
+                                        @enderror
+                                    </div>
+                                </div>
                             </div>
                         @endif
                         <!-- Advance Amount (if credit_advance) -->
@@ -591,6 +628,23 @@
                                     @endswitch
                                 </span>
                             </div>
+                            @if(in_array($form['payment_method'], ['telebirr', 'bank_transfer']) && !empty($form['transaction_number']))
+                                <div class="mb-2">
+                                    <span class="text-muted small">Transaction Number:</span>
+                                    <span class="fw-semibold ms-1">{{ $form['transaction_number'] }}</span>
+                                </div>
+                            @endif
+                            @if($form['payment_method'] === 'bank_transfer' && !empty($form['bank_account_id']))
+                                @php
+                                    $selectedBank = ($bankAccounts ?? collect())->firstWhere('id', $form['bank_account_id']);
+                                @endphp
+                                @if($selectedBank)
+                                    <div class="mb-2">
+                                        <span class="text-muted small">Bank Account:</span>
+                                        <span class="fw-semibold ms-1">{{ $selectedBank->account_name }} ({{ $selectedBank->account_number }})</span>
+                                    </div>
+                                @endif
+                            @endif
                             @if($form['payment_method'] === 'credit_advance' && $form['advance_amount'] > 0)
                                 <div class="mb-2">
                                     <span class="text-muted small">Advance:</span>
