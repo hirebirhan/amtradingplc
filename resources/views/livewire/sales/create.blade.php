@@ -424,9 +424,6 @@
                             <button type="button" class="btn btn-outline-secondary btn-sm" wire:click="loadItemOptions" title="Refresh items">
                                 <i class="bi bi-arrow-clockwise"></i>
                             </button>
-                            <button type="button" class="btn btn-outline-info btn-sm" wire:click="debugStock" title="Debug stock data">
-                                <i class="bi bi-bug"></i>
-                            </button>
                             @php
                                 $itemCount = is_countable($items) ? count($items) : 0;
                             @endphp
