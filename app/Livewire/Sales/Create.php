@@ -21,7 +21,6 @@ use Livewire\Attributes\Layout;
 use Livewire\Attributes\On;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
@@ -81,12 +80,12 @@ class Create extends Component
     // Search and selection
     public $customerSearch = '';
     public $selectedCustomer = null;
+    public $itemSearch = '';
     
     // UI state
     public $showConfirmModal = false;
     public $stockWarningType = null;
     public $stockWarningItem = null;
-
 
     // Add a property to track the user's location type
     public $userLocationType = null;
@@ -436,7 +435,7 @@ class Create extends Component
         $this->newItem = [
             'item_id' => '',
             'quantity' => 1,
-            'sale_method' => 'piece', // Default to piece method
+            'sale_method' => 'piece',
             'unit_price' => 0,
             'price' => 0,
             'notes' => '',
@@ -482,9 +481,7 @@ class Create extends Component
         
         $requestedQty = floatval($this->newItem['quantity']);
         
-        // Business Logic: Show warnings for awareness but allow negative stock
         if ($this->availableStock <= 0) {
-            // Critical: Out of Stock - Show warning modal but allow override
             $this->stockWarningType = 'out_of_stock';
             $item = Item::find($this->newItem['item_id']);
             $this->stockWarningItem = [
@@ -492,11 +489,10 @@ class Create extends Component
                 'price' => $this->newItem['price'],
                 'stock' => $this->availableStock
             ];
-            return; // Show modal for user decision
+            return;
         }
         
         if ($requestedQty > $this->availableStock) {
-            // Warning: Insufficient Stock - Show informational modal but allow override
             $this->stockWarningType = 'insufficient';
             $item = Item::find($this->newItem['item_id']);
             $this->stockWarningItem = [
@@ -506,10 +502,9 @@ class Create extends Component
                 'deficit' => $requestedQty - $this->availableStock,
                 'price' => $this->newItem['price']
             ];
-            return; // Show modal for user decision
+            return;
         }
         
-        // Normal stock level - add item without warning
         $this->processAddItem();
     }
     
@@ -526,16 +521,6 @@ class Create extends Component
         
         $item = Item::find($this->newItem['item_id']);
         if (!$item) {
-            return;
-        }
-        
-        // Check if item already exists in cart
-        $existingIndex = collect($this->items)->search(function ($cartItem) {
-            return $cartItem['item_id'] == $this->newItem['item_id'];
-        });
-
-        if ($existingIndex !== false && $this->editingItemIndex === null) {
-            $this->notify('Item already in cart. Use edit to modify.', 'warning');
             return;
         }
 
@@ -608,29 +593,28 @@ class Create extends Component
                     ->first();
                 $this->availableStock = $stock ? $stock->quantity + $item['quantity'] : $item['quantity'];
             } else {
-                // For branch sales, calculate total available
-        $warehouseIds = [];
-        try {
-            $warehouseIds = DB::table('branch_warehouse')
-                ->where('branch_id', $this->form['branch_id'])
-                ->pluck('warehouse_id')
-                ->toArray();
-        } catch (\Exception $e) {
-            // Fallback to empty array
-        }
+                $warehouseIds = [];
+                try {
+                    $warehouseIds = DB::table('branch_warehouse')
+                        ->where('branch_id', $this->form['branch_id'])
+                        ->pluck('warehouse_id')
+                        ->toArray();
+                } catch (\Exception $e) {
+                    // Fallback to empty array
+                }
         
-        $totalStock = 0;
-        if (!empty($warehouseIds)) {
-            try {
-                $totalStock = Stock::where('item_id', $item['item_id'])
-                    ->whereIn('warehouse_id', $warehouseIds)
-                    ->sum('quantity');
-            } catch (\Exception $e) {
-                // Fallback to 0 stock
-            }
-        }
+                $totalStock = 0;
+                if (!empty($warehouseIds)) {
+                    try {
+                        $totalStock = Stock::where('item_id', $item['item_id'])
+                            ->whereIn('warehouse_id', $warehouseIds)
+                            ->sum('quantity');
+                    } catch (\Exception $e) {
+                        // Fallback to 0 stock
+                    }
+                }
         
-        $this->availableStock = $totalStock + $item['quantity'];
+                $this->availableStock = $totalStock + $item['quantity'];
             }
         }
     }
@@ -671,20 +655,9 @@ class Create extends Component
 
     private function updateTotals()
     {
-        // Calculate subtotal safely
         $this->subtotal = 0;
         if (is_array($this->items)) {
-            try {
-                $collection = collect($this->items);
-                if (method_exists($collection, 'sum')) {
-                    $this->subtotal = $collection->sum('subtotal');
-                }
-            } catch (\Exception $e) {
-                \Log::error('Failed to calculate subtotal', [
-                    'error' => $e->getMessage(),
-                    'items' => is_array($this->items) ? count($this->items) : 'not_array'
-                ]);
-            }
+            $this->subtotal = collect($this->items)->sum('subtotal');
         }
         
         // Calculate tax
@@ -768,14 +741,12 @@ class Create extends Component
 
             DB::beginTransaction();
 
-            // Create sale - set either branch_id OR warehouse_id, not both
             $branchId = $this->resolveBranchId();
             $sale = new Sale();
             $sale->reference_no = $this->form['reference_no'];
             $sale->customer_id = $this->form['is_walking_customer'] ? null : $this->form['customer_id'];
             $sale->is_walking_customer = $this->form['is_walking_customer'];
             
-            // Set location: prefer warehouse_id if explicitly selected, otherwise use branch_id
             if (!empty($this->form['warehouse_id'])) {
                 $sale->warehouse_id = $this->form['warehouse_id'];
                 $sale->branch_id = null;
@@ -787,7 +758,7 @@ class Create extends Component
             $sale->sale_date = $this->form['sale_date'];
             $sale->payment_method = $this->form['payment_method'];
             $sale->payment_status = $this->form['payment_status'];
-            $sale->status = 'pending'; // Start as pending, will be completed by processSale()
+            $sale->status = 'pending';
             $sale->tax = $this->taxAmount;
             $sale->shipping = $this->shippingAmount;
             $sale->discount = 0;
@@ -824,9 +795,7 @@ class Create extends Component
 
             $sale->save();
 
-            // Add sale items and update stock
             foreach ($this->items as $item) {
-                // Validate item data before saving
                 if (empty($item['item_id'])) {
                     throw new \Exception('Invalid item data: missing item ID');
                 }
@@ -839,7 +808,6 @@ class Create extends Component
                     throw new \Exception('Invalid price for item. Price must be greater than zero.');
                 }
                 
-                // Create sale item
                 $saleItem = new SaleItem();
                 $saleItem->sale_id = $sale->id;
                 $saleItem->item_id = $item['item_id'];
@@ -851,24 +819,12 @@ class Create extends Component
                 $saleItem->save();
             }
 
-            // Process the sale (update stock)
             $sale->processSale();
-
-            // Credit creation is handled by Sale model's processSale() method
 
             DB::commit();
             
-            // Show success message with credit information if applicable
-            $successMessage = 'Sale created successfully!';
-            if ($this->form['payment_method'] === PaymentMethod::CREDIT_ADVANCE->value && $this->form['advance_amount'] > 0) {
-                $successMessage .= ' Credit record created for remaining amount of ' . number_format($this->totalAmount - $this->form['advance_amount'], 2) . ' ETB.';
-            } elseif ($this->form['payment_method'] === PaymentMethod::FULL_CREDIT->value) {
-                $successMessage .= ' Credit record created for full amount of ' . number_format($this->totalAmount, 2) . ' ETB.';
-            }
-            
             $this->flashSuccess('Sale completed successfully.');
             
-            // Redirect to sales list
             return redirect()->route('admin.sales.index');
 
         } catch (\Illuminate\Validation\ValidationException $e) {
@@ -905,125 +861,7 @@ class Create extends Component
 
 
 
-    /**
-     * Get descriptive error message based on exception type
-     */
-    private function getDescriptiveErrorMessage(\Exception $e): string
-    {
-        $errorMessage = $e->getMessage();
-        
-        // Database constraint violations
-        if (str_contains($errorMessage, 'Column') && str_contains($errorMessage, 'cannot be null')) {
-            $column = $this->extractColumnName($errorMessage);
-            return "Missing required information: {$column}. Please fill in all required fields.";
-        }
-        
-        if (str_contains($errorMessage, 'foreign key constraint fails')) {
-            return "Invalid reference data. Please check customer, warehouse, or item selections.";
-        }
-        
-        if (str_contains($errorMessage, 'Duplicate entry')) {
-            return "This sale reference number already exists. Please try again.";
-        }
-        
-        // Stock-related errors
-        if (str_contains($errorMessage, 'insufficient stock') || str_contains($errorMessage, 'stock')) {
-            return "Insufficient stock for one or more items. Please check available quantities.";
-        }
-        
-        // Validation errors
-        if (str_contains($errorMessage, 'validation') || str_contains($errorMessage, 'required')) {
-            return "Please check all required fields and ensure data is valid.";
-        }
-        
-        // Network or connection errors
-        if (str_contains($errorMessage, 'connection') || str_contains($errorMessage, 'timeout')) {
-            return "Network connection issue. Please check your internet connection and try again.";
-        }
-        
-        // Permission errors
-        if (str_contains($errorMessage, 'permission') || str_contains($errorMessage, 'unauthorized')) {
-            return "You don't have permission to create sales. Please contact your administrator.";
-        }
-        
-        // Default descriptive message
-        return "Sale creation failed: " . $errorMessage . ". Please try again or contact support if the problem persists.";
-    }
 
-    /**
-     * Extract column name from database error message
-     */
-    private function extractColumnName(string $errorMessage): string
-    {
-        if (preg_match("/Column '([^']+)' cannot be null/", $errorMessage, $matches)) {
-            $column = $matches[1];
-            
-            // Map database columns to user-friendly names
-            $columnMap = [
-                'customer_id' => 'Customer',
-                'warehouse_id' => 'Warehouse',
-                'branch_id' => 'Branch',
-                'item_id' => 'Item',
-                'quantity' => 'Quantity',
-                'unit_price' => 'Unit Price',
-                'payment_method' => 'Payment Method',
-                'sale_date' => 'Sale Date',
-                'reference_no' => 'Reference Number'
-            ];
-            
-            return $columnMap[$column] ?? ucfirst(str_replace('_', ' ', $column));
-        }
-        
-        return 'Required field';
-    }
-
-    /**
-     * Get specific database error messages
-     */
-    private function getDatabaseErrorMessage(\Illuminate\Database\QueryException $e): string
-    {
-        $errorMessage = $e->getMessage();
-        $errorCode = $e->getCode();
-        
-        // MySQL error codes
-        switch ($errorCode) {
-            case 1048: // Column cannot be null
-                $column = $this->extractColumnName($errorMessage);
-                return "Missing required information: {$column}. Please fill in all required fields.";
-                
-            case 1062: // Duplicate entry
-                return "This sale reference number already exists. Please try again.";
-                
-            case 1452: // Foreign key constraint fails
-                return "Invalid reference data. Please check customer, warehouse, or item selections.";
-                
-            case 1264: // Out of range value
-                return "Invalid numeric value. Please check quantities and prices.";
-                
-            case 1366: // Incorrect integer value
-                return "Invalid data format. Please check all input fields.";
-                
-            case 1054: // Unknown column
-                return "System configuration error. Please contact support.";
-                
-            default:
-                // Check error message content for common patterns
-                if (str_contains($errorMessage, 'Column') && str_contains($errorMessage, 'cannot be null')) {
-                    $column = $this->extractColumnName($errorMessage);
-                    return "Missing required information: {$column}. Please fill in all required fields.";
-                }
-                
-                if (str_contains($errorMessage, 'foreign key constraint fails')) {
-                    return "Invalid reference data. Please check customer, warehouse, or item selections.";
-                }
-                
-                if (str_contains($errorMessage, 'Duplicate entry')) {
-                    return "This sale reference number already exists. Please try again.";
-                }
-                
-                return "Database error occurred. Please try again or contact support if the problem persists.";
-        }
-    }
 
     // Computed properties
     public function getFilteredCustomersProperty()
@@ -1033,7 +871,7 @@ class Create extends Component
 
     public function getFilteredItemOptionsProperty()
     {
-        if (empty($this->itemSearch) || strlen(trim($this->itemSearch)) < 1) {
+        if (empty($this->itemSearch) || strlen(trim($this->itemSearch)) < 2) {
             return [];
         }
         
@@ -1044,26 +882,16 @@ class Create extends Component
         
         $searchTerm = trim($this->itemSearch);
         
-        // Get items already in cart to exclude them
-        $addedItemIds = [];
-        if (is_array($this->items)) {
-            $collection = collect($this->items);
-            if (method_exists($collection, 'pluck')) {
-                $addedItemIds = $collection->pluck('item_id')->toArray();
-            }
-        }
-        
         $results = Item::forUser(auth()->user())
             ->where('is_active', true)
-            ->whereNotIn('id', $addedItemIds)
             ->where(function ($query) use ($searchTerm) {
-                $query->where('name', 'LIKE', "%{$searchTerm}%")
-                      ->orWhere('sku', 'LIKE', "%{$searchTerm}%");
+                $query->whereRaw('LOWER(name) LIKE ?', ['%' . strtolower($searchTerm) . '%'])
+                      ->orWhereRaw('LOWER(sku) LIKE ?', ['%' . strtolower($searchTerm) . '%'])
+                      ->orWhereRaw('LOWER(barcode) LIKE ?', ['%' . strtolower($searchTerm) . '%']);
             })
-            ->limit(10)
+            ->limit(15)
             ->get()
             ->map(function ($item) use ($warehouseId) {
-                // Get or create stock record
                 $stock = Stock::firstOrCreate(
                     [
                         'warehouse_id' => $warehouseId,
@@ -1077,13 +905,11 @@ class Create extends Component
                     ]
                 );
                 
-                // Calculate actual stock value
                 $stockValue = max(
                     $stock->piece_count ?? 0,
                     $stock->quantity ?? 0
                 );
                 
-                // If stock is 0, check purchase history and sync
                 if ($stockValue <= 0) {
                     $totalPurchased = \DB::table('purchase_items')
                         ->join('purchases', 'purchase_items.purchase_id', '=', 'purchases.id')
@@ -1104,8 +930,8 @@ class Create extends Component
                     'id' => $item->id,
                     'name' => $item->name,
                     'sku' => $item->sku,
-                    'quantity' => $stockValue, // Pieces available
-                    'total_units' => $stockValue * ($item->unit_quantity ?? 1), // Total units available
+                    'quantity' => $stockValue,
+                    'total_units' => $stockValue * ($item->unit_quantity ?? 1),
                     'selling_price_per_unit' => $item->selling_price_per_unit ?? 0,
                     'unit_quantity' => $item->unit_quantity ?? 1,
                     'item_unit' => $item->item_unit ?? 'piece',
@@ -1263,90 +1089,64 @@ class Create extends Component
             
 
             
-            // Check if save returned false (indicating failure)
             if ($result === false) {
-                // Close the modal to show errors on the form
                 $this->dispatch('closeSaleModal');
                 
-                // Show a more descriptive error message
                 if ($this->getErrorBag()->isEmpty()) {
-                    $this->addError('general', 'Sale creation failed. Please check your input and try again. If the problem persists, contact support.');
+                    $this->addError('general', 'Sale creation failed. Please check your input and try again.');
                     $this->notify('❌ Sale creation failed. Please review the form and try again.', 'error');
                 }
                 
                 return false;
             }
             
-            // If we get here, save was successful (save() returns redirect on success)
-            // Close the modal
             $this->dispatch('closeSaleModal');
             $this->dispatch('saleCompleted');
             
-            // Show success message with more details
             $totalAmount = number_format($this->totalAmount, 2);
             $itemCount = count($this->items);
             $this->notify("✅ Sale created successfully! {$itemCount} items, ETB {$totalAmount}", 'success');
             
-            // Return the redirect from save method
             return $result;
             
         } catch (\Exception $e) {
-            // Close the modal to show errors on the form
             $this->dispatch('closeSaleModal');
             
-
-            
-            // Show a more descriptive error message based on the exception type
-            $errorMessage = $this->getDescriptiveErrorMessage($e);
-            $this->addError('general', $errorMessage);
-            $this->notify('❌ ' . $errorMessage, 'error');
+            $this->addError('general', 'Sale creation failed: ' . $e->getMessage());
+            $this->notify('❌ Sale creation failed: ' . $e->getMessage(), 'error');
             
             return false;
         }
     }
 
-    /**
-     * Handle sale method changes - mutually exclusive selection
-     */
     public function updatedNewItemSaleMethod($value)
     {
-        // Reset quantity when switching methods
         $this->newItem['quantity'] = 1;
         
         if ($this->selectedItem && $this->form['warehouse_id']) {
-            // Update available stock based on new sale method
             $stock = Stock::where('warehouse_id', $this->form['warehouse_id'])
                 ->where('item_id', $this->selectedItem['id'])
                 ->first();
                 
             if ($stock) {
                 if ($value === 'piece') {
-                    // Selling by piece - unit price is per piece
                     $this->newItem['unit_price'] = $this->selectedItem['selling_price'] ?? 0;
-                    $this->newItem['price'] = $this->newItem['unit_price']; // Price = unit_price for 1 piece
+                    $this->newItem['price'] = $this->newItem['unit_price'];
                     $this->availableStock = $stock->piece_count ?? $stock->quantity ?? 0;
                 } else {
-                    // Selling by unit - unit price is per unit
                     $this->newItem['unit_price'] = $this->selectedItem['selling_price_per_unit'] ?? 0;
-                    $this->newItem['price'] = $this->newItem['unit_price']; // Price = unit_price for 1 unit
+                    $this->newItem['price'] = $this->newItem['unit_price'];
                     $this->availableStock = $stock->total_units;
                 }
             }
         }
     }
     
-    /**
-     * Handle unit price changes for auto-calculation
-     */
     public function updatedNewItemUnitPrice($value)
     {
-        // Update price to match unit_price
         $this->newItem['price'] = (float)$value;
     }
     
-    /**
-     * Get available stock based on sale method
-     */
     public function getAvailableStockForMethod(): float
     {
         if (!$this->selectedItem || !$this->form['warehouse_id']) {
@@ -1364,7 +1164,6 @@ class Create extends Component
         if ($this->newItem['sale_method'] === 'piece') {
             return (float)max($stock->piece_count ?? 0, $stock->quantity ?? 0);
         } else {
-            // For unit sales, return total available units
             return (float)($stock->total_units ?? 0.0);
         }
     }
@@ -1373,10 +1172,8 @@ class Create extends Component
 
     public function proceedWithWarning()
     {
-        // Add the item directly when user proceeds with warning
         $this->processAddItem();
         
-        // Clear warning modal
         $this->stockWarningType = null;
         $this->stockWarningItem = null;
     }
@@ -1389,17 +1186,12 @@ class Create extends Component
 
 
 
-    /**
-     * Resolve branch_id from various sources
-     */
     private function resolveBranchId(): ?int
     {
-        // First priority: explicitly selected branch
         if (!empty($this->form['branch_id'])) {
             return (int)$this->form['branch_id'];
         }
         
-        // Second priority: get branch from selected warehouse
         if (!empty($this->form['warehouse_id'])) {
             $warehouse = Warehouse::with('branches')->find($this->form['warehouse_id']);
             if ($warehouse && $warehouse->branches->isNotEmpty()) {
@@ -1407,12 +1199,10 @@ class Create extends Component
             }
         }
         
-        // Third priority: user's assigned branch
         if (auth()->user()->branch_id) {
             return (int)auth()->user()->branch_id;
         }
         
-        // Fourth priority: get branch from user's assigned warehouse
         if (auth()->user()->warehouse_id) {
             $warehouse = Warehouse::with('branches')->find(auth()->user()->warehouse_id);
             if ($warehouse && $warehouse->branches->isNotEmpty()) {
@@ -1420,7 +1210,6 @@ class Create extends Component
             }
         }
         
-        // Last resort: get the first active branch
         $firstBranch = Branch::where('is_active', true)->first();
         if ($firstBranch) {
             return (int)$firstBranch->id;

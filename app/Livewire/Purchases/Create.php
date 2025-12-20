@@ -118,8 +118,7 @@ class Create extends Component
 
     public function __construct()
     {
-        // Enable query logging to debug database issues
-        \DB::connection()->enableQueryLog();
+        // Component initialization
     }
 
     public function mount()
@@ -235,12 +234,9 @@ class Create extends Component
 
     public function loadItems()
     {
-        // Get items that are already in the cart
-        $addedItemIds = collect($this->items)->pluck('item_id')->toArray();
-        
         // For purchases: Show ALL active items regardless of stock (purchases add stock)
+        // Allow adding same item multiple times for different prices/conditions
         $this->itemOptions = Item::where('is_active', true)
-            ->whereNotIn('id', $addedItemIds) // Only exclude items already in cart
             ->orderBy('name')
             ->get()
             ->map(function ($item) {
@@ -275,22 +271,14 @@ class Create extends Component
         if (!empty($value)) {
             $item = Item::find($value);
             if ($item) {
-                // Debug before setting cost
-                $this->debugCostValues($item, 'updatedNewItemItemId-before');
-
-                // Set the cost per piece (this is what will be stored in purchase_items.unit_cost)
-                // If item has cost_price, use it; otherwise calculate from cost_price_per_unit
                 $costPerPiece = $item->cost_price ?? (($item->cost_price_per_unit ?? 0) * ($item->unit_quantity ?? 1));
                 $costPerUnit = $item->cost_price_per_unit ?? ($costPerPiece / ($item->unit_quantity ?? 1));
                 
-                $this->newItem['unit_cost'] = $costPerUnit; // Cost per individual unit (for display)
-                $this->newItem['cost'] = $costPerPiece; // Cost per piece (what gets stored)
-
-                // Store additional useful information
+                $this->newItem['unit_cost'] = $costPerUnit;
+                $this->newItem['cost'] = $costPerPiece;
                 $this->newItem['unit'] = $item->unit ?? '';
                 $this->current_stock = $this->getItemStock($value);
 
-                // Set the selectedItem property for the view
                 $this->selectedItem = [
                     'id' => $item->id,
                     'name' => $item->name,
@@ -302,23 +290,8 @@ class Create extends Component
                     'cost_price_per_unit' => $costPerUnit,
                     'description' => $item->description,
                 ];
-
-                // Debug after setting cost
-                $this->debugCostValues($item, 'updatedNewItemItemId-after');
-                
-                \Log::info('Item selected and data set', [
-                    'item_id' => $item->id,
-                    'item_name' => $item->name,
-                    'unit' => $item->unit,
-                    'cost_per_piece' => $costPerPiece,
-                    'cost_per_unit' => $costPerUnit,
-                    'unit_quantity' => $item->unit_quantity,
-                    'selectedItem' => $this->selectedItem,
-                    'newItem' => $this->newItem
-                ]);
             }
         } else {
-            // Clear selected item when no item is selected
             $this->selectedItem = null;
             $this->newItem['unit'] = '';
             $this->newItem['unit_cost'] = 0;
@@ -418,16 +391,6 @@ class Create extends Component
         $item = Item::find($this->newItem['item_id']);
         if (!$item) {
             $this->notify('❌ Item not found in database', 'error');
-            return false;
-        }
-        
-        // Check if item is already in cart
-        $existingIndex = collect($this->items)->search(function ($existingItem) use ($item) {
-            return $existingItem['item_id'] == $item->id;
-        });
-
-        if ($existingIndex !== false) {
-            $this->notify('⚠️ Item already in cart. Use edit to modify quantity or cost.', 'warning');
             return false;
         }
         
@@ -600,26 +563,15 @@ class Create extends Component
         \DB::beginTransaction();
             
         try {
-            \Log::info('Starting purchase save process', [
-                'items_count' => count($this->items),
-                'total_amount' => $this->totalAmount,
-                'supplier_id' => $this->form['supplier_id'],
-                'branch_id' => $this->form['branch_id']
-            ]);
-
             // Create the purchase record
             $branchId = (int)($this->form['branch_id'] ?? 0);
             if ($branchId <= 0) {
                 $branchId = auth()->user()->branch_id ?? (Branch::value('id') ?? 1);
             }
-            // Resolve internal warehouse for branch
+            
             try {
                 $warehouseId = $this->resolveWarehouseIdForBranch($branchId);
             } catch (\Exception $e) {
-                \Log::error('Failed to resolve warehouse for branch', [
-                    'branch_id' => $branchId,
-                    'error' => $e->getMessage()
-                ]);
                 throw new \Exception('Failed to resolve warehouse for branch: ' . $e->getMessage());
             }
             
@@ -661,98 +613,64 @@ class Create extends Component
                 $purchase->transaction_number = $this->form['transaction_number'] ?? null;
             }
             
-            // Attempt to save the purchase
             try {
                 $purchase->save();
             } catch (\Exception $e) {
-                \Log::error('Failed to save purchase record', [
-                    'error' => $e->getMessage(),
-                    'purchase_data' => $purchase->toArray()
-                ]);
                 $this->addError('general', 'Failed to save purchase record: ' . $e->getMessage());
                 $this->notify('❌ Failed to save purchase record.', 'error');
                 \DB::rollBack();
                 return false;
             }
-
-            \Log::info('Purchase record saved successfully', ['purchase_id' => $purchase->id]);
             
             // Now create the purchase items
             $itemTotal = 0;
             foreach ($this->items as $index => $item) {
-                    // Type safety - ensure all values are the correct type
-                    $itemId = intval($item['item_id'] ?? 0);
-                    $quantity = floatval($item['quantity'] ?? 0);
-                    $cost = floatval($item['cost'] ?? 0);
-                    $subtotal = floatval($item['subtotal'] ?? ($quantity * $cost));
-                    
-                    // Skip invalid items
-                    if ($itemId <= 0 || $quantity <= 0 || $cost <= 0) {
-                        \Log::warning('Skipping invalid item in purchase', [
-                            'index' => $index,
-                            'item' => $item
-                        ]);
-                        continue;
-                    }
-                    
-                    // Get the actual Item record to ensure it exists
-                    $itemRecord = Item::find($itemId);
-                    if (!$itemRecord) {
-                        \Log::warning('Item not found, skipping', ['id' => $itemId]);
-                        continue;
-                    }
-                    
-                    // Create purchase item
-                    $purchaseItem = new PurchaseItem();
-                    $purchaseItem->purchase_id = $purchase->id;
-                    $purchaseItem->item_id = $itemId;
-                    $purchaseItem->quantity = $quantity;
+                $itemId = intval($item['item_id'] ?? 0);
+                $quantity = floatval($item['quantity'] ?? 0);
+                $cost = floatval($item['cost'] ?? 0);
+                $subtotal = floatval($item['subtotal'] ?? ($quantity * $cost));
+                
+                if ($itemId <= 0 || $quantity <= 0 || $cost <= 0) {
+                    continue;
+                }
+                
+                $itemRecord = Item::find($itemId);
+                if (!$itemRecord) {
+                    continue;
+                }
+                
+                $purchaseItem = new PurchaseItem();
+                $purchaseItem->purchase_id = $purchase->id;
+                $purchaseItem->item_id = $itemId;
+                $purchaseItem->quantity = $quantity;
                 $purchaseItem->unit_cost = $cost;
-                    $purchaseItem->discount = 0;
-                    $purchaseItem->subtotal = $subtotal;
+                $purchaseItem->discount = 0;
+                $purchaseItem->subtotal = $subtotal;
+                
+                if (!empty($item['notes'])) {
+                    $purchaseItem->notes = $item['notes'];
+                }
+                
+                try {
+                    $purchaseItem->save();
+                } catch (\Exception $e) {
+                    $this->addError('items', "Failed to save purchase item {$index}: " . $e->getMessage());
+                    $this->notify('❌ Failed to save purchase item.', 'error');
+                    \DB::rollBack();
+                    return false;
+                }
+                
+                $itemTotal += $subtotal;
+                
+                $this->updateStock($purchase->warehouse_id, $itemId, $quantity, $purchase->id);
+                
+                if ($cost > 0) {
+                    $unitQuantity = $itemRecord->unit_quantity ?? 1;
+                    $costPerUnit = $cost / $unitQuantity;
                     
-                    // Add notes if any
-                    if (!empty($item['notes'])) {
-                        $purchaseItem->notes = $item['notes'];
-                    }
-                    
-                    try {
-                        $purchaseItem->save();
-                    } catch (\Exception $e) {
-                        \Log::error('Failed to save purchase item', [
-                            'error' => $e->getMessage(),
-                            'item_data' => $purchaseItem->toArray()
-                        ]);
-                        $this->addError('items', "Failed to save purchase item {$index}: " . $e->getMessage());
-                        $this->notify('❌ Failed to save purchase item.', 'error');
-                        \DB::rollBack();
-                        return false;
-                    }
-                    
-                    // Add to total
-                    $itemTotal += $subtotal;
-                    
-                    // Update stock - quantity represents pieces to add
-                    $this->updateStock($purchase->warehouse_id, $itemId, $quantity, $purchase->id);
-                    
-                    // Update item cost prices automatically
-                    if ($cost > 0) {
-                        // The cost from purchase is the total cost per piece
-                        // Calculate cost per unit (individual item within a piece)
-                        $unitQuantity = $itemRecord->unit_quantity ?? 1;
-                        $costPerUnit = $cost / $unitQuantity;
-                        
-                        // Update both cost prices
-                        $itemRecord->cost_price = $cost; // Cost per piece
-                        $itemRecord->cost_price_per_unit = $costPerUnit; // Cost per individual unit
-                        $itemRecord->save();
-                        
-                        \Log::info('Item cost prices updated', [
-                            'item_id' => $itemId,
-                            'cost_per_piece' => $cost,
-                            'cost_per_unit' => $costPerUnit,
-                            'unit_quantity' => $unitQuantity
-                        ]);
+                    $itemRecord->cost_price = $cost;
+                    $itemRecord->cost_price_per_unit = $costPerUnit;
+                    $itemRecord->save();
                 }
             }
             
@@ -800,26 +718,9 @@ class Create extends Component
                         ]);
                     }
                 }
-                
-                \Log::info('Credit record created', [
-                    'credit_id' => $credit->id ?? null,
-                    'purchase_id' => $purchase->id,
-                    'payment_method' => $this->form['payment_method'],
-                    'total_amount' => $this->totalAmount,
-                    'advance_amount' => $this->form['advance_amount'] ?? 0
-                ]);
             }
-            
-            // Commit transaction
             \DB::commit();
             
-            \Log::info('Purchase saved successfully', [
-                'purchase_id' => $purchase->id,
-                'reference_no' => $purchase->reference_no,
-                'total_amount' => $purchase->total_amount
-            ]);
-
-            // Show success message
             $this->notify('✅ Purchase created successfully!', 'success');
             
             // Redirect to purchases index
@@ -827,18 +728,8 @@ class Create extends Component
                 ->with('success', 'Purchase created successfully!');
             
         } catch (\Exception $e) {
-            // Roll back transaction on error
             \DB::rollBack();
             
-            \Log::error('Error processing purchase', [
-                'exception' => get_class($e),
-                'message' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            
-            // Add a general error message
             $this->addError('general', 'An unexpected error occurred while saving the purchase. Please try again.');
             $this->notify('❌ Error: ' . $e->getMessage(), 'error');
             
@@ -912,39 +803,22 @@ class Create extends Component
 
     public function supplierSelected($supplier)
     {
-        // Log what we're receiving to help debug
-        \Log::info('Supplier selected in component', [
-            'supplier' => $supplier,
-            'type' => gettype($supplier)
-        ]);
-        
         if (!$supplier) {
             $this->form['supplier_id'] = '';
             return;
         }
 
-        // Handle if we get an array or object
         if (is_array($supplier) && isset($supplier['id'])) {
-            // Convert to integer and ensure it's set in the form
             $this->form['supplier_id'] = (int)$supplier['id'];
             $this->selectedSupplier = $supplier;
             
-            // Log this event for debugging
-            \Log::info('Supplier selected from dropdown', [
-                'supplier_id' => $this->form['supplier_id'],
-                'supplier_name' => $supplier['name'] ?? 'unknown'
-            ]);
-            
-            // Create or update a hidden input field for direct DOM access
             $this->dispatch('createHiddenSupplierField', [
                 'id' => $this->form['supplier_id'],
                 'name' => $supplier['name'] ?? 'unknown'
             ]);
         } elseif (is_numeric($supplier)) {
-            // Handle case where we just get an ID
             $this->form['supplier_id'] = (int)$supplier;
             
-            // Try to get the name from the database
             $supplierModel = \App\Models\Supplier::find($this->form['supplier_id']);
             if ($supplierModel) {
                 $this->selectedSupplier = [
@@ -956,12 +830,6 @@ class Create extends Component
             
             $supplierName = $supplierModel ? $supplierModel->name : 'unknown';
             
-            \Log::info('Supplier selected by ID', [
-                'supplier_id' => $this->form['supplier_id'],
-                'supplier_name' => $supplierName
-            ]);
-            
-            // Create or update a hidden input field for direct DOM access
             $this->dispatch('createHiddenSupplierField', [
                 'id' => $this->form['supplier_id'],
                 'name' => $supplierName
@@ -971,12 +839,6 @@ class Create extends Component
 
     public function itemSelected($itemData)
     {
-        \Log::info('Item selected from dropdown', [
-            'item_data' => $itemData,
-            'data_type' => gettype($itemData)
-        ]);
-        
-        // Handle different data structures that might be passed
         if (is_array($itemData)) {
             $itemId = $itemData['id'] ?? null;
             $costPrice = $itemData['cost_price'] ?? 0;
@@ -986,25 +848,20 @@ class Create extends Component
             $unitQuantity = $itemData['unit_quantity'] ?? 1;
             $itemUnit = $itemData['item_unit'] ?? 'piece';
         } else {
-            \Log::warning('Unexpected item data type received', ['type' => gettype($itemData)]);
             return;
         }
         
         if (!$itemId) {
-            \Log::warning('No item ID found in item data');
             return;
         }
         
-        // Set the item data
         $this->newItem['item_id'] = $itemId;
-        $this->newItem['unit_cost'] = $costPricePerUnit; // Set default unit cost
-        $this->newItem['cost'] = $costPricePerUnit * $unitQuantity; // Calculate piece cost
+        $this->newItem['unit_cost'] = $costPricePerUnit;
+        $this->newItem['cost'] = $costPricePerUnit * $unitQuantity;
         $this->newItem['unit'] = $unit;
         
-        // Store current stock for display
         $this->current_stock = $currentStock;
         
-        // Store selected item data for display
         $this->selectedItem = [
             'id' => $itemId,
             'name' => $itemData['name'] ?? '',
@@ -1012,28 +869,12 @@ class Create extends Component
             'unit_quantity' => $unitQuantity,
             'item_unit' => $itemUnit,
         ];
-        
-        \Log::info('Item data set successfully', [
-            'item_id' => $this->newItem['item_id'],
-            'unit_cost' => $this->newItem['unit_cost'],
-            'cost' => $this->newItem['cost'],
-            'unit' => $this->newItem['unit'],
-            'stock' => $this->current_stock
-        ]);
     }
 
-    // Add an explicit listener for supplier ID changes
     public function updatedFormSupplierId($value)
     {
-        \Log::info('Supplier ID updated in component', [
-            'new_value' => $value,
-            'parsed_value' => (int)$value
-        ]);
-        
-        // Ensure it's an integer
         $this->form['supplier_id'] = (int)$value;
         
-        // Update the selectedSupplier property
         if (!empty($this->form['supplier_id'])) {
             $supplier = $this->suppliers->firstWhere('id', $this->form['supplier_id']);
             if ($supplier) {
@@ -1047,115 +888,50 @@ class Create extends Component
         }
     }
 
-    // Branch change handler (branch-only mode)
     public function updatedFormBranchId($value)
     {
-        \Log::info('Branch ID updated in component', [
-            'new_value' => $value,
-            'parsed_value' => (int)$value
-        ]);
-        
-        // Ensure it's an integer
         $this->form['branch_id'] = (int)$value;
         
-        // If branch has been selected and we have a current item selected
-        // update the stock information for that item
         if (!empty($this->form['branch_id']) && !empty($this->newItem['item_id'])) {
-            // Get updated stock for the selected item
             $this->current_stock = $this->getItemStock($this->newItem['item_id']);
-            
-            \Log::debug('Updated stock for item after branch change', [
-                'item_id' => $this->newItem['item_id'],
-                'branch_id' => $this->form['branch_id'],
-                'new_stock' => $this->current_stock
-            ]);
         }
         
-        // If we have items in the items array, notify the user about the branch change
         if (count($this->items) > 0) {
             $this->notify('Branch changed. Please verify items and quantities for the new branch.', 'warning');
         }
     }
 
-    /**
-     * Debug helper to log important values for troubleshooting
-     */
-    private function debugCostValues($item, $source = 'unknown')
-    {
-        if (app()->environment('local', 'development')) {
-            \Log::debug("Debug cost values from {$source}: " . json_encode([
-                'item_id' => $item->id ?? null,
-                'item_name' => $item->name ?? null,
-                'cost_price_from_db' => $item->cost_price ?? null,
-                'newItem.cost' => $this->newItem['cost'] ?? null,
-                'cost_numeric' => is_numeric($item->cost_price ?? null),
-                'cost_type' => gettype($item->cost_price ?? null),
-                'db_value_raw' => $item->getRawOriginal('cost_price') ?? null,
-            ]));
-        }
-    }
+
 
     /**
      * Show a notification to the user
-     *
-     * @param string $message The message to display
-     * @param string $type The type of notification (success, error, info, warning)
-     * @return void
      */
     private function notify($message, $type = 'info')
     {
-        // Validate notification type
-        $validTypes = ['success', 'error', 'info', 'warning'];
-        if (!in_array($type, $validTypes)) {
-            $type = 'info';
-        }
-        
-        // Log the notification
-        \Log::info('Purchase notification: ' . $message, [
-            'type' => $type,
-            'user_id' => auth()->id()
-        ]);
-        
-        // Dispatch the notification event to the frontend
         $this->dispatch('notify', [
             'message' => $message,
             'type' => $type
         ]);
     }
 
-    // This new method allows setting the item ID and cost at the same time,
-    // avoiding race conditions that could reset the cost
     public function setItemAndCost($itemId, $cost = null)
     {
-        // Always try to find the item if we have an ID
         $item = null;
         if (!empty($itemId)) {
             $item = Item::find($itemId);
         }
         
-        // If we found an item, update our state
         if ($item) {
             $this->newItem['item_id'] = $item->id;
             
-            // Get the item's current cost if none was provided or if the provided cost is invalid
             if ($cost === null || !is_numeric($cost) || $cost <= 0) {
-                // Debug the source cost values
-                $this->debugCostValues($item, 'setItemAndCost-before');
-                
-                // Use the item's cost_price directly rather than a hardcoded fallback
                 $cost = $item->cost_price;
-                
-                $this->debugCostValues($item, 'setItemAndCost-after', $cost);
             }
             
-            // Set the cost directly
             $this->newItem['cost'] = $cost !== null ? $cost : $item->cost_price;
-            
-            // Store additional useful information
             $this->newItem['unit'] = $item->unit ?? '';
             $this->current_stock = $this->getItemStock($item->id);
             
-            // Tell the browser the item changed
             $this->dispatch('itemChanged', [
                 'item_id' => $item->id,
                 'cost' => $cost
@@ -1202,297 +978,11 @@ class Create extends Component
         ]);
     }
 
-    /**
-     * Handle the form submission without triggering add item validation
-     */
-    public function submitForm($params = [])
-    {
-        // Dump state first
-        $this->dumpState();
-        
-        // Check if we received explicit parameters from JavaScript
-        if (!empty($params) && is_array($params)) {
-            \Log::info('Received explicit parameters from event', [
-                'has_form' => isset($params['form']),
-                'has_items' => isset($params['items']),
-                'item_count' => isset($params['items']) ? count($params['items']) : 0
-            ]);
-            
-            // Update our component state with the JavaScript state if provided
-            if (isset($params['form']) && is_array($params['form'])) {
-                \Log::info('Updating form data from event parameters');
-                
-                // Ensure the form has the correct structure
-                $this->form = array_merge($this->form, $params['form']);
-                
-                // Type conversion for numeric fields
-            $this->form['supplier_id'] = (int)$this->form['supplier_id'];
-            $this->form['branch_id'] = (int)($this->form['branch_id'] ?? 0);
-                $this->form['discount'] = (float)$this->form['discount'];
-                $this->form['tax'] = (float)$this->form['tax'];
-                $this->form['advance_amount'] = (float)$this->form['advance_amount'];
-                
-                \Log::info('Form data after processing', ['form' => $this->form]);
-            }
-            
-            if (isset($params['items']) && is_array($params['items'])) {
-                \Log::info('Updating items data from event parameters', [
-                    'item_count' => count($params['items']),
-                    'first_item' => isset($params['items'][0]) ? json_encode($params['items'][0]) : 'none'
-                ]);
-                
-                // Normalize the items array to ensure consistent structure
-                $normalizedItems = $this->normalizeItemsArray($params['items']);
-                
-                if (!empty($normalizedItems)) {
-                    $this->items = $normalizedItems;
-                } else {
-                    // Use the original array if normalization doesn't produce results
-                    $this->items = $params['items'];
-                    
-                    // Ensure each item has the correct data types
-                    foreach ($this->items as $key => $item) {
-                        if (is_array($item)) {
-                            $this->items[$key]['item_id'] = (int)$item['item_id'];
-                            $this->items[$key]['quantity'] = (float)($item['quantity'] ?? 0);
-                            $this->items[$key]['cost'] = (float)($item['cost'] ?? 0);
-                            $this->items[$key]['unit_cost'] = (float)($item['unit_cost'] ?? $item['cost'] ?? 0);
-                            $this->items[$key]['discount'] = (float)($item['discount'] ?? 0);
-                            $this->items[$key]['subtotal'] = (float)($item['subtotal'] ?? 0);
-                        }
-                    }
-                }
-                
-                \Log::info('Items after processing', [
-                    'count' => count($this->items),
-                    'first_item' => isset($this->items[0]) ? json_encode($this->items[0]) : 'none'
-                ]);
-            }
-        }
-        
-        // Debug information
-        \Log::info('submitForm method called', [
-            'items_count' => count($this->items),
-            'user' => auth()->id(),
-            'form_data' => $this->form,
-            'request_data' => request()->all()
-        ]);
 
-        // Enhanced validation: Check required fields explicitly before proceeding
-        $validationErrors = [];
-        
-        // Debug the actual values received
-        \Log::info('Form values for validation:', [
-            'supplier_id' => $this->form['supplier_id'] ?? 'not set',
-            'supplier_id_type' => isset($this->form['supplier_id']) ? gettype($this->form['supplier_id']) : 'n/a',
-            'branch_id' => $this->form['branch_id'] ?? 'not set',
-            'branch_id_type' => isset($this->form['branch_id']) ? gettype($this->form['branch_id']) : 'n/a',
-            'items_count' => count($this->items),
-        ]);
 
-        // Ensure values are properly converted to their intended types
-        $supplierId = isset($this->form['supplier_id']) ? (int)$this->form['supplier_id'] : null;
-        $branchIdForValidation = isset($this->form['branch_id']) ? (int)$this->form['branch_id'] : null;
 
-        // Check supplier_id - consider 0 as invalid but handle both empty string and null
-        if (empty($supplierId) && $supplierId !== 0) {
-            $validationErrors['form.supplier_id'] = 'Supplier is required';
-            \Log::warning('Supplier validation failed', ['value' => $supplierId]);
-        }
 
-        // Check branch_id
-        if (empty($branchIdForValidation) && $branchIdForValidation !== 0) {
-            $validationErrors['form.branch_id'] = 'Branch is required';
-            \Log::warning('Branch validation failed', ['value' => $branchIdForValidation]);
-        }
 
-        // Check items array - be explicit about the check
-        if (!is_array($this->items) || count($this->items) === 0) {
-            $validationErrors['items'] = 'At least one item must be added to the purchase';
-            $this->notify('Please add at least one item to the purchase before saving.', 'error');
-            \Log::warning('Items validation failed', ['count' => count($this->items)]);
-        } else {
-            \Log::info('Items validation passed', ['count' => count($this->items)]);
-        }
-
-        // If validation errors exist, add them and return
-        if (!empty($validationErrors)) {
-            foreach ($validationErrors as $field => $message) {
-                $this->addError($field, $message);
-            }
-            
-            \Log::warning('Purchase submission failed validation', [
-                'errors' => $validationErrors,
-                'form_data' => $this->form
-            ]);
-            
-            // Send a comprehensive error message
-            $this->notify('Please fill in all required fields and add at least one item before saving.', 'error');
-            
-            // Dispatch a JS event to highlight errors
-            $this->dispatch('purchase-validation-failed', ['errors' => $validationErrors]);
-            
-            return false;
-        }
-        
-        // First, completely skip the add item validation
-        $this->skipAddItemValidation();
-        \Log::info('Item validation skipped');
-        
-        // Fix potential form data structure issues
-        if (is_array($this->form) && isset($this->form[0]) && is_array($this->form[0])) {
-            \Log::info('Detected nested form structure, fixing it', [
-                'original_form' => $this->form
-            ]);
-            $this->form = $this->form[0];
-            \Log::info('Fixed form structure', [
-                'new_form' => $this->form
-            ]);
-        }
-        
-        // Check if there are items to save - log the actual items array structure
-        \Log::info('Items structure before check', [
-            'items' => $this->items,
-            'is_array' => is_array($this->items),
-            'count' => count($this->items),
-            'empty_check' => empty($this->items)
-        ]);
-        
-        if (empty($this->items) || count($this->items) === 0) {
-            \Log::warning('No items to save in purchase');
-            $this->notify('Please add at least one item to the purchase before saving.', 'error');
-            return false;
-        }
-        
-        // Clear any validation errors that might exist
-        $this->resetErrorBag();
-        \Log::info('Error bag reset');
-        
-        // Perform validation for the main form only
-        try {
-            \Log::info('Starting form validation');
-            
-            // Always generate a new unique reference number - no user input needed
-            $this->form['reference_no'] = $this->generateUniqueReferenceNumber();
-            \Log::info('Generated reference number', ['ref' => $this->form['reference_no']]);
-            
-            // Skip the unique reference number validation since we just generated a unique one
-            $this->validate([
-                'form.supplier_id' => 'required|exists:suppliers,id',
-                'form.branch_id' => 'required|exists:branches,id',
-                'form.purchase_date' => 'required|date',
-                'form.payment_method' => ['required', Rule::enum(PaymentMethod::class)],
-            ]);
-            
-            // Log before saving
-            \Log::info('Validation passed, calling save method with items:', [
-                'items_count' => count($this->items),
-                'first_item' => $this->items[0] ?? null
-            ]);
-            
-            // Now call the save method directly
-            try {
-                $result = $this->save();
-                
-                // Log after save attempt
-                \Log::info('Save method called, result:', ['result' => $result ? 'success' : 'failed']);
-                
-                return $result;
-            } catch (\Exception $saveError) {
-                \Log::error('Error in save method:', [
-                    'exception' => get_class($saveError),
-                    'message' => $saveError->getMessage(),
-                    'file' => $saveError->getFile(),
-                    'line' => $saveError->getLine(),
-                    'trace' => $saveError->getTraceAsString()
-                ]);
-                
-                $this->notify('Error saving purchase: ' . $saveError->getMessage(), 'error');
-                return false;
-            }
-        } catch (\Exception $e) {
-            // Handle validation or other errors
-            \Log::error('Validation error in submitForm:', [
-                'exception' => get_class($e),
-                'message' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-                'validation_errors' => $this->getErrorBag()
-            ]);
-            
-            $this->notify('Error: ' . $e->getMessage(), 'error');
-            return false;
-        }
-    }
-
-    // Add a dump method for debugging
-    public function dumpState()
-    {
-        \Log::info('Current component state', [
-            'form' => $this->form,
-            'items' => $this->items,
-            'subtotal' => $this->subtotal,
-            'totalAmount' => $this->totalAmount,
-            'taxAmount' => $this->taxAmount
-        ]);
-        
-        $this->notify('State dumped to logs', 'info');
-    }
-
-    /**
-     * Helper method to normalize array structures
-     * This flattens nested arrays and ensures consistent data format
-     */
-    private function normalizeItemsArray($items)
-    {
-        \Log::info('Normalizing items array', [
-            'initial_count' => is_array($items) ? count($items) : 0,
-            'type' => gettype($items)
-        ]);
-        
-        if (!is_array($items)) {
-            return [];
-        }
-        
-        $result = [];
-        
-        // Function to recursively process items
-        $processItem = function($item) use (&$result) {
-            if (is_array($item)) {
-                // Check if this is an actual item with item_id
-                if (isset($item['item_id'])) {
-                    // This is a valid item, add it to results
-                    $result[] = [
-                        'item_id' => (int)$item['item_id'],
-                        'name' => $item['name'] ?? '',
-                        'sku' => $item['sku'] ?? '',
-                        'unit' => $item['unit'] ?? '',
-                        'quantity' => (float)($item['quantity'] ?? 0),
-                        'cost' => (float)($item['cost'] ?? 0),
-                        'unit_cost' => (float)($item['unit_cost'] ?? $item['cost'] ?? 0),
-                        'subtotal' => (float)($item['subtotal'] ?? 0),
-                        'notes' => $item['notes'] ?? null
-                    ];
-                } else {
-                    // This might be a nested array, check each element
-                    foreach ($item as $subItem) {
-                        $this->normalizeItemsArray([$subItem]);
-                    }
-                }
-            }
-        };
-        
-        // Process each item in the array
-        foreach ($items as $item) {
-            $processItem($item);
-        }
-        
-        \Log::info('Normalized items array', [
-            'final_count' => count($result)
-        ]);
-        
-        return $result;
-    }
 
     // Add watcher for tax changes
     public function updatedFormTax()
@@ -1500,46 +990,18 @@ class Create extends Component
         $this->updateTotals();
     }
 
-    /**
-     * Explicitly set the supplier ID (triggered from JavaScript)
-     */
     public function setSupplierManually($supplierId = null)
     {
-        // Convert to integer if provided
         $supplierId = $supplierId ? (int)$supplierId : null;
         
         if ($supplierId) {
-            // Set the supplier ID directly in the form data
             $this->form['supplier_id'] = $supplierId;
-            
-            // Log this action
-            \Log::info('Supplier ID manually set', [
-                'supplier_id' => $supplierId,
-                'from_js' => true
-            ]);
         }
     }
 
-    /**
-     * Updates the stock level for an item in a warehouse
-     * 
-     * @param int $warehouseId The warehouse ID
-     * @param int $itemId The item ID
-     * @param float $quantity The quantity to add to stock (pieces)
-     * @param int $purchaseId The purchase ID for reference
-     * @return void
-     */
     private function updateStock($warehouseId, $itemId, $quantity, $purchaseId = null)
     {
         try {
-            \Log::info('Updating stock from purchase', [
-                'warehouse_id' => $warehouseId,
-                'item_id' => $itemId,
-                'quantity' => $quantity,
-                'purchase_id' => $purchaseId
-            ]);
-            
-            // Get the item to access unit_quantity
             $item = Item::find($itemId);
             if (!$item) {
                 throw new \Exception("Item not found: {$itemId}");
@@ -1547,7 +1009,6 @@ class Create extends Component
             
             $unitCapacity = $item->unit_quantity ?? 1;
             
-            // Find existing stock record or create a new one
             $stock = Stock::firstOrCreate(
                 [
                     'warehouse_id' => $warehouseId,
@@ -1562,26 +1023,22 @@ class Create extends Component
                 ]
             );
             
-            // Get the original values for logging
             $originalPieces = $stock->piece_count ?? 0;
             $originalQuantity = $stock->quantity ?? 0;
             $originalUnits = $stock->total_units ?? 0;
             
-            // Update stock - add the purchased quantity (pieces)
             $addedPieces = (int)$quantity;
             $stock->piece_count = $originalPieces + $addedPieces;
-            $stock->quantity = $stock->piece_count; // Keep quantity in sync with piece_count
+            $stock->quantity = $stock->piece_count;
             $stock->total_units = $originalUnits + ($addedPieces * $unitCapacity);
             $stock->updated_by = auth()->id();
             
-            // Ensure current_piece_units is set
             if ($stock->current_piece_units === null) {
                 $stock->current_piece_units = $unitCapacity;
             }
             
             $stock->save();
             
-            // Create stock history record
             \App\Models\StockHistory::create([
                 'warehouse_id' => $warehouseId,
                 'item_id' => $itemId,
@@ -1597,33 +1054,8 @@ class Create extends Component
                 'user_id' => auth()->id(),
             ]);
             
-            \Log::info('Stock updated successfully from purchase', [
-                'warehouse_id' => $warehouseId,
-                'item_id' => $itemId,
-                'item_name' => $item->name,
-                'previous_pieces' => $originalPieces,
-                'previous_quantity' => $originalQuantity,
-                'previous_units' => $originalUnits,
-                'added_pieces' => $addedPieces,
-                'new_pieces' => $stock->piece_count,
-                'new_quantity' => $stock->quantity,
-                'new_units' => $stock->total_units,
-                'unit_capacity' => $unitCapacity
-            ]);
-            
             return true;
         } catch (\Exception $e) {
-            \Log::error('Error updating stock from purchase', [
-                'exception' => get_class($e),
-                'message' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-                'warehouse_id' => $warehouseId,
-                'item_id' => $itemId,
-                'quantity' => $quantity,
-                'purchase_id' => $purchaseId
-            ]);
-            
             return false;
         }
     }
@@ -1648,64 +1080,7 @@ class Create extends Component
         return (int)$warehouse->id;
     }
 
-    /**
-     * Special handler for cash payments which are simpler to process
-     */
-    #[On('cashPayment')]
-    public function handleCashPayment($params = [])
-    {
-        \Log::info('Received cash payment submission', [
-            'params' => $params,
-            'has_form' => isset($params['form']),
-            'has_items' => isset($params['items']),
-        ]);
-        
-        // For cash payments, we simplify the process with only essential fields
-        if (isset($params['form']) && is_array($params['form'])) {
-            // Set the form directly with required values for cash
-            $this->form['purchase_date'] = $params['form']['purchase_date'] ?? date('Y-m-d');
-            // Always generate a new reference number, don't use any provided one
-            $this->form['reference_no'] = $this->generateUniqueReferenceNumber();
-            $this->form['supplier_id'] = (int)($params['form']['supplier_id'] ?? 0);
-            $this->form['branch_id'] = (int)($params['form']['branch_id'] ?? 0);
-            $this->form['payment_method'] = PaymentMethod::CASH->value;
-            $this->form['payment_status'] = PaymentStatus::PAID->value;
-            $this->form['tax'] = (float)($params['form']['tax'] ?? 0);
-            $this->form['notes'] = $params['form']['notes'] ?? '';
-        }
-        
-        // Set items if provided
-        if (isset($params['items']) && is_array($params['items'])) {
-            $this->items = array_map(function($item) {
-                // Ensure proper data types for each field
-                return [
-                    'item_id' => (int)($item['item_id'] ?? 0),
-                    'name' => $item['name'] ?? '',
-                    'sku' => $item['sku'] ?? '',
-                    'unit' => $item['unit'] ?? 'pcs',
-                    'unit_quantity' => (int)($item['unit_quantity'] ?? 1),
-                    'item_unit' => $item['item_unit'] ?? 'piece',
-                    'quantity' => (float)($item['quantity'] ?? 0), // Pieces for stock
-                    'cost' => (float)($item['cost'] ?? 0), // Cost per piece
-                    'unit_cost' => (float)($item['unit_cost'] ?? 0), // Cost per unit
-                    'subtotal' => (float)($item['subtotal'] ?? 0),
-                    'notes' => $item['notes'] ?? null,
-                ];
-            }, $params['items']);
-        }
-        
-        // Update totals
-        $this->updateTotals();
-        
-        // Call save directly
-        \Log::info('Proceeding with cash payment save', [
-            'items_count' => count($this->items),
-            'supplier' => $this->form['supplier_id'],
-            'branch' => $this->form['branch_id']
-        ]);
-        
-        return $this->save();
-    }
+
 
     /**
      * Generate a default reference number format
@@ -1960,24 +1335,21 @@ class Create extends Component
      */
     public function getFilteredItemOptionsProperty()
     {
-        if (empty($this->itemSearch)) {
+        if (empty($this->itemSearch) || strlen(trim($this->itemSearch)) < 2) {
             return [];
         }
         
-        // Get items already in cart
-        $addedItemIds = collect($this->items)->pluck('item_id')->toArray();
-        
-        $search = strtolower($this->itemSearch);
+        $search = strtolower(trim($this->itemSearch));
         
         // For purchases: Show ALL active items regardless of stock (purchases add stock)
         $items = Item::where('is_active', true)
-            ->whereNotIn('id', $addedItemIds) // Only exclude items already in cart
             ->where(function ($query) use ($search) {
-                $query->where('name', 'like', '%' . $search . '%')
-                      ->orWhere('sku', 'like', '%' . $search . '%');
+                $query->whereRaw('LOWER(name) LIKE ?', ['%' . $search . '%'])
+                      ->orWhereRaw('LOWER(sku) LIKE ?', ['%' . $search . '%'])
+                      ->orWhereRaw('LOWER(barcode) LIKE ?', ['%' . $search . '%']);
             })
             ->orderBy('name')
-            ->take(8)
+            ->take(15)
             ->get()
             ->map(function ($item) {
                 return [
@@ -2192,24 +1564,13 @@ class Create extends Component
         return round($cost * $unitQuantity, 2);
     }
 
-    /**
-     * Handle unit cost changes for auto-calculation
-     */
     public function updatedNewItemUnitCost($value)
     {
-        // Calculate piece cost based on unit cost and item's unit quantity
         if ($this->selectedItem && isset($this->selectedItem['unit_quantity'])) {
             $unitQuantity = (int)($this->selectedItem['unit_quantity'] ?? 1);
             $this->newItem['cost'] = (float)$value * $unitQuantity;
-            
-            \Log::info('Unit cost updated, recalculating piece cost', [
-                'unit_cost' => $value,
-                'unit_quantity' => $unitQuantity,
-                'piece_cost' => $this->newItem['cost']
-            ]);
         }
         
-        // Update totals when cost changes
         $this->updateTotals();
     }
 
@@ -2237,16 +1598,6 @@ class Create extends Component
             return false;
         }
         
-        // Check if item is already in cart
-        $existingIndex = collect($this->items)->search(function ($existingItem) use ($item) {
-            return $existingItem['item_id'] == $item->id;
-        });
-
-        if ($existingIndex !== false) {
-            $this->notify('⚠️ Item already in cart. Use edit to modify quantity or cost.', 'warning');
-            return false;
-        }
-        
         // Convert values to proper floating point numbers
         $cost = round(floatval($this->newItem['cost']), 2);
         $quantity = floatval($this->newItem['quantity']);
@@ -2254,7 +1605,7 @@ class Create extends Component
         // Calculate subtotal
         $subtotal = $cost * $quantity;
 
-        // Add as a new item
+        // Add as a new item (allow duplicates for different prices/conditions)
         $this->items[] = [
             'item_id' => $item->id,
             'name' => $item->name,
