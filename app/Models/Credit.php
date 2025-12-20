@@ -175,10 +175,6 @@ class Credit extends Model
      */
     public function addPayment(float $amount, string $paymentMethod, ?string $reference = null, ?string $notes = null, ?string $paymentDate = null, ?string $kind = 'regular', ?string $referenceField = null, ?string $receiverBankName = null, ?string $receiverAccountHolder = null, ?string $receiverAccountNumber = null): CreditPayment
     {
-        // Validate payment amount
-        if ($amount > $this->balance) {
-            throw new \Exception('Payment amount cannot exceed current balance of ' . number_format($this->balance, 2));
-        }
 
         $payment = new CreditPayment([
             'amount' => $amount,

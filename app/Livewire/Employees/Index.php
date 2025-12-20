@@ -67,11 +67,29 @@ class Index extends Component
 
     public function deleteEmployee($id)
     {
-        $employee = Employee::findOrFail($id);
-        $employee->delete();
-        $this->dispatch('toast', [
-            'type' => 'success',
-            'message' => 'Employee successfully deleted.'
-        ]);
+        // Check permission
+        if (!auth()->user()->can('employees.delete')) {
+            $this->dispatch('toast', [
+                'type' => 'error',
+                'message' => 'You do not have permission to delete employees.'
+            ]);
+            return;
+        }
+
+        try {
+            $employee = Employee::findOrFail($id);
+            $employeeName = $employee->first_name . ' ' . $employee->last_name;
+            $employee->delete();
+            
+            $this->dispatch('toast', [
+                'type' => 'success',
+                'message' => "Employee '{$employeeName}' successfully deleted."
+            ]);
+        } catch (\Exception $e) {
+            $this->dispatch('toast', [
+                'type' => 'error',
+                'message' => 'Error deleting employee: ' . $e->getMessage()
+            ]);
+        }
     }
 } 

@@ -4,6 +4,10 @@ namespace App\Livewire\CreditPayment;
 
 use App\Models\Credit;
 use App\Models\BankAccount;
+use App\Models\Sale;
+use App\Models\Purchase;
+use App\Models\SalePayment;
+use App\Models\CreditPayment;
 use App\Services\BankService;
 use App\Services\CreditPaymentService;
 use App\Traits\HasNotifications;
@@ -27,7 +31,6 @@ class Create extends Component
     public $notes;
     
     // Bank transfer fields
-    public $bank_account_id;
     public $account_holder_name;
     
     // New bank details fields
@@ -41,9 +44,6 @@ class Create extends Component
     
     // File upload
     public $attachment;
-    
-    // Available bank accounts for selection
-    public $bankAccounts = [];
     
     // Closing Offer Logic (50%+ payment)
     public $showClosingOffer = false;
@@ -87,32 +87,18 @@ class Create extends Component
         $this->amount = $credit->balance; // Simple: remaining = current balance
         $this->payment_date = date('Y-m-d');
         
-        // Load bank accounts from centralized service
-        $this->loadBankAccounts();
-        
         // Check for closing offer eligibility (only for unpaid credits)
         $this->checkClosingOfferEligibility();
-    }
-    
-    public function loadBankAccounts()
-    {
-        $bankService = new BankService();
-        $this->bankAccounts = $bankService->getActiveBankAccounts();
     }
     
     public function updatedPaymentMethod($value)
     {
         // Reset all method-specific fields when payment method changes
-        $this->reset(['transaction_number', 'bank_account_id', 'account_holder_name', 'reference_no']);
+        $this->reset(['transaction_number', 'account_holder_name', 'reference_no']);
         
-        // Reset bank details fields for non-bank/telebirr payments
+        // Reset bank details fields only for non-bank/telebirr payments
         if (!in_array($value, ['bank_transfer', 'telebirr'])) {
             $this->reset(['receiver_bank_name', 'receiver_account_holder', 'receiver_account_number']);
-        }
-        
-        // Load bank accounts if needed
-        if ($value === 'bank_transfer') {
-            $this->loadBankAccounts();
         }
     }
     
@@ -240,9 +226,21 @@ class Create extends Component
             return redirect()->route('admin.credits.show', $this->credit->id);
         }
         
-        // Validate the form first
         $rules = [
-            'amount' => 'required|numeric|min:0.01|max:' . $this->credit->balance,
+            'amount' => [
+                'required',
+                'numeric',
+                'min:0.01',
+                function ($attribute, $value, $fail) {
+                    $amount = (float) $value;
+                    $balance = (float) $this->credit->balance;
+                    
+                    // Prevent full payment with partial payment type
+                    if ($this->paymentType === 'down_payment' && $amount >= $balance) {
+                        $fail('Cannot pay full amount with Down Payment. Use Closing Payment instead.');
+                    }
+                },
+            ],
             'payment_method' => 'required|string|in:cash,bank_transfer,telebirr,check',
             'payment_date' => 'required|date',
             'reference' => 'nullable|string|max:255',
@@ -250,16 +248,23 @@ class Create extends Component
         
         // Add conditional validation rules based on payment method
         if ($this->payment_method === 'bank_transfer') {
-            $rules['bank_account_id'] = 'required|exists:bank_accounts,id';
             $rules['reference_no'] = 'nullable|string|max:255';
             $rules['receiver_bank_name'] = 'required|string|max:255';
             $rules['receiver_account_holder'] = 'required|string|max:255';
             $rules['receiver_account_number'] = 'required|string|max:255';
         } elseif ($this->payment_method === 'telebirr') {
-            $rules['transaction_number'] = 'required|string|max:255';
-            $rules['receiver_bank_name'] = 'required|string|max:255';
+            $rules['transaction_number'] = [
+                'required',
+                'string',
+                'min:5',
+                'max:255',
+                function ($attribute, $value, $fail) {
+                    if ($this->transactionNumberExists((string) $value)) {
+                        $fail('This transaction number has already been used.');
+                    }
+                },
+            ];
             $rules['receiver_account_holder'] = 'required|string|max:255';
-            $rules['receiver_account_number'] = 'required|string|max:255';
         } elseif ($this->payment_method === 'check') {
             $rules['reference_no'] = 'required|string|max:255';
         }
@@ -270,12 +275,6 @@ class Create extends Component
         }
         
         $this->validate($rules, $this->getValidationMessages());
-        
-        // Prevent full payment with down payment type
-        if ($this->paymentType === 'down_payment' && $this->amount >= $this->credit->balance) {
-            $this->addError('amount', 'Cannot pay full amount with Down Payment. Use Closing Payment instead.');
-            return;
-        }
         
         if ($this->paymentType === 'closing_payment') {
             // Show closing prices modal for closing payments
@@ -375,11 +374,7 @@ class Create extends Component
             }
         }
         
-        // Business Rule: Closing cost cannot exceed current balance
-        $maxAllowedCost = $this->credit->balance;
-        $totalClosingCost = min($totalClosingCost, $maxAllowedCost);
-        
-        // Payment amount = closing cost (cannot exceed what you owe)
+        // Set payment amount to the calculated closing cost
         $this->amount = $totalClosingCost;
     }
     
@@ -407,10 +402,7 @@ class Create extends Component
             }
         }
         
-        if ($totalClosingCost > $this->credit->balance) {
-            $this->addError('closingPrices', 'Total closing cost (' . number_format($totalClosingCost, 2) . ' ETB) cannot exceed current balance (' . number_format($this->credit->balance, 2) . ' ETB)');
-            return;
-        }
+        // Allow any closing cost amount - no restriction based on credit balance
         
         $this->calculateClosingPaymentAmount();
         $this->showClosingPricesModal = false;
@@ -419,9 +411,45 @@ class Create extends Component
         try {
             DB::beginTransaction();
             
+            // Prepare reference number and description based on payment method
             $referenceNumber = $this->reference_no;
+            $paymentNotes = 'Closing payment with negotiated prices';
+            
             if ($this->payment_method === 'telebirr') {
                 $referenceNumber = $this->transaction_number;
+                // Create descriptive notes for Telebirr closing payment
+                $paymentNotes = 'Telebirr Payment (Closing)';
+                if ($this->transaction_number) {
+                    $paymentNotes .= ' - Transaction: ' . $this->transaction_number;
+                }
+                if ($this->receiver_account_holder) {
+                    $paymentNotes .= ', Account Holder: ' . $this->receiver_account_holder;
+                }
+                if ($this->reference) {
+                    $paymentNotes .= '. ' . $this->reference;
+                }
+            } elseif ($this->payment_method === 'bank_transfer') {
+                // Create descriptive notes for Bank Transfer closing payment
+                $paymentNotes = 'Bank Transfer Payment (Closing)';
+                if ($this->receiver_bank_name) {
+                    $paymentNotes .= ' - Bank: ' . $this->receiver_bank_name;
+                }
+                if ($this->receiver_account_number) {
+                    $paymentNotes .= ', Account: ' . $this->receiver_account_number;
+                }
+                if ($this->receiver_account_holder) {
+                    $paymentNotes .= ', Account Holder: ' . $this->receiver_account_holder;
+                }
+                if ($this->reference_no) {
+                    $paymentNotes .= ', Transaction: ' . $this->reference_no;
+                }
+                if ($this->reference) {
+                    $paymentNotes .= '. ' . $this->reference;
+                }
+            } else {
+                if ($this->reference) {
+                    $paymentNotes .= '. ' . $this->reference;
+                }
             }
             
             // Update items with closing prices for tracking
@@ -449,12 +477,15 @@ class Create extends Component
                 }
             }
             
+            // Ensure amount is properly formatted as float
+            $paymentAmount = (float) $this->amount;
+            
             // Make regular payment - DO NOT change credit amount
             $payment = $this->credit->addPayment(
-                $this->amount,
+                $paymentAmount,
                 $this->payment_method,
                 $referenceNumber,
-                $this->reference . ' (Closing payment with negotiated prices)',
+                $paymentNotes,
                 $this->payment_date,
                 'closing',
                 $this->reference,
@@ -485,6 +516,7 @@ class Create extends Component
             }
         } catch (\Exception $e) {
             DB::rollBack();
+            $this->addError('general', 'Failed to record payment: ' . $e->getMessage());
             $this->notifyError('Failed to record payment: ' . $e->getMessage());
         }
     }
@@ -507,17 +539,59 @@ class Create extends Component
                 'current_balance' => $this->credit->balance
             ]);
             
+            // Prepare reference number and description based on payment method
             $referenceNumber = $this->reference_no;
+            $paymentNotes = $this->reference;
+            
             if ($this->payment_method === 'telebirr') {
                 $referenceNumber = $this->transaction_number;
+                // Create descriptive notes for Telebirr payment
+                $paymentNotes = 'Telebirr Payment';
+                if ($this->transaction_number) {
+                    $paymentNotes .= ' - Transaction: ' . $this->transaction_number;
+                }
+                if ($this->receiver_account_holder) {
+                    $paymentNotes .= ', Account Holder: ' . $this->receiver_account_holder;
+                }
+                if ($this->reference) {
+                    $paymentNotes .= '. ' . $this->reference;
+                }
+            } elseif ($this->payment_method === 'bank_transfer') {
+                // Create descriptive notes for Bank Transfer payment
+                $paymentNotes = 'Bank Transfer Payment';
+                if ($this->receiver_bank_name) {
+                    $paymentNotes .= ' - Bank: ' . $this->receiver_bank_name;
+                }
+                if ($this->receiver_account_number) {
+                    $paymentNotes .= ', Account: ' . $this->receiver_account_number;
+                }
+                if ($this->receiver_account_holder) {
+                    $paymentNotes .= ', Account Holder: ' . $this->receiver_account_holder;
+                }
+                if ($this->reference_no) {
+                    $paymentNotes .= ', Transaction: ' . $this->reference_no;
+                }
+                if ($this->reference) {
+                    $paymentNotes .= '. ' . $this->reference;
+                }
             }
+            
+            // Ensure amount is properly formatted as float - no multiplication
+            $paymentAmount = round((float) $this->amount, 2);
+            
+            // Log the exact amount being processed
+            \Log::info('Processing payment amount', [
+                'original_amount' => $this->amount,
+                'processed_amount' => $paymentAmount,
+                'credit_balance' => $this->credit->balance
+            ]);
             
             // Regular payment - always use addPayment method
             $payment = $this->credit->addPayment(
-                $this->amount,
+                $paymentAmount,
                 $this->payment_method,
                 $referenceNumber,
-                $this->reference,
+                $paymentNotes,
                 $this->payment_date,
                 'regular',
                 $this->reference,
@@ -546,7 +620,7 @@ class Create extends Component
                 session()->flash('success', 'Credit fully paid.');
                 return redirect()->route('admin.credits.index');
             } else {
-                session()->flash('success', 'Credit partially paid.');
+                session()->flash('success', 'Credit partially paid. Remaining balance: ' . number_format($this->credit->balance, 2) . ' ETB');
                 return redirect()->route('admin.credits.show', $this->credit->id);
             }
         } catch (\Exception $e) {
@@ -561,8 +635,43 @@ class Create extends Component
                 'trace' => $e->getTraceAsString()
             ]);
             
+            $this->addError('general', 'Failed to record payment: ' . $e->getMessage());
             $this->notifyError('Failed to record payment: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Check if a transaction number already exists anywhere in the system.
+     */
+    private function transactionNumberExists(string $transactionNumber): bool
+    {
+        $number = trim($transactionNumber);
+
+        if ($number === '') {
+            return false;
+        }
+
+        if (Sale::where('transaction_number', $number)->exists()) {
+            return true;
+        }
+
+        if (Purchase::where('transaction_number', $number)->exists()) {
+            return true;
+        }
+
+        $existsInSalePayments = class_exists(SalePayment::class)
+            ? SalePayment::where('reference_no', $number)->exists()
+            : false;
+
+        if ($existsInSalePayments) {
+            return true;
+        }
+
+        $existsInCreditPayments = class_exists(CreditPayment::class)
+            ? CreditPayment::where('reference_no', $number)->exists()
+            : false;
+
+        return $existsInCreditPayments;
     }
     
     protected function getValidationMessages(): array
@@ -577,13 +686,12 @@ class Create extends Component
             'payment_date.required' => 'Payment date is required.',
             'payment_date.date' => 'Please enter a valid payment date.',
             'reference.max' => 'Reference cannot exceed 255 characters.',
-            'bank_account_id.required' => 'Bank account is required for bank transfers.',
-            'bank_account_id.exists' => 'Selected bank account does not exist.',
             'account_holder_name.required' => 'Account holder name is required.',
             'account_holder_name.max' => 'Account holder name cannot exceed 255 characters.',
             'reference_no.required' => 'Reference number is required.',
             'reference_no.max' => 'Reference number cannot exceed 255 characters.',
             'transaction_number.required' => 'Transaction number is required for Telebirr payments.',
+            'transaction_number.min' => 'Transaction number must be at least 5 characters.',
             'transaction_number.max' => 'Transaction number cannot exceed 255 characters.',
             'receiver_bank_name.required' => 'Receiver bank name is required.',
             'receiver_bank_name.max' => 'Receiver bank name cannot exceed 255 characters.',

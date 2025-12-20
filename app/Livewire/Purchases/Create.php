@@ -7,9 +7,12 @@ use App\Models\Supplier;
 use App\Models\Item;
 use App\Models\Purchase;
 use App\Models\PurchaseItem;
+use App\Models\Sale;
+use App\Models\SalePayment;
 use App\Models\Warehouse;
 use App\Models\Branch;
 use App\Models\Stock;
+use App\Models\CreditPayment;
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
 use App\Enums\PurchaseStatus;
@@ -47,12 +50,28 @@ class Create extends Component
             'items' => 'required|array|min:1',
         ];
 
+        if (in_array($this->form['payment_method'], [PaymentMethod::TELEBIRR->value, PaymentMethod::BANK_TRANSFER->value], true)) {
+            $rules['form.transaction_number'] = [
+                'required',
+                'string',
+                'min:5',
+                'max:255',
+                function ($attribute, $value, $fail) {
+                    if ($this->transactionNumberExists((string) $value)) {
+                        $fail('This transaction number has already been used.');
+                    }
+                },
+            ];
+        }
+
         if ($this->form['payment_method'] === PaymentMethod::TELEBIRR->value) {
-            $rules['form.transaction_number'] = 'required|string|min:5';
+            $rules['form.receiver_account_holder'] = 'required|string|max:255';
         }
 
         if ($this->form['payment_method'] === PaymentMethod::BANK_TRANSFER->value) {
-            $rules['form.bank_account_id'] = 'required|exists:bank_accounts,id';
+            $rules['form.receiver_bank_name'] = 'required|string|max:255';
+            $rules['form.receiver_account_holder'] = 'required|string|max:255';
+            $rules['form.receiver_account_number'] = 'required|string|max:255';
         }
 
         if ($this->form['payment_method'] === PaymentMethod::CREDIT_ADVANCE->value) {
@@ -67,6 +86,11 @@ class Create extends Component
         'form.branch_id.required' => 'Please select a branch.',
         'items.required' => 'Please add at least one item to the purchase.',
         'items.min' => 'Please add at least one item to the purchase.',
+        'form.transaction_number.required' => 'Transaction number is required for Telebirr or bank transfer payments.',
+        'form.transaction_number.min' => 'Transaction number must be at least 5 characters.',
+        'form.receiver_account_holder.required' => 'Account holder name is required.',
+        'form.receiver_bank_name.required' => 'Please choose a bank.',
+        'form.receiver_account_number.required' => 'Receiver account number is required.',
     ];
 
     public $form = [
@@ -79,7 +103,9 @@ class Create extends Component
         'transaction_number' => '',
         'bank_name' => '',
         'account_number' => '',
-        'bank_account_id' => '',
+        'receiver_bank_name' => '',
+        'receiver_account_holder' => '',
+        'receiver_account_number' => '',
         'receipt_url' => '',
         'receipt_image' => '',
         'advance_amount' => 0,
@@ -137,7 +163,9 @@ class Create extends Component
             'payment_status' => PaymentStatus::PAID->value,
             'tax' => 0,
             'transaction_number' => '',
-            'bank_account_id' => '',
+            'receiver_bank_name' => '',
+            'receiver_account_holder' => '',
+            'receiver_account_number' => '',
             'advance_amount' => 0,
             'notes' => '',
         ];
@@ -473,7 +501,9 @@ class Create extends Component
         $this->form['transaction_number'] = '';
         $this->form['bank_name'] = '';
         $this->form['account_number'] = '';
-        $this->form['bank_account_id'] = '';
+        $this->form['receiver_bank_name'] = '';
+        $this->form['receiver_account_holder'] = '';
+        $this->form['receiver_account_number'] = '';
         $this->form['receipt_url'] = '';
         $this->form['receipt_image'] = '';
         $this->form['advance_amount'] = 0;
@@ -515,13 +545,34 @@ class Create extends Component
         }
 
         // Check payment method specific validations
-        if ($this->form['payment_method'] === PaymentMethod::TELEBIRR->value && empty($this->form['transaction_number'])) {
-            $validationErrors['form.transaction_number'] = 'Transaction number is required for Telebirr payments.';
+        if ($this->form['payment_method'] === PaymentMethod::TELEBIRR->value) {
+            if (empty($this->form['transaction_number'])) {
+                $validationErrors['form.transaction_number'] = 'Transaction number is required for Telebirr payments.';
+            } elseif (strlen((string) $this->form['transaction_number']) < 5) {
+                $validationErrors['form.transaction_number'] = 'Transaction number must be at least 5 characters.';
+            }
+            if (empty($this->form['receiver_account_holder'])) {
+                $validationErrors['form.receiver_account_holder'] = 'Account holder name is required for Telebirr payments.';
+            }
         }
 
-        if ($this->form['payment_method'] === PaymentMethod::BANK_TRANSFER->value && empty($this->form['bank_account_id'])) {
-            $validationErrors['form.bank_account_id'] = 'Bank account is required for bank transfer payments.';
+        if ($this->form['payment_method'] === PaymentMethod::BANK_TRANSFER->value) {
+            if (empty($this->form['transaction_number'])) {
+                $validationErrors['form.transaction_number'] = 'Transaction number is required for bank transfer payments.';
+            } elseif (strlen((string) $this->form['transaction_number']) < 5) {
+                $validationErrors['form.transaction_number'] = 'Transaction number must be at least 5 characters.';
+            }
+            if (empty($this->form['receiver_bank_name'])) {
+                $validationErrors['form.receiver_bank_name'] = 'Please choose a bank for bank transfer payments.';
+            }
+            if (empty($this->form['receiver_account_holder'])) {
+                $validationErrors['form.receiver_account_holder'] = 'Account holder name is required for bank transfer payments.';
+            }
+            if (empty($this->form['receiver_account_number'])) {
+                $validationErrors['form.receiver_account_number'] = 'Account number is required for bank transfer payments.';
+            }
         }
+
 
         if ($this->form['payment_method'] === PaymentMethod::CREDIT_ADVANCE->value) {
             if (empty($this->form['advance_amount']) || $this->form['advance_amount'] <= 0) {
@@ -606,12 +657,20 @@ class Create extends Component
             $purchase->notes = $this->form['notes'];
             
             // Handle payment type specific fields
-            if ($this->form['payment_method'] === PaymentMethod::BANK_TRANSFER->value) {
-                $purchase->bank_account_id = $this->form['bank_account_id'] ?? null;
-                // Note: receipt_url field doesn't exist in database schema
-            } elseif ($this->form['payment_method'] === PaymentMethod::TELEBIRR->value) {
+            if (in_array($this->form['payment_method'], [PaymentMethod::BANK_TRANSFER->value, PaymentMethod::TELEBIRR->value], true)) {
                 $purchase->transaction_number = $this->form['transaction_number'] ?? null;
             }
+
+            if ($this->form['payment_method'] === PaymentMethod::TELEBIRR->value) {
+                $purchase->receiver_account_holder = $this->form['receiver_account_holder'] ?? null;
+            }
+
+            if ($this->form['payment_method'] === PaymentMethod::BANK_TRANSFER->value) {
+                $purchase->receiver_bank_name = $this->form['receiver_bank_name'] ?? null;
+                $purchase->receiver_account_holder = $this->form['receiver_account_holder'] ?? null;
+                $purchase->receiver_account_number = $this->form['receiver_account_number'] ?? null;
+            }
+
             
             try {
                 $purchase->save();
@@ -743,6 +802,12 @@ class Create extends Component
         $this->resetValidation();
         
         return $this->redirect(route('admin.purchases.index'));
+    }
+
+    public function getBanksProperty()
+    {
+        $bankService = new \App\Services\BankService();
+        return $bankService->getEthiopianBanks();
     }
 
     public function render()
@@ -908,10 +973,20 @@ class Create extends Component
      */
     private function notify($message, $type = 'info')
     {
-        $this->dispatch('notify', [
-            'message' => $message,
-            'type' => $type
+        // Validate notification type
+        $validTypes = ['success', 'error', 'info', 'warning'];
+        if (!in_array($type, $validTypes)) {
+            $type = 'info';
+        }
+        
+        // Log the notification
+        \Log::info('Purchase notification: ' . $message, [
+            'type' => $type,
+            'user_id' => auth()->id()
         ]);
+        
+        // Dispatch the notification event to the frontend
+        $this->dispatch('notify', type: $type, message: $message);
     }
 
     public function setItemAndCost($itemId, $cost = null)
@@ -1412,15 +1487,35 @@ class Create extends Component
         }
 
         // Check payment method specific validations
-        if ($this->form['payment_method'] === 'telebirr' && empty($this->form['transaction_number'])) {
-            $validationErrors['form.transaction_number'] = 'Transaction number is required for Telebirr payments.';
+        if ($this->form['payment_method'] === PaymentMethod::TELEBIRR->value) {
+            if (empty($this->form['transaction_number'])) {
+                $validationErrors['form.transaction_number'] = 'Transaction number is required for Telebirr payments.';
+            } elseif (strlen((string) $this->form['transaction_number']) < 5) {
+                $validationErrors['form.transaction_number'] = 'Transaction number must be at least 5 characters.';
+            }
+            if (empty($this->form['receiver_account_holder'])) {
+                $validationErrors['form.receiver_account_holder'] = 'Account holder name is required for Telebirr payments.';
+            }
         }
 
-        if ($this->form['payment_method'] === 'bank_transfer' && empty($this->form['bank_account_id'])) {
-            $validationErrors['form.bank_account_id'] = 'Bank account is required for bank transfer payments.';
+        if ($this->form['payment_method'] === PaymentMethod::BANK_TRANSFER->value) {
+            if (empty($this->form['transaction_number'])) {
+                $validationErrors['form.transaction_number'] = 'Transaction number is required for bank transfer payments.';
+            } elseif (strlen((string) $this->form['transaction_number']) < 5) {
+                $validationErrors['form.transaction_number'] = 'Transaction number must be at least 5 characters.';
+            }
+            if (empty($this->form['receiver_bank_name'])) {
+                $validationErrors['form.receiver_bank_name'] = 'Please choose a bank for bank transfer payments.';
+            }
+            if (empty($this->form['receiver_account_holder'])) {
+                $validationErrors['form.receiver_account_holder'] = 'Account holder name is required for bank transfer payments.';
+            }
+            if (empty($this->form['receiver_account_number'])) {
+                $validationErrors['form.receiver_account_number'] = 'Account number is required for bank transfer payments.';
+            }
         }
 
-        if ($this->form['payment_method'] === 'credit_advance') {
+        if ($this->form['payment_method'] === PaymentMethod::CREDIT_ADVANCE->value) {
             if (empty($this->form['advance_amount']) || $this->form['advance_amount'] <= 0) {
                 $validationErrors['form.advance_amount'] = 'Advance amount is required and must be greater than zero.';
             } elseif ($this->form['advance_amount'] > $this->totalAmount) {
@@ -1472,15 +1567,35 @@ class Create extends Component
         }
 
         // Check payment method specific validations
-        if ($this->form['payment_method'] === 'telebirr' && empty($this->form['transaction_number'])) {
-            $validationErrors['form.transaction_number'] = 'Transaction number is required for Telebirr payments';
+        if ($this->form['payment_method'] === PaymentMethod::TELEBIRR->value) {
+            if (empty($this->form['transaction_number'])) {
+                $validationErrors['form.transaction_number'] = 'Transaction number is required for Telebirr payments.';
+            } elseif (strlen((string) $this->form['transaction_number']) < 5) {
+                $validationErrors['form.transaction_number'] = 'Transaction number must be at least 5 characters.';
+            }
+            if (empty($this->form['receiver_account_holder'])) {
+                $validationErrors['form.receiver_account_holder'] = 'Account holder name is required for Telebirr payments.';
+            }
         }
 
-        if ($this->form['payment_method'] === 'bank_transfer' && empty($this->form['bank_account_id'])) {
-            $validationErrors['form.bank_account_id'] = 'Bank account is required for bank transfer payments';
+        if ($this->form['payment_method'] === PaymentMethod::BANK_TRANSFER->value) {
+            if (empty($this->form['transaction_number'])) {
+                $validationErrors['form.transaction_number'] = 'Transaction number is required for bank transfer payments.';
+            } elseif (strlen((string) $this->form['transaction_number']) < 5) {
+                $validationErrors['form.transaction_number'] = 'Transaction number must be at least 5 characters.';
+            }
+            if (empty($this->form['receiver_bank_name'])) {
+                $validationErrors['form.receiver_bank_name'] = 'Please choose a bank for bank transfer payments.';
+            }
+            if (empty($this->form['receiver_account_holder'])) {
+                $validationErrors['form.receiver_account_holder'] = 'Account holder name is required for bank transfer payments.';
+            }
+            if (empty($this->form['receiver_account_number'])) {
+                $validationErrors['form.receiver_account_number'] = 'Account number is required for bank transfer payments.';
+            }
         }
 
-        if ($this->form['payment_method'] === 'credit_advance') {
+        if ($this->form['payment_method'] === PaymentMethod::CREDIT_ADVANCE->value) {
             if (empty($this->form['advance_amount']) || $this->form['advance_amount'] <= 0) {
                 $validationErrors['form.advance_amount'] = 'Advance amount is required and must be greater than zero';
             } elseif ($this->form['advance_amount'] > $this->totalAmount) {
@@ -1627,5 +1742,36 @@ class Create extends Component
         $this->resetItemFields();
         
         return true;
+    }
+
+    /**
+     * Check if a transaction number already exists across sales, purchases, sale payments, or credit payments.
+     */
+    private function transactionNumberExists(string $transactionNumber): bool
+    {
+        if ($transactionNumber === '') {
+            return false;
+        }
+
+        if (Purchase::where('transaction_number', $transactionNumber)->exists()) {
+            return true;
+        }
+
+        if (Sale::where('transaction_number', $transactionNumber)->exists()) {
+            return true;
+        }
+
+        $salePaymentExists = class_exists(SalePayment::class)
+            ? SalePayment::where('transaction_number', $transactionNumber)->exists()
+            : false;
+        if ($salePaymentExists) {
+            return true;
+        }
+
+        $creditPaymentExists = class_exists(CreditPayment::class)
+            ? CreditPayment::where('reference_no', $transactionNumber)->exists()
+            : false;
+
+        return $creditPaymentExists;
     }
 }

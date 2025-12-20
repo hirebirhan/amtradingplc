@@ -54,6 +54,8 @@ Route::post('/logout', [LoginController::class, 'logout'])
 
 
 
+
+
 // Protected routes that require authentication and active account
 Route::prefix('admin')->middleware(['auth', 'active'])->group(function () {
     Route::get('/dashboard', [App\Http\Controllers\Admin\DashboardController::class, 'index'])->name('admin.dashboard');

@@ -204,10 +204,22 @@
             // Livewire event listeners for flash messages
             if (typeof Livewire !== 'undefined') {
                 document.addEventListener('livewire:initialized', () => {
-                    Livewire.on('notify', (event) => {
-                        const { type, message } = event.detail || event;
-                        if (typeof showFlashMessage === 'function') {
-                            showFlashMessage(type, message);
+                    Livewire.on('notify', (data) => {
+                        // Handle both array format and object format
+                        let type, message;
+                        if (Array.isArray(data)) {
+                            type = data[0]?.type || data.type;
+                            message = data[0]?.message || data.message;
+                        } else if (data && typeof data === 'object') {
+                            type = data.type;
+                            message = data.message;
+                        } else {
+                            type = data?.type || 'info';
+                            message = data?.message || 'Notification';
+                        }
+                        
+                        if (message && typeof showFlashMessage === 'function') {
+                            showFlashMessage(type || 'info', message);
                         }
                     });
                 });

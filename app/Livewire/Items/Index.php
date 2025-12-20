@@ -43,6 +43,10 @@ class Index extends Component
     #[Url(except: 10)]
     public $perPage = 10;
     
+
+    
+
+    
     #[Url(except: 'name')]
     public $sortField = 'name';
     
@@ -54,6 +58,15 @@ class Index extends Component
     public $previewData = [];
     public $showPreview = false;
     public $previewErrors = [];
+    
+    public $showDeleteModal = false;
+    public $itemToDelete = null;
+    public $deleteErrors = [];
+    
+    public $showDuplicates = false;
+
+    // Stock statistics cache
+    public $stockStats = [];
 
     protected $rules = [
         'importFile' => 'nullable|file|mimes:xlsx,xls,csv|max:10240',
@@ -74,6 +87,8 @@ class Index extends Component
         $this->search = '';
     }
 
+
+
     public function sortBy($field)
     {
         if ($this->sortField === $field) {
@@ -93,27 +108,126 @@ class Index extends Component
         $this->sortDirection = $this->sortDirection === 'asc' ? 'desc' : 'asc';
     }
 
-    public function delete(Item $item)
+    public function confirmDelete($itemId)
     {
+        $this->itemToDelete = Item::find($itemId);
+        $this->deleteErrors = [];
+        
+        if (!$this->itemToDelete) {
+            $this->dispatch('notify', type: 'error', message: 'Item not found.');
+            return;
+        }
+        
+        // Check business rules
+        $this->validateItemDeletion();
+        $this->showDeleteModal = true;
+    }
+    
+    private function validateItemDeletion()
+    {
+        $item = $this->itemToDelete;
+        $this->deleteErrors = [];
+        
+        // Check if item has purchases
+        $totalPurchases = $item->purchaseItems()->sum('quantity');
+        if ($totalPurchases > 0) {
+            $this->deleteErrors[] = "Item has {$totalPurchases} units in purchase history";
+        }
+        
+        // Check if item has sales
+        $totalSales = $item->saleItems()->sum('quantity');
+        if ($totalSales > 0) {
+            $this->deleteErrors[] = "Item has {$totalSales} units in sales history";
+        }
+        
+        // Check current stock
+        $currentStock = $item->stocks()->sum('quantity');
+        if ($currentStock > 0) {
+            $this->deleteErrors[] = "Item has {$currentStock} units in current stock";
+        }
+        
+        // Check stock movements
+        $stockMovements = $item->stockHistories()->count();
+        if ($stockMovements > 0) {
+            $this->deleteErrors[] = "Item has {$stockMovements} stock movement records";
+        }
+    }
+    
+    public function deleteItem()
+    {
+        if (!$this->itemToDelete) {
+            $this->closeDeleteModal();
+            return;
+        }
+        
         // Check permission
         if (!auth()->user()->can('items.delete')) {
-            // Permission and validation checks - no flash messages for errors
+            $this->dispatch('notify', type: 'error', message: 'You are not authorized to delete items.');
+            $this->closeDeleteModal();
             return;
         }
-
-        // Check if the item has stock history
-        if ($item->stockHistories()->count() > 0) {
+        
+        // Re-validate before deletion
+        $this->validateItemDeletion();
+        
+        if (!empty($this->deleteErrors)) {
+            $this->dispatch('notify', type: 'error', message: 'Cannot delete item: ' . implode(', ', $this->deleteErrors));
             return;
         }
-
-        // Check if the item has stock
-        if ($item->stocks()->sum('quantity') > 0) {
-            return;
+        
+        try {
+            $itemName = $this->itemToDelete->name;
+            $this->itemToDelete->delete();
+            
+            $this->dispatch('notify', type: 'success', message: "Item '{$itemName}' deleted successfully.");
+            $this->closeDeleteModal();
+            $this->resetPage();
+            
+        } catch (\Exception $e) {
+            $this->dispatch('notify', type: 'error', message: 'Error deleting item: ' . $e->getMessage());
         }
+    }
+    
+    public function closeDeleteModal()
+    {
+        $this->showDeleteModal = false;
+        $this->itemToDelete = null;
+        $this->deleteErrors = [];
+    }
 
-        // Delete the item
-        $item->delete();
-        $this->flashCrudSuccess('item', 'deleted');
+    /**
+     * Calculate stock statistics based on filtered results
+     */
+    public function getStockStatistics($items)
+    {
+        $totalItems = $items->count();
+        $totalStockValue = 0;
+        $inStockCount = 0;
+        $lowStockCount = 0;
+        $outOfStockCount = 0;
+        
+        foreach ($items as $item) {
+            $totalStock = $item->stocks->sum('quantity');
+            $stockValue = $totalStock * $item->cost_price;
+            $totalStockValue += $stockValue;
+            
+            if ($totalStock > 0) {
+                $inStockCount++;
+                if ($totalStock <= $item->reorder_level) {
+                    $lowStockCount++;
+                }
+            } else {
+                $outOfStockCount++;
+            }
+        }
+        
+        return [
+            'total_items' => $totalItems,
+            'stock_value' => number_format($totalStockValue, 2),
+            'in_stock' => $inStockCount,
+            'low_stock' => $lowStockCount,
+            'out_of_stock' => $outOfStockCount,
+        ];
     }
 
     public function previewImport()
@@ -688,6 +802,16 @@ class Index extends Component
         $totalCount = Item::count();
         $inStockCount = Item::whereRaw('(SELECT SUM(quantity) FROM purchase_items WHERE item_id = items.id) > 0')->count();
 
+        // Get duplicate names for highlighting
+        $duplicateNames = [];
+        if ($this->showDuplicates) {
+            $duplicateNames = Item::select('name')
+                ->groupBy('name')
+                ->havingRaw('COUNT(*) > 1')
+                ->pluck('name')
+                ->toArray();
+        }
+        
         return view('livewire.items.index', [
             'items' => $items,
             'categories' => $categories,
@@ -696,6 +820,7 @@ class Index extends Component
             'lowStockCount' => $lowStockCount,
             'outOfStockCount' => $outOfStockCount,
             'totalCount' => $totalCount,
+            'duplicateNames' => $duplicateNames,
         ])->title('Inventory Items');
     }
 
