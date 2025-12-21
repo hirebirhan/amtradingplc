@@ -171,23 +171,19 @@
         document.addEventListener('DOMContentLoaded', function() {
             const canvasElement = document.getElementById('salesChart');
             if (!canvasElement) {
-                console.error('❌ Chart canvas element not found');
                 return;
             }
             
             const ctx = canvasElement.getContext('2d');
             if (!ctx) {
-                console.error('❌ Could not get canvas context');
                 return;
             }
             
-            console.log('✅ Chart canvas found, initializing...');
             let salesChart;
 
             function getThemeColors() {
                 const style = getComputedStyle(document.documentElement);
                 
-                // Get computed colors from actual Bootstrap classes to ensure consistency
                 const primaryElement = document.createElement('div');
                 primaryElement.className = 'bg-primary';
                 primaryElement.style.display = 'none';
@@ -214,7 +210,6 @@
                 };
             }
 
-            // Helper to convert rgb to rgba with alpha
             function rgbToRgba(rgb, alpha) {
                 const result = rgb.match(/\d+/g);
                 if (!result) return rgb;
@@ -222,15 +217,11 @@
             }
 
             function updateChart(range) {
-                console.log('🔄 Updating chart for range:', range);
-                
-                // Update dropdown text in main dashboard header
                 const selectedRangeElement = document.getElementById('selectedRange');
                 const activeLink = document.querySelector(`[data-range="${range}"]`);
                 if (activeLink && selectedRangeElement) {
                     selectedRangeElement.textContent = activeLink.textContent;
                     
-                    // Update active state
                     document.querySelectorAll('[data-range]').forEach(link => {
                         link.classList.remove('active');
                         link.style.backgroundColor = '';
@@ -240,7 +231,6 @@
                     activeLink.style.backgroundColor = 'var(--hover-bg)';
                 }
 
-                // Show loading state
                 const chartContainer = document.getElementById('chartContainer');
                 const noDataMessage = document.getElementById('noDataMessage');
                 
@@ -248,10 +238,8 @@
                 chartContainer.style.opacity = '0.5';
                 }
 
-                // Build API endpoint URL
                 const chartDataUrl = '{{ route("admin.dashboard.chart-data", "RANGE_PLACEHOLDER") }}'.replace('RANGE_PLACEHOLDER', range);
                 
-                // Fetch chart data
                 fetch(chartDataUrl, {
                     method: 'GET',
                     headers: {
@@ -261,43 +249,27 @@
                     }
                 })
                 .then(response => {
-                    console.log('📡 API Response:', response.status, response.statusText);
                     if (!response.ok) {
                         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                     }
                     return response.json();
                 })
                     .then(data => {
-                    console.log('✅ Chart data received:', data);
-                    
-                    // Analyze the data
                     const salesTotal = (data.sales || []).reduce((a, b) => Number(a) + Number(b), 0);
                     const purchasesTotal = (data.purchases || []).reduce((a, b) => Number(a) + Number(b), 0);
-                    
-                    console.log(`📊 Data Analysis:`, {
-                        salesTotal,
-                        purchasesTotal,
-                        labelCount: data.labels?.length || 0,
-                        salesNonZero: (data.sales || []).filter(val => val > 0).length,
-                        purchasesNonZero: (data.purchases || []).filter(val => val > 0).length
-                    });
                     
                     if (chartContainer) {
                         chartContainer.style.opacity = '1';
                     }
                     
-                    // Destroy existing chart
                         if (salesChart) {
                             salesChart.destroy();
                         }
                         
-                    // Check if we have meaningful data
                         const hasData = data.labels && data.labels.length > 0 && 
                                    (salesTotal > 0 || (purchasesTotal > 0 && {{ $can_view_purchases ? 'true' : 'false' }}));
                         
                         if (hasData) {
-                        console.log('🎨 Creating chart with data...');
-                        
                         if (chartContainer) {
                             chartContainer.classList.remove('d-none');
                         }
@@ -310,26 +282,6 @@
                         const showSales = salesTotal > 0;
                         const showPurchases = purchasesTotal > 0 && {{ $can_view_purchases ? 'true' : 'false' }};
                         
-                        console.log('🎨 Chart Colors:', {
-                            primary: colors.primary,
-                            success: colors.success,
-                            bgSurface: colors.bgSurface
-                        });
-                        
-                        console.log(`🎯 Chart Display - Sales: ${showSales}, Purchases: ${showPurchases}`);
-                        
-                        // Debug purchase data details
-                        if (showPurchases) {
-                            console.log('📦 Purchase Data Details:', {
-                                values: data.purchases,
-                                total: purchasesTotal,
-                                nonZero: data.purchases.filter(val => val > 0).length,
-                                max: Math.max(...data.purchases),
-                                sample: data.purchases.slice(-5)
-                            });
-                        }
-                        
-                        // Create Chart.js instance
                             salesChart = new Chart(ctx, {
                                 type: 'line',
                                 data: {
@@ -422,23 +374,7 @@
                                 }
                             });
                         
-                        console.log('✅ Chart created successfully!');
-                        console.log('Chart datasets:', salesChart.data.datasets.map(d => ({
-                            label: d.label,
-                            dataLength: d.data.length,
-                            dataSum: d.data.reduce((a, b) => a + b, 0),
-                            hidden: d.hidden
-                        })));
-                        
                         } else {
-                        console.log('❌ No meaningful data to display');
-                        console.log('Debug Info:', {
-                            hasLabels: !!(data.labels && data.labels.length > 0),
-                            labelCount: data.labels?.length || 0,
-                            salesTotal,
-                            purchasesTotal
-                        });
-                        
                         if (chartContainer) {
                             chartContainer.classList.add('d-none');
                         }
@@ -449,8 +385,6 @@
                         }
                     })
                     .catch(error => {
-                    console.error('❌ Chart error:', error);
-                    
                     if (chartContainer) {
                         chartContainer.style.opacity = '1';
                         chartContainer.classList.add('d-none');
@@ -462,34 +396,22 @@
                     });
             }
 
-            // Bind time range links
             document.querySelectorAll('[data-range]').forEach(link => {
                 link.addEventListener('click', function(e) {
                     e.preventDefault();
                     const range = this.getAttribute('data-range');
                     updateChart(range);
                     
-                    // Update active state
                     document.querySelectorAll('[data-range]').forEach(el => {
                         el.classList.remove('active');
                     });
                     this.classList.add('active');
                     
-                    // Update the selected range text
                     document.getElementById('selectedRange').textContent = this.textContent.trim();
                 });
             });
             
-            // Initial chart update with default range
             updateChart('month');
-            
-            // Debug: Check elements
-            console.log('Element check:', {
-                chartContainer: !!document.getElementById('chartContainer'),
-                noDataMessage: !!document.getElementById('noDataMessage'),
-                salesChart: !!document.getElementById('salesChart'),
-                canvasContext: !!ctx
-            });
         });
     </script>
     @endpush
