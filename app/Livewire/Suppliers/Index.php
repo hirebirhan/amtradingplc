@@ -49,6 +49,13 @@ class Index extends Component
         $this->resetPage();
     }
 
+    public function clearFilters()
+    {
+        $this->search = '';
+        $this->branchFilter = '';
+        $this->resetPage();
+    }
+
     public function sortBy($field)
     {
         if ($this->sortField === $field) {
@@ -94,14 +101,17 @@ class Index extends Component
     {
         return Supplier::query()
             ->when($this->search, function ($query) {
-                $query->where(function ($q) {
-                    $q->where('name', 'like', '%' . $this->search . '%')
-                        ->orWhere('email', 'like', '%' . $this->search . '%')
-                        ->orWhere('phone', 'like', '%' . $this->search . '%');
+                $searchTerm = '%' . strtolower(trim($this->search)) . '%';
+                $query->where(function ($q) use ($searchTerm) {
+                    $q->whereRaw('LOWER(name) LIKE ?', [$searchTerm])
+                        ->orWhereRaw('LOWER(email) LIKE ?', [$searchTerm])
+                        ->orWhereRaw('LOWER(phone) LIKE ?', [$searchTerm])
+                        ->orWhereRaw('LOWER(reference_no) LIKE ?', [$searchTerm])
+                        ->orWhereRaw('LOWER(address) LIKE ?', [$searchTerm]);
                 });
             })
-            ->when($this->branchFilter, function ($query) {
-                $query->where('branch_id', $this->branchFilter);
+            ->when($this->branchFilter && $this->branchFilter !== '', function ($query) {
+                $query->where('branch_id', (int) $this->branchFilter);
             })
             ->where('is_active', true)
             ->orderBy($this->sortField, $this->sortDirection);
@@ -110,10 +120,13 @@ class Index extends Component
     public function render()
     {
         $suppliers = $this->getSuppliersQuery()->paginate($this->perPage);
+        
+        // Get all branches - let users see all options
+        $branches = Branch::orderBy('name')->get();
 
         return view('livewire.suppliers.index', [
             'suppliers' => $suppliers,
-            'branches' => Branch::orderBy('name')->get(),
+            'branches' => $branches,
             'activeSupplierCount' => $this->activeSupplierCount,
             'recentSuppliersCount' => $this->recentSuppliersCount,
             'totalPurchasesAmount' => $this->totalPurchasesAmount
