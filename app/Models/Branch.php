@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use App\Models\User;
+use App\Models\Supplier;
 
 class Branch extends Model
 {
@@ -46,6 +47,14 @@ class Branch extends Model
     public function warehouses(): BelongsToMany
     {
         return $this->belongsToMany(Warehouse::class);
+    }
+
+    /**
+     * Get the suppliers associated with this branch.
+     */
+    public function suppliers(): HasMany
+    {
+        return $this->hasMany(Supplier::class);
     }
 
     /**
