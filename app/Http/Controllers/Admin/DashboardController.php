@@ -52,8 +52,7 @@ class DashboardController extends Controller
             
             // Add available branches and warehouses for filter dropdowns if user has access
             if ($dashboardData['show_filters']) {
-                $dashboardData['available_branches'] = \App\Models\Branch::select('id', 'name')->get();
-                $dashboardData['available_warehouses'] = \App\Models\Warehouse::select('id', 'name')->get();
+                $dashboardData = array_merge($dashboardData, $this->dashboardService->getFilterOptions($user));
             }
             
             // Set page title and description based on user role
@@ -65,20 +64,15 @@ class DashboardController extends Controller
                 $dashboardData['page_description'] = 'Overview of system activities and metrics';
             }
             
-            // Ensure all required variables are set
-            $dashboardData['is_sales'] = $isSales;
-            $dashboardData['is_admin_or_manager'] = $isAdminOrManager;
-            $dashboardData['can_view_revenue'] = $dashboardData['can_view_revenue'] ?? false;
-            $dashboardData['can_view_purchases'] = $dashboardData['can_view_purchases'] ?? false;
-            $dashboardData['can_view_inventory'] = $dashboardData['can_view_inventory'] ?? false;
-            
             // Set default values for required variables if not set
-            $dashboardData['total_sales'] = $dashboardData['total_sales'] ?? 0;
-            $dashboardData['total_revenue'] = $dashboardData['total_revenue'] ?? 0;
-            $dashboardData['total_purchases'] = $dashboardData['total_purchases'] ?? 0;
-            $dashboardData['total_purchase_amount'] = $dashboardData['total_purchase_amount'] ?? 0;
-            $dashboardData['total_inventory_value'] = $dashboardData['total_inventory_value'] ?? 0;
-            $dashboardData['customers_count'] = $dashboardData['customers_count'] ?? 0;
+            $dashboardData = array_merge([
+                'total_sales' => 0,
+                'total_revenue' => 0,
+                'total_purchases' => 0,
+                'total_purchase_amount' => 0,
+                'total_inventory_value' => 0,
+                'customers_count' => 0,
+            ], $dashboardData);
             
             return view('dashboard', $dashboardData);
             
@@ -119,27 +113,22 @@ class DashboardController extends Controller
      */
     public function getChartData(Request $request, string $range = 'month'): JsonResponse
     {
+        $allowedRanges = ['today', 'yesterday', 'week', 'month', 'this_month', 'year'];
+        if (!in_array($range, $allowedRanges)) {
+            return response()->json(['error' => 'Invalid range'], 400);
+        }
+        
         try {
             $user = auth()->user();
+            $branchId = $request->get('branch_id') ? (int) $request->get('branch_id') : null;
+            $warehouseId = $request->get('warehouse_id') ? (int) $request->get('warehouse_id') : null;
             
-            // Get filter parameters
-            $branchId = $request->get('branch_id');
-            $warehouseId = $request->get('warehouse_id');
-            
-            // Only apply filters for admin/manager users
             if (!UserHelper::isAdminOrManager()) {
                 $branchId = null;
                 $warehouseId = null;
             }
             
-            // Get chart data with filters
-            $chartData = $this->chartDataService->getChartData(
-                $user, 
-                $range,
-                $branchId,
-                $warehouseId
-            );
-            
+            $chartData = $this->chartDataService->getChartData($user, $range, $branchId, $warehouseId);
             return response()->json($chartData);
             
         } catch (\Exception $e) {
@@ -147,15 +136,9 @@ class DashboardController extends Controller
                 'error' => $e->getMessage(),
                 'user_id' => auth()->id(),
                 'range' => $range,
-                'trace' => $e->getTraceAsString()
             ]);
             
-            return response()->json([
-                'error' => 'Chart data is temporarily unavailable. Please try again.',
-                'labels' => [],
-                'sales' => [],
-                'purchases' => []
-            ], 500);
+            return response()->json(['error' => 'Chart data unavailable'], 500);
         }
     }
 }
