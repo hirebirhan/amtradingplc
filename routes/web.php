@@ -93,11 +93,6 @@ Route::prefix('admin')->middleware(['auth', 'active'])->group(function () {
             return view('items-create');
         })->middleware('permission:items.create')->name('create');
 
-        // Add new route for template download
-        Route::get('/import-template/download', [App\Http\Controllers\ItemImportController::class, 'downloadTemplate'])
-            ->middleware('permission:items.create')
-            ->name('import-template.download');
-
         // Add import page route (best practice)
         Route::get('/import', App\Livewire\Admin\Items\ImportItems::class)
             ->middleware('permission:items.create')->name('import');

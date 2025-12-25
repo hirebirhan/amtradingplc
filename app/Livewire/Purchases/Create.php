@@ -780,8 +780,6 @@ class Create extends Component
             }
             \DB::commit();
             
-            $this->notify('✅ Purchase created successfully!', 'success');
-            
             // Redirect to purchases index
             return redirect()->route('admin.purchases.index')
                 ->with('success', 'Purchase created successfully!');
@@ -1628,11 +1626,6 @@ class Create extends Component
             // If successful, dispatch event to close modal
             $this->dispatch('closePurchaseModal');
             $this->dispatch('purchaseCompleted');
-            
-            // Show success message with more details
-            $totalAmount = number_format($this->totalAmount, 2);
-            $itemCount = count($this->items);
-            $this->notify("✅ Purchase created successfully! {$itemCount} items, ETB {$totalAmount}", 'success');
             
             // Redirect to purchases index
             return redirect()->route('admin.purchases.index')

@@ -1,53 +1,44 @@
 <x-app-layout>
     <div class="min-vh-100">
-        <!-- Dashboard Header -->
-        <div class="mb-4">
-            <div class="container-fluid">
-                <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between py-2 gap-2 gap-md-0 flex-wrap">
-                    <div>
-                        <h1 class="h2 fw-bold mb-0">{{ $page_title ?? 'Dashboard' }}</h1>
-                        <div class="small text-secondary">
-                            Welcome back, {{ auth()->user()->name }}! {{ $page_description ?? '' }}
-                        </div>
+        <!-- Header Section -->
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-start gap-3 mb-4">
+            <div class="flex-grow-1">
+                <h4 class="fw-bold mb-0">{{ $page_title ?? 'Dashboard' }}</h4>
+                <p class="text-secondary mb-0 small">{{ $page_description ?? 'Welcome back, ' . auth()->user()->name . '!' }}</p>
+            </div>
+            <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                <!-- Time Range Selector -->
+                <div class="position-relative" x-data="{ open: false }">
+                    <button @click="open = !open" class="btn btn-outline-secondary d-flex align-items-center gap-2 px-3 py-2 small">
+                        <i class="bi bi-calendar3"></i>
+                        <span id="selectedRange">Last 30 Days</span>
+                        <i class="bi bi-chevron-down small"></i>
+                    </button>
+                    <div x-show="open" @click.away="open = false" 
+                         class="position-absolute end-0 mt-2 bg-body-tertiary rounded shadow-lg border dropdown-menu show py-1">
+                        <a href="#" class="dropdown-item small" data-range="today">Today</a>
+                        <a href="#" class="dropdown-item small" data-range="yesterday">Yesterday</a>
+                        <a href="#" class="dropdown-item small" data-range="week">Last 7 Days</a>
+                        <a href="#" class="dropdown-item small active" data-range="month">Last 30 Days</a>
+                        <a href="#" class="dropdown-item small" data-range="this_month">This Month</a>
+                        <hr class="dropdown-divider">
+                        <a href="#" class="dropdown-item small" data-range="year">This Year</a>
                     </div>
-                   
-                       <!-- Time Range Selector -->
-                       <div class="position-relative" x-data="{ open: false }">
-                            <button @click="open = !open" class="btn d-flex align-items-center gap-2 px-3 py-2 small">
-                                <i class="bi bi-calendar3"></i>
-                                <span id="selectedRange">Last 30 Days</span>
-                                <i class="bi bi-chevron-down small"></i>
-                            </button>
-                            <div x-show="open" @click.away="open = false" 
-                                 class="position-absolute end-0 mt-2 bg-body-tertiary rounded shadow-lg border dropdown-menu show py-1">
-                                <a href="#" class="dropdown-item small" data-range="today">Today</a>
-                                <a href="#" class="dropdown-item small" data-range="yesterday">Yesterday</a>
-                                <a href="#" class="dropdown-item small" data-range="week">Last 7 Days</a>
-                                <a href="#" class="dropdown-item small active" data-range="month">Last 30 Days</a>
-                                <a href="#" class="dropdown-item small" data-range="this_month">This Month</a>
-                                <li><hr class="dropdown-divider"></li>
-                                <a href="#" class="dropdown-item small" data-range="year">This Year</a>
-                            </div>
-                        </div>
                 </div>
             </div>
         </div>
 
         <!-- Main Content -->
-        <div class="container-fluid py-2">
+        <div class="py-2">
             <!-- Error State -->
             @if(isset($error))
                 <div class="alert alert-danger d-flex align-items-center mb-4" role="alert">
                     <div class="flex-shrink-0 me-3">
-                        <i class="fas fa-exclamation-triangle"></i>
-                        </div>
-                    <div>
-                        {{ $error }}
+                        <i class="bi bi-exclamation-triangle"></i>
                     </div>
+                    <div>{{ $error }}</div>
                 </div>
             @endif
-
-        
 
             <!-- Stats Grid -->
             <div class="row g-3 mb-4">
@@ -70,7 +61,7 @@
             <div class="row g-4">
                 <!-- Sales Chart -->
                 <div class="col-12 col-lg-8">
-                    <div class="card h-100">
+                    <div class="card border-0 shadow-sm h-100">
                         <div class="card-body p-2 p-md-4">
                             <div class="d-flex align-items-center justify-content-between mb-4">
                                 <div>
@@ -104,7 +95,7 @@
 
                 <!-- Activity Feed -->
                 <div class="col-12 col-lg-4">
-                    <div class="card h-100">
+                    <div class="card border-0 shadow-sm h-100">
                         <div class="card-body p-2 p-md-4">
                             <div class="mb-4">
                                 <h3 class="h5 fw-semibold mb-1">
@@ -166,7 +157,7 @@
     </div>
 
     @push('scripts')
-    <script src="https://cdn.jsdelivr.net/npm/chart.js" defer crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js" crossorigin="anonymous"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const canvasElement = document.getElementById('salesChart');
@@ -183,24 +174,9 @@
 
             function getThemeColors() {
                 const style = getComputedStyle(document.documentElement);
-                
-                const primaryElement = document.createElement('div');
-                primaryElement.className = 'bg-primary';
-                primaryElement.style.display = 'none';
-                document.body.appendChild(primaryElement);
-                const primaryColor = getComputedStyle(primaryElement).backgroundColor;
-                document.body.removeChild(primaryElement);
-                
-                const successElement = document.createElement('div');
-                successElement.className = 'bg-success';
-                successElement.style.display = 'none';
-                document.body.appendChild(successElement);
-                const successColor = getComputedStyle(successElement).backgroundColor;
-                document.body.removeChild(successElement);
-                
                 return {
-                    primary: primaryColor || style.getPropertyValue('--bs-primary').trim() || 'rgb(13, 110, 253)',
-                    success: successColor || style.getPropertyValue('--bs-success').trim() || 'rgb(25, 135, 84)',
+                    primary: style.getPropertyValue('--bs-primary').trim() || 'rgb(13, 110, 253)',
+                    success: style.getPropertyValue('--bs-success').trim() || 'rgb(25, 135, 84)',
                     info: style.getPropertyValue('--bs-info').trim() || 'rgb(13, 202, 240)',
                     warning: style.getPropertyValue('--bs-warning').trim() || 'rgb(255, 193, 7)',
                     danger: style.getPropertyValue('--bs-danger').trim() || 'rgb(220, 53, 69)',
@@ -267,7 +243,7 @@
                         }
                         
                         const hasData = data.labels && data.labels.length > 0 && 
-                                   (salesTotal > 0 || (purchasesTotal > 0 && {{ $can_view_purchases ? 'true' : 'false' }}));
+                                   (salesTotal > 0 || (purchasesTotal > 0 && @json($can_view_purchases)));
                         
                         if (hasData) {
                         if (chartContainer) {
@@ -280,7 +256,7 @@
                         
                         const colors = getThemeColors();
                         const showSales = salesTotal > 0;
-                        const showPurchases = purchasesTotal > 0 && {{ $can_view_purchases ? 'true' : 'false' }};
+                        const showPurchases = purchasesTotal > 0 && @json($can_view_purchases);
                         
                             salesChart = new Chart(ctx, {
                                 type: 'line',
@@ -385,14 +361,10 @@
                         }
                     })
                     .catch(error => {
-                    if (chartContainer) {
-                        chartContainer.style.opacity = '1';
-                        chartContainer.classList.add('d-none');
-                    }
-                    const noDataMessage = document.getElementById('noDataMessage');
-                    if (noDataMessage) {
-                        noDataMessage.classList.remove('d-none');
-                    }
+                        console.error('Chart data failed:', error);
+                        if (chartContainer) {
+                            chartContainer.innerHTML = '<div class="text-center py-5 text-muted"><i class="bi bi-exclamation-triangle fs-1 mb-3 d-block"></i><h5>Chart unavailable</h5></div>';
+                        }
                     });
             }
 

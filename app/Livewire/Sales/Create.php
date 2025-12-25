@@ -868,9 +868,8 @@ class Create extends Component
 
             DB::commit();
             
-            $this->flashSuccess('Sale completed successfully.');
-            
-            return redirect()->route('admin.sales.index');
+            return redirect()->route('admin.sales.index')
+                ->with('success', 'Sale completed successfully.');
 
         } catch (\Illuminate\Validation\ValidationException $e) {
             $this->notify('Please fix the validation errors.', 'error');
@@ -1167,10 +1166,6 @@ class Create extends Component
             
             $this->dispatch('closeSaleModal');
             $this->dispatch('saleCompleted');
-            
-            $totalAmount = number_format($this->totalAmount, 2);
-            $itemCount = count($this->items);
-            $this->notify("✅ Sale created successfully! {$itemCount} items, ETB {$totalAmount}", 'success');
             
             return $result;
             

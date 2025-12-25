@@ -15,9 +15,32 @@ use App\Services\Dashboard\Contracts\{
     InventoryServiceInterface
 };
 use Illuminate\Support\Collection;
+use App\Enums\UserRole;
 
 class DashboardService
 {
+    private const REVENUE_ROLES = [
+        UserRole::SUPER_ADMIN,
+        UserRole::BRANCH_MANAGER,
+        UserRole::ACCOUNTANT
+    ];
+
+    private const PURCHASE_ROLES = [
+        UserRole::SUPER_ADMIN,
+        UserRole::BRANCH_MANAGER,
+        UserRole::PURCHASE_OFFICER
+    ];
+
+    private const INVENTORY_ROLES = [
+        UserRole::SUPER_ADMIN,
+        UserRole::BRANCH_MANAGER,
+        UserRole::WAREHOUSE_MANAGER
+    ];
+
+    private const ADMIN_ROLES = [
+        UserRole::SUPER_ADMIN,
+        UserRole::BRANCH_MANAGER
+    ];
     public function __construct(
         private StatsServiceInterface $statsService,
         private ActivityServiceInterface $activityService,
@@ -40,27 +63,50 @@ class DashboardService
             'filter_warehouse_id' => $warehouseId,
         ];
         
-        // Add role-based view permissions using UserHelper
-        $data['can_view_revenue'] = UserHelper::hasRole(\App\Enums\UserRole::SUPER_ADMIN) || 
-                                  UserHelper::hasRole(\App\Enums\UserRole::BRANCH_MANAGER) || 
-                                  UserHelper::hasRole(\App\Enums\UserRole::ACCOUNTANT);
-        
-        $data['can_view_purchases'] = UserHelper::hasRole(\App\Enums\UserRole::SUPER_ADMIN) || 
-                                    UserHelper::hasRole(\App\Enums\UserRole::BRANCH_MANAGER) || 
-                                    UserHelper::hasRole(\App\Enums\UserRole::PURCHASE_OFFICER);
-        
-        $data['can_view_inventory'] = UserHelper::hasRole(\App\Enums\UserRole::SUPER_ADMIN) || 
-                                    UserHelper::hasRole(\App\Enums\UserRole::BRANCH_MANAGER) || 
-                                    UserHelper::hasRole(\App\Enums\UserRole::WAREHOUSE_MANAGER);
+        // Add role-based view permissions
+        $data['can_view_revenue'] = $this->hasAnyRole($user, self::REVENUE_ROLES);
+        $data['can_view_purchases'] = $this->hasAnyRole($user, self::PURCHASE_ROLES);
+        $data['can_view_inventory'] = $this->hasAnyRole($user, self::INVENTORY_ROLES);
         
         // Filter activities based on user role
-        if (UserHelper::isSales() && !UserHelper::isAdminOrManager()) {
+        if ($user->hasRole('Sales') && !$this->hasAnyRole($user, self::ADMIN_ROLES)) {
             $data['activities'] = $data['activities']->filter(function ($activity) use ($user) {
                 return $activity->user_id === $user->id;
             });
         }
         
         return $data;
+    }
+
+    /**
+     * Get filter options for dashboard dropdowns
+     */
+    public function getFilterOptions(User $user): array
+    {
+        if (!$this->hasAnyRole($user, self::ADMIN_ROLES)) {
+            return [
+                'available_branches' => collect([]),
+                'available_warehouses' => collect([])
+            ];
+        }
+        
+        return [
+            'available_branches' => \App\Models\Branch::select('id', 'name')->get(),
+            'available_warehouses' => \App\Models\Warehouse::select('id', 'name')->get(),
+        ];
+    }
+
+    /**
+     * Check if user has any of the specified roles
+     */
+    private function hasAnyRole(User $user, array $roles): bool
+    {
+        foreach ($roles as $role) {
+            if ($user->hasRole($role)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -73,6 +119,7 @@ class DashboardService
             'total_revenue' => 0,
             'total_purchases' => 0,
             'total_purchase_amount' => 0,
+            'total_inventory_value' => 0,
             'low_stock_items' => 0,
             'pending_sales' => 0,
             'categories_count' => 0,
@@ -81,9 +128,9 @@ class DashboardService
             'customers_count' => 0,
             'can_view_revenue' => false,
             'can_view_purchases' => false,
+            'can_view_inventory' => false,
             'low_stock_items_list' => collect([]),
             'activities' => collect([]),
-            'error' => 'Dashboard data is temporarily unavailable. Please try again in a moment.',
         ];
     }
 } 
