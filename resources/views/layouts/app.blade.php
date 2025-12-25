@@ -161,7 +161,7 @@
     <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js" defer crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" defer integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
-    <script src="{{ asset('js/phone-input-restriction.js') }}" defer></script>
+
     
     <script>
         // Wait for the DOM to be fully loaded
@@ -236,6 +236,13 @@
                     document.body.classList.remove('overflow-hidden');
                 });
             }
+            
+            // Global phone input restriction
+            document.addEventListener('input', function(e) {
+                if (e.target && e.target.type === 'tel') {
+                    e.target.value = e.target.value.replace(/[^0-9+]/g, '');
+                }
+            });
         });
     </script>
 

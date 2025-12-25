@@ -9,6 +9,7 @@ use Livewire\Component;
 use Livewire\Attributes\Layout;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Database\QueryException;
+use App\Rules\PhoneNumber;
 
 #[Layout('components.layouts.app')]
 class Create extends Component
@@ -44,7 +45,7 @@ class Create extends Component
                 'max:255',
                 'unique:suppliers,email,NULL,id,deleted_at,NULL'
             ],
-            'form.phone' => 'nullable|string|max:20|regex:/^\+?[0-9]+$/',
+            'form.phone' => ['nullable', 'string', 'max:20', new PhoneNumber()],
             'form.branch_id' => 'nullable|exists:branches,id',
             'form.address' => 'nullable|string|max:500',
             'form.notes' => 'nullable|string|max:1000',
@@ -54,7 +55,7 @@ class Create extends Component
     protected $messages = [
         'form.name.required' => 'Supplier name is required.',
         'form.name.regex' => 'Supplier name cannot include numbers or special characters.',
-        'form.phone.regex' => 'Phone number can only contain digits and + symbol.',
+        'form.name.regex' => 'Supplier name cannot include numbers or special characters.',
         'form.email.email' => 'Please enter a valid email address.',
         'form.email.unique' => 'This email is already registered.',
         'form.branch_id.exists' => 'Please select a valid branch.',
