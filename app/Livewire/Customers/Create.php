@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Database\QueryException;
+use App\Rules\PhoneNumber;
 
 #[Layout('components.layouts.app')]
 class Create extends Component
@@ -46,7 +47,7 @@ class Create extends Component
                 'required',
                 'string',
                 'max:20',
-                'regex:/^\+?[0-9]+$/',
+                new PhoneNumber(),
             ],
             'form.notes' => 'nullable|string|max:1000',
         ];
@@ -58,7 +59,7 @@ class Create extends Component
         'form.email.email' => 'Please enter a valid email address.',
         'form.email.unique' => 'This email is already registered.',
         'form.phone.required' => 'Phone number is required.',
-        'form.phone.regex' => 'Phone number can only contain digits and + symbol.',
+        'form.phone.required' => 'Phone number is required.',
         'form.notes.max' => 'Notes cannot exceed 1000 characters.',
     ];
 

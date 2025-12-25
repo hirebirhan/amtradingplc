@@ -7,6 +7,7 @@ use App\Models\Warehouse;
 use Livewire\Component;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Title;
+use App\Rules\PhoneNumber;
 
 #[Layout('layouts.app')]
 #[Title('Edit Warehouse')]
@@ -38,7 +39,7 @@ class Edit extends Component
             'name' => 'required|string|max:255',
             'address' => 'nullable|string|max:255',
             'manager_name' => 'nullable|string|max:255',
-            'phone' => 'nullable|string|max:20|regex:/^\+?[0-9\s\-\(\)]+$/',
+            'phone' => ['nullable', 'string', 'max:20', new PhoneNumber()],
             'branch_ids' => 'array',
             'branch_ids.*' => 'exists:branches,id',
         ];

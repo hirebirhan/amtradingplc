@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
+use App\Rules\PhoneNumber;
 use Spatie\Permission\Models\Role;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 
@@ -60,7 +61,7 @@ class Create extends Component
             ],
             'form.password' => 'required|string|min:8|confirmed',
             'form.password_confirmation' => 'required|string|min:8',
-            'form.phone' => 'nullable|string|max:20',
+            'form.phone' => ['nullable', 'string', 'max:20', new PhoneNumber()],
             'form.position' => 'nullable|string|max:100',
             'form.branch_id' => 'nullable|exists:branches,id',
             'form.warehouse_id' => [
@@ -102,7 +103,7 @@ class Create extends Component
         'form.password.min' => 'Password must be at least 8 characters.',
         'form.password.confirmed' => 'Password confirmation does not match.',
         'form.password_confirmation.required' => 'Password confirmation is required.',
-        'form.phone.max' => 'Phone number cannot exceed 20 characters.',
+        'form.password_confirmation.required' => 'Password confirmation is required.',
         'form.position.max' => 'Position cannot exceed 100 characters.',
         'form.branch_id.exists' => 'Selected branch is invalid.',
         'form.warehouse_id.exists' => 'Selected warehouse is invalid.',

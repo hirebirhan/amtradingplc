@@ -59,6 +59,7 @@
             @if($readonly) readonly @endif
             @if($autofocus) autofocus @endif
             @if($autocomplete) autocomplete="{{ $autocomplete }}" @endif
+            @if($type === 'tel') oninput="this.value = this.value.replace(/[^0-9+]/g, '')" @endif
         >
         
         @if($icon && $iconPosition === 'right')
