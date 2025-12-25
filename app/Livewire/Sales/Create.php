@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Livewire\Sales;
 
 use App\Models\Customer;
@@ -183,7 +185,7 @@ class Create extends Component
         'form.advance_amount.lt' => 'Advance amount must be less than the total amount.',
     ];
 
-    public function mount()
+    public function mount(): void
     {
         // Initialize items as an empty array if not already set
         $this->items = is_array($this->items) ? $this->items : [];
@@ -266,7 +268,7 @@ class Create extends Component
         }
     }
 
-    private function loadCustomers()
+    private function loadCustomers(): void
     {
             $this->customers = Customer::where('is_active', true)
             ->when($this->customerSearch, function ($query) {
@@ -281,7 +283,7 @@ class Create extends Component
                 ->get();
     }
 
-    private function loadLocations()
+    private function loadLocations(): void
     {
         $user = auth()->user();
         
@@ -304,7 +306,7 @@ class Create extends Component
         }
     }
 
-    private function loadAvailableItems()
+    private function loadAvailableItems(): void
     {
         // This method is called when warehouse/branch selection changes
         // Items are loaded dynamically via getFilteredItemOptionsProperty
@@ -319,12 +321,12 @@ class Create extends Component
         // This method satisfies the trait requirement but actual loading is handled elsewhere
     }
 
-    public function updatedCustomerSearch()
+    public function updatedCustomerSearch(): void
     {
         $this->loadCustomers();
     }
 
-    public function selectCustomer($customerId)
+    public function selectCustomer(int $customerId): void
     {
         $customer = Customer::find($customerId);
         if ($customer) {
@@ -338,7 +340,7 @@ class Create extends Component
         }
     }
 
-    public function clearCustomer()
+    public function clearCustomer(): void
     {
         $this->form['customer_id'] = '';
         $this->selectedCustomer = null;
@@ -346,7 +348,7 @@ class Create extends Component
         $this->loadCustomers();
     }
 
-    public function updatedFormIsWalkingCustomer($value)
+    public function updatedFormIsWalkingCustomer(bool $value): void
     {
         if ($value) {
             // Clear customer selection when walking customer is checked
@@ -356,7 +358,7 @@ class Create extends Component
         }
     }
 
-    public function updatedFormBranchId($value)
+    public function updatedFormBranchId(?string $value): void
     {
         if ($value) {
             $this->form['warehouse_id'] = ''; // Clear warehouse when branch is selected
@@ -364,7 +366,7 @@ class Create extends Component
         }
     }
 
-    public function updatedFormWarehouseId($value)
+    public function updatedFormWarehouseId(?string $value): void
     {
         if ($value) {
             $this->form['branch_id'] = ''; // Clear branch when warehouse is selected
@@ -386,7 +388,7 @@ class Create extends Component
         }
     }
 
-    public function selectItem($itemId)
+    public function selectItem(int $itemId): void
     {
         $item = Item::find($itemId);
         
@@ -463,7 +465,7 @@ class Create extends Component
         }
     }
 
-    public function clearSelectedItem()
+    public function clearSelectedItem(): void
     {
         $this->newItem = [
             'item_id' => '',
@@ -478,7 +480,7 @@ class Create extends Component
         $this->itemSearch = '';
     }
 
-    public function addItem()
+    public function addItem(): void
     {
         // Basic validation
         $this->validate([
@@ -499,13 +501,13 @@ class Create extends Component
         $sellingPrice = (float)$this->newItem['price'];
         
         if ($saleMethod === 'piece') {
-            $costPrice = $item->cost_price ?? 0;
+            $costPrice = (float)($item->cost_price ?? 0);
             if ($sellingPrice < $costPrice) {
                 $this->addError('newItem.price', 'Selling price (' . number_format($sellingPrice, 2) . ') cannot be below cost price (' . number_format($costPrice, 2) . ')');
                 return;
             }
         } else {
-            $costPricePerUnit = $item->cost_price_per_unit ?? 0;
+            $costPricePerUnit = (float)($item->cost_price_per_unit ?? 0);
             if ($sellingPrice < $costPricePerUnit) {
                 $this->addError('newItem.price', 'Unit selling price (' . number_format($sellingPrice, 2) . ') cannot be below cost price per unit (' . number_format($costPricePerUnit, 2) . ')');
                 return;
@@ -587,7 +589,7 @@ class Create extends Component
         $this->clearSelectedItem();
     }
     
-    public function editItem($index)
+    public function editItem(int $index): void
     {
         if (!isset($this->items[$index])) {
             return;
@@ -652,13 +654,13 @@ class Create extends Component
         }
     }
     
-    public function cancelEdit()
+    public function cancelEdit(): void
     {
         $this->editingItemIndex = null;
         $this->clearSelectedItem();
     }
 
-    public function removeItem($index)
+    public function removeItem(int $index): void
     {
         if (!isset($this->items[$index])) {
             return;
@@ -673,20 +675,20 @@ class Create extends Component
         $this->notify($removedItem['name'] . ' removed from cart', 'success');
     }
 
-    public function clearCart()
+    public function clearCart(): void
     {
         $this->items = [];
         $this->updateTotals();
         $this->notify('Cart cleared', 'success');
     }
 
-    public function loadItemOptions()
+    public function loadItemOptions(): void
     {
         // Items are loaded dynamically via computed property
         $this->notify('Items refreshed successfully', 'success');
     }
 
-    private function updateTotals()
+    private function updateTotals(): void
     {
         $this->subtotal = 0;
         if (is_array($this->items)) {
@@ -707,17 +709,17 @@ class Create extends Component
         $this->updatePaymentStatus();
     }
 
-    public function updatedFormTax()
+    public function updatedFormTax(): void
     {
         $this->updateTotals();
     }
 
-    public function updatedFormShipping()
+    public function updatedFormShipping(): void
     {
         $this->updateTotals();
     }
 
-    public function updatedFormPaymentMethod($value)
+    public function updatedFormPaymentMethod(string $value): void
     {
         // Reset payment-specific fields
         $this->form['transaction_number'] = '';
@@ -731,7 +733,7 @@ class Create extends Component
         $this->updateTotals();
     }
 
-    private function updatePaymentStatus()
+    private function updatePaymentStatus(): void
     {
         switch ($this->form['payment_method']) {
             case 'cash':
@@ -887,15 +889,15 @@ class Create extends Component
         return redirect()->route('admin.sales.index');
     }
 
-    private function generateReferenceNumber()
+    private function generateReferenceNumber(): string
     {
         $prefix = 'SALE-';
         $date = date('Ymd');
         $count = Sale::whereDate('created_at', today())->count() + 1;
-        return $prefix . $date . '-' . str_pad($count, 5, '0', STR_PAD_LEFT);
+        return $prefix . $date . '-' . str_pad((string)$count, 5, '0', STR_PAD_LEFT);
     }
 
-    private function notify($message, $type = 'info')
+    private function notify(string $message, string $type = 'info'): void
     {
         match($type) {
             'success' => $this->flashSuccess($message),
@@ -908,12 +910,12 @@ class Create extends Component
 
 
     // Computed properties
-    public function getFilteredCustomersProperty()
+    public function getFilteredCustomersProperty(): \Illuminate\Database\Eloquent\Collection
     {
         return $this->customers;
     }
 
-    public function getFilteredItemOptionsProperty()
+    public function getFilteredItemOptionsProperty(): array
     {
         if (empty($this->itemSearch) || strlen(trim($this->itemSearch)) < 2) {
             return [];
@@ -986,7 +988,7 @@ class Create extends Component
         return $results;
     }
 
-    public function isFormReady()
+    public function isFormReady(): bool
     {
         return !empty($this->form['customer_id']) && 
                !empty($this->items) &&
@@ -994,7 +996,7 @@ class Create extends Component
                $this->isPaymentMethodValid();
     }
 
-    private function isPaymentMethodValid()
+    private function isPaymentMethodValid(): bool
     {
         switch ($this->form['payment_method']) {
             case 'telebirr':
@@ -1018,7 +1020,7 @@ class Create extends Component
     /**
      * Validate form and show confirmation modal if valid
      */
-    public function validateAndShowModal()
+    public function validateAndShowModal(): bool
     {
         // Clear any previous validation errors
         $this->resetErrorBag();
@@ -1179,7 +1181,7 @@ class Create extends Component
         }
     }
 
-    public function updatedNewItemSaleMethod($value)
+    public function updatedNewItemSaleMethod(string $value): void
     {
         $this->newItem['quantity'] = 1;
         
@@ -1202,7 +1204,7 @@ class Create extends Component
         }
     }
     
-    public function updatedNewItemUnitPrice($value)
+    public function updatedNewItemUnitPrice(float $value): void
     {
         $this->newItem['price'] = (float)$value;
     }
@@ -1230,7 +1232,7 @@ class Create extends Component
 
 
 
-    public function proceedWithWarning()
+    public function proceedWithWarning(): void
     {
         $this->processAddItem();
         
@@ -1238,7 +1240,7 @@ class Create extends Component
         $this->stockWarningItem = null;
     }
     
-    public function cancelStockWarning()
+    public function cancelStockWarning(): void
     {
         $this->stockWarningType = null;
         $this->stockWarningItem = null;
@@ -1312,7 +1314,7 @@ class Create extends Component
         return $existsInCreditPayments;
     }
 
-    public function getBanksProperty()
+    public function getBanksProperty(): array
     {
         $bankService = new \App\Services\BankService();
         return $bankService->getEthiopianBanks();
