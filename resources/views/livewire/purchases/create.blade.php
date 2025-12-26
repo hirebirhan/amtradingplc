@@ -252,60 +252,28 @@
                         </div>
                         <!-- Bank Transfer Details -->
                         @if($form['payment_method'] === 'bank_transfer')
-                            <div class="col-12">
-                                <div class="row g-3">
-                                    <div class="col-12 col-md-4">
-                                        <label for="receiver_bank_name" class="form-label fw-medium">
-                                            Choose a Bank <span class="text-primary">*</span>
-                                        </label>
-                                        <select 
-                                            wire:model="form.receiver_bank_name" 
-                                            id="receiver_bank_name" 
-                                            class="form-select @error('form.receiver_bank_name') is-invalid @enderror" 
-                                            required
-                                        >
-                                            <option value="">Select Bank</option>
-                                            @foreach($this->banks as $bank)
-                                                <option value="{{ $bank }}">{{ $bank }}</option>
-                                            @endforeach
-                                        </select>
-                                        @error('form.receiver_bank_name') 
-                                            <div class="invalid-feedback">{{ $message }}</div> 
-                                        @enderror
-                                    </div>
-                                    <div class="col-12 col-md-4">
-                                        <label for="receiver_account_holder" class="form-label fw-medium">
-                                            Account Holder Name <span class="text-primary">*</span>
-                                        </label>
-                                        <input 
-                                            type="text" 
-                                            wire:model="form.receiver_account_holder" 
-                                            id="receiver_account_holder" 
-                                            class="form-control @error('form.receiver_account_holder') is-invalid @enderror" 
-                                            placeholder="Enter account holder name" 
-                                            required
-                                        >
-                                        @error('form.receiver_account_holder') 
-                                            <div class="invalid-feedback">{{ $message }}</div> 
-                                        @enderror
-                                    </div>
-                                    <div class="col-12 col-md-4">
-                                        <label for="receiver_account_number" class="form-label fw-medium">
-                                            Account Number <span class="text-primary">*</span>
-                                        </label>
-                                        <input 
-                                            type="text" 
-                                            wire:model="form.receiver_account_number" 
-                                            id="receiver_account_number" 
-                                            class="form-control @error('form.receiver_account_number') is-invalid @enderror" 
-                                            placeholder="Enter account number" 
-                                            required
-                                        >
-                                        @error('form.receiver_account_number') 
-                                            <div class="invalid-feedback">{{ $message }}</div> 
-                                        @enderror
-                                    </div>
-                                </div>
+                            <div class="col-12 col-md-4">
+                                <label for="bank_account_id" class="form-label fw-medium">
+                                    Bank Account <span class="text-primary">*</span>
+                                </label>
+                                <select 
+                                    wire:model="form.bank_account_id" 
+                                    id="bank_account_id" 
+                                    class="form-select @error('form.bank_account_id') is-invalid @enderror" 
+                                    required
+                                >
+                                    <option value="">Select Bank Account</option>
+                                    @if(isset($bankAccounts) && $bankAccounts->count() > 0)
+                                        @foreach($bankAccounts as $account)
+                                            <option value="{{ $account->id }}">{{ $account->account_name }} - {{ $account->account_number }}</option>
+                                        @endforeach
+                                    @else
+                                        <option disabled>No bank accounts available</option>
+                                    @endif
+                                </select>
+                                @error('form.bank_account_id') 
+                                    <div class="invalid-feedback">{{ $message }}</div> 
+                                @enderror
                             </div>
                         @endif
                         <!-- Advance Amount (if credit_advance) -->

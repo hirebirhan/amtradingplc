@@ -23,19 +23,6 @@
                 Customer <span class="text-primary {{ $form['is_walking_customer'] ? 'd-none' : '' }}">*</span>
             </label>
             
-            {{-- Walking Customer Checkbox --}}
-            <div class="form-check mb-2">
-                <input 
-                    class="form-check-input" 
-                    type="checkbox" 
-                    wire:model.live="form.is_walking_customer" 
-                    id="walking_customer"
-                >
-                <label class="form-check-label small text-muted" for="walking_customer">
-                    <i class="bi bi-person-walking me-1"></i>Walking Customer
-                </label>
-            </div>
-            
             @if($form['is_walking_customer'])
                 <input type="text" class="form-control" value="Walking Customer" readonly>
             @elseif($selectedCustomer)
@@ -58,6 +45,20 @@
                     @endforeach
                 </select>
             @endif
+            
+            {{-- Walking Customer Checkbox --}}
+            <div class="form-check mt-2">
+                <input 
+                    class="form-check-input" 
+                    type="checkbox" 
+                    wire:model.live="form.is_walking_customer" 
+                    id="walking_customer"
+                >
+                <label class="form-check-label small text-muted" for="walking_customer">
+                    <i class="bi bi-person-walking me-1"></i>Walking Customer
+                </label>
+            </div>
+            
             @error('form.customer_id') 
                 <div class="invalid-feedback d-block">{{ $message }}</div> 
             @enderror
@@ -132,28 +133,31 @@
                     @php
                         $isCreditMethod = in_array($method->value, ['full_credit', 'credit_advance']);
                         $isDisabled = $form['is_walking_customer'] && $isCreditMethod;
+                        $isHidden = $form['is_walking_customer'] && $isCreditMethod;
                     @endphp
-                    <option value="{{ $method->value }}" {{ $isDisabled ? 'disabled' : '' }}>
-                        @switch($method)
-                            @case(\App\Enums\PaymentMethod::CASH)
-                                💵 Cash Payment
-                                @break
-                            @case(\App\Enums\PaymentMethod::BANK_TRANSFER)
-                                🏦 Bank Transfer
-                                @break
-                            @case(\App\Enums\PaymentMethod::TELEBIRR)
-                                📱 Telebirr
-                                @break
-                            @case(\App\Enums\PaymentMethod::CREDIT_ADVANCE)
-                                💳 Credit with Advance{{ $form['is_walking_customer'] ? ' (Not available for walking customers)' : '' }}
-                                @break
-                            @case(\App\Enums\PaymentMethod::FULL_CREDIT)
-                                📋 Full Credit{{ $form['is_walking_customer'] ? ' (Not available for walking customers)' : '' }}
-                                @break
-                            @default
-                                {{ $method->label() }}
-                        @endswitch
-                    </option>
+                    @if(!$isHidden)
+                        <option value="{{ $method->value }}" {{ $isDisabled ? 'disabled' : '' }}>
+                            @switch($method)
+                                @case(\App\Enums\PaymentMethod::CASH)
+                                    💵 Cash Payment
+                                    @break
+                                @case(\App\Enums\PaymentMethod::BANK_TRANSFER)
+                                    🏦 Bank Transfer
+                                    @break
+                                @case(\App\Enums\PaymentMethod::TELEBIRR)
+                                    📱 Telebirr
+                                    @break
+                                @case(\App\Enums\PaymentMethod::CREDIT_ADVANCE)
+                                    💳 Credit with Advance
+                                    @break
+                                @case(\App\Enums\PaymentMethod::FULL_CREDIT)
+                                    📋 Full Credit
+                                    @break
+                                @default
+                                    {{ $method->label() }}
+                            @endswitch
+                        </option>
+                    @endif
                 @endforeach
             </select>
             @error('form.payment_method') 
@@ -202,60 +206,28 @@
 
         {{-- Bank Transfer Details --}}
         @if($form['payment_method'] === 'bank_transfer')
-            <div class="col-12">
-                <div class="row g-3">
-                    <div class="col-12 col-md-4">
-                        <label for="receiver_bank_name" class="form-label fw-medium">
-                            Choose a Bank <span class="text-primary">*</span>
-                        </label>
-                        <select 
-                            wire:model="form.receiver_bank_name" 
-                            id="receiver_bank_name" 
-                            class="form-select @error('form.receiver_bank_name') is-invalid @enderror" 
-                            required
-                        >
-                            <option value="">Select Bank</option>
-                            @foreach($this->banks as $bank)
-                                <option value="{{ $bank }}">{{ $bank }}</option>
-                            @endforeach
-                        </select>
-                        @error('form.receiver_bank_name') 
-                            <div class="invalid-feedback">{{ $message }}</div> 
-                        @enderror
-                    </div>
-                    <div class="col-12 col-md-4">
-                        <label for="receiver_account_holder" class="form-label fw-medium">
-                            Account Holder Name <span class="text-primary">*</span>
-                        </label>
-                        <input 
-                            type="text" 
-                            wire:model="form.receiver_account_holder" 
-                            id="receiver_account_holder" 
-                            class="form-control @error('form.receiver_account_holder') is-invalid @enderror" 
-                            placeholder="Enter account holder name" 
-                            required
-                        >
-                        @error('form.receiver_account_holder') 
-                            <div class="invalid-feedback">{{ $message }}</div> 
-                        @enderror
-                    </div>
-                    <div class="col-12 col-md-4">
-                        <label for="receiver_account_number" class="form-label fw-medium">
-                            Account Number <span class="text-primary">*</span>
-                        </label>
-                        <input 
-                            type="text" 
-                            wire:model="form.receiver_account_number" 
-                            id="receiver_account_number" 
-                            class="form-control @error('form.receiver_account_number') is-invalid @enderror" 
-                            placeholder="Enter account number" 
-                            required
-                        >
-                        @error('form.receiver_account_number') 
-                            <div class="invalid-feedback">{{ $message }}</div> 
-                        @enderror
-                    </div>
-                </div>
+            <div class="col-12 col-md-4">
+                <label for="bank_account_id" class="form-label fw-medium">
+                    Bank Account <span class="text-primary">*</span>
+                </label>
+                <select 
+                    wire:model="form.bank_account_id" 
+                    id="bank_account_id" 
+                    class="form-select @error('form.bank_account_id') is-invalid @enderror" 
+                    required
+                >
+                    <option value="">Select Bank Account</option>
+                    @if(isset($bankAccounts) && $bankAccounts->count() > 0)
+                        @foreach($bankAccounts as $account)
+                            <option value="{{ $account->id }}">{{ $account->account_name }} - {{ $account->account_number }}</option>
+                        @endforeach
+                    @else
+                        <option disabled>No bank accounts available</option>
+                    @endif
+                </select>
+                @error('form.bank_account_id') 
+                    <div class="invalid-feedback">{{ $message }}</div> 
+                @enderror
             </div>
         @endif
 

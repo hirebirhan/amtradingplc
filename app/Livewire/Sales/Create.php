@@ -56,9 +56,8 @@ class Create extends Component
         'payment_method' => 'cash',
         'payment_status' => 'paid',
         'transaction_number' => '',
-        'receiver_bank_name' => '',
+        'bank_account_id' => '',
         'receiver_account_holder' => '',
-        'receiver_account_number' => '',
         'receipt_url' => '',
         'advance_amount' => 0,
         'notes' => '',
@@ -158,9 +157,7 @@ class Create extends Component
                     }
                 },
             ];
-            $rules['form.receiver_bank_name'] = 'required|string|max:255';
-            $rules['form.receiver_account_holder'] = 'required|string|max:255';
-            $rules['form.receiver_account_number'] = 'required|string|max:255';
+            $rules['form.bank_account_id'] = 'required|exists:bank_accounts,id';
         }
 
         if ($this->form['payment_method'] === 'credit_advance') {
@@ -179,8 +176,8 @@ class Create extends Component
         'form.transaction_number.required' => 'Transaction number is required for Telebirr or bank transfer payments.',
         'form.transaction_number.min' => 'Transaction number must be at least 5 characters.',
         'form.receiver_account_holder.required' => 'Account holder name is required.',
-        'form.receiver_bank_name.required' => 'Please choose a bank.',
-        'form.receiver_account_number.required' => 'Receiver account number is required.',
+        'form.bank_account_id.required' => 'Please select a bank account.',
+        'form.bank_account_id.exists' => 'Selected bank account is invalid.',
         'form.advance_amount.required' => 'Please enter an advance amount.',
         'form.advance_amount.lt' => 'Advance amount must be less than the total amount.',
     ];
@@ -355,6 +352,12 @@ class Create extends Component
             $this->form['customer_id'] = '';
             $this->selectedCustomer = null;
             $this->customerSearch = '';
+            
+            // Force cash payment for walking customers if current method is credit
+            if (in_array($this->form['payment_method'], ['full_credit', 'credit_advance'])) {
+                $this->form['payment_method'] = 'cash';
+                $this->updatePaymentStatus();
+            }
         }
     }
 
@@ -723,9 +726,8 @@ class Create extends Component
     {
         // Reset payment-specific fields
         $this->form['transaction_number'] = '';
-        $this->form['receiver_bank_name'] = '';
+        $this->form['bank_account_id'] = '';
         $this->form['receiver_account_holder'] = '';
-        $this->form['receiver_account_number'] = '';
         $this->form['receipt_url'] = '';
         $this->form['advance_amount'] = 0;
 
@@ -834,9 +836,7 @@ class Create extends Component
             }
 
             if ($this->form['payment_method'] === 'bank_transfer') {
-                $sale->receiver_bank_name = $this->form['receiver_bank_name'] ?? null;
-                $sale->receiver_account_holder = $this->form['receiver_account_holder'] ?? null;
-                $sale->receiver_account_number = $this->form['receiver_account_number'] ?? null;
+                $sale->bank_account_id = $this->form['bank_account_id'] ?? null;
             }
 
 
