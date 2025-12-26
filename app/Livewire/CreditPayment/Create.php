@@ -32,6 +32,7 @@ class Create extends Component
     
     // Bank transfer fields
     public $account_holder_name;
+    public $bank_account_id;
     
     // New bank details fields
     public $receiver_bank_name;
@@ -111,6 +112,23 @@ class Create extends Component
         } elseif ($value === 'closing_payment' && $this->credit->credit_type === 'payable') {
             // For closing payments: will be calculated when prices are entered
             $this->amount = $this->credit->balance;
+        }
+    }
+    
+    public function updatedAmount($value)
+    {
+        // For closing payments, restrict to exact credit balance
+        if ($this->paymentType === 'closing_payment') {
+            if ($value != $this->credit->balance) {
+                $this->amount = $this->credit->balance;
+                $this->addError('amount', 'For closing payments, you must pay the exact remaining balance of ' . number_format($this->credit->balance, 2) . ' ETB.');
+            }
+        } else {
+            // For regular payments, don't allow exceeding balance
+            if ($value > $this->credit->balance) {
+                $this->amount = $this->credit->balance;
+                $this->addError('amount', 'Payment amount cannot exceed the credit balance of ' . number_format($this->credit->balance, 2) . ' ETB.');
+            }
         }
     }
     
@@ -235,9 +253,19 @@ class Create extends Component
                     $amount = (float) $value;
                     $balance = (float) $this->credit->balance;
                     
+                    // For closing payments, must be exact balance
+                    if ($this->paymentType === 'closing_payment' && $amount != $balance) {
+                        $fail('For closing payments, you must pay the exact remaining balance of ' . number_format($balance, 2) . ' ETB.');
+                    }
+                    
                     // Prevent full payment with partial payment type
                     if ($this->paymentType === 'down_payment' && $amount >= $balance) {
                         $fail('Cannot pay full amount with Down Payment. Use Closing Payment instead.');
+                    }
+                    
+                    // Never allow exceeding balance
+                    if ($amount > $balance) {
+                        $fail('Payment amount cannot exceed the credit balance of ' . number_format($balance, 2) . ' ETB.');
                     }
                 },
             ],
@@ -248,10 +276,8 @@ class Create extends Component
         
         // Add conditional validation rules based on payment method
         if ($this->payment_method === 'bank_transfer') {
-            $rules['reference_no'] = 'nullable|string|max:255';
+            $rules['transaction_number'] = 'required|string|max:255';
             $rules['receiver_bank_name'] = 'required|string|max:255';
-            $rules['receiver_account_holder'] = 'required|string|max:255';
-            $rules['receiver_account_number'] = 'required|string|max:255';
         } elseif ($this->payment_method === 'telebirr') {
             $rules['transaction_number'] = [
                 'required',
@@ -312,23 +338,17 @@ class Create extends Component
             $purchase = $this->credit->purchase;
             if ($purchase) {
                 foreach ($purchase->items as $item) {
-                    // Initialize with original unit cost
-                    $this->closingPrices[$item->item_id] = $item->unit_cost;
+                    // Initialize as empty - user must enter values
+                    $this->closingPrices[$item->item_id] = '';
                 }
-                
-                // Calculate initial payment amount
-                $this->calculateClosingPaymentAmount();
             }
         } elseif ($this->credit->reference_type === 'sale' && $this->credit->reference_id) {
             $sale = $this->credit->sale;
             if ($sale) {
                 foreach ($sale->items as $item) {
-                    // Initialize with original unit price
-                    $this->closingPrices[$item->item_id] = $item->unit_price;
+                    // Initialize as empty - user must enter values
+                    $this->closingPrices[$item->item_id] = '';
                 }
-                
-                // Calculate initial payment amount
-                $this->calculateClosingPaymentAmount();
             }
         }
     }
@@ -355,9 +375,11 @@ class Create extends Component
             }
             
             foreach ($purchase->items as $item) {
-                if (isset($this->closingPrices[$item->item_id]) && is_numeric($this->closingPrices[$item->item_id])) {
-                    $closingPricePerUnit = (float) $this->closingPrices[$item->item_id];
-                    $totalClosingCost += $closingPricePerUnit * $item->quantity;
+                if (isset($this->closingPrices[$item->item_id]) && 
+                    $this->closingPrices[$item->item_id] !== '' && 
+                    is_numeric($this->closingPrices[$item->item_id])) {
+                    // User enters total price for this item, not unit price
+                    $totalClosingCost += (float) $this->closingPrices[$item->item_id];
                 }
             }
         } elseif ($this->credit->reference_type === 'sale') {
@@ -367,9 +389,11 @@ class Create extends Component
             }
             
             foreach ($sale->items as $item) {
-                if (isset($this->closingPrices[$item->item_id]) && is_numeric($this->closingPrices[$item->item_id])) {
-                    $closingPricePerUnit = (float) $this->closingPrices[$item->item_id];
-                    $totalClosingCost += $closingPricePerUnit * $item->quantity;
+                if (isset($this->closingPrices[$item->item_id]) && 
+                    $this->closingPrices[$item->item_id] !== '' && 
+                    is_numeric($this->closingPrices[$item->item_id])) {
+                    // User enters total price for this item, not unit price
+                    $totalClosingCost += (float) $this->closingPrices[$item->item_id];
                 }
             }
         }
@@ -385,24 +409,34 @@ class Create extends Component
             'closingPrices.*' => 'required|numeric|min:0',
         ]);
         
-        // Validate total closing cost doesn't exceed credit amount
+        // Calculate total closing cost
         $totalClosingCost = 0;
         
         if ($this->credit->reference_type === 'purchase' && $this->credit->purchase) {
             foreach ($this->credit->purchase->items as $item) {
-                if (isset($this->closingPrices[$item->item_id])) {
-                    $totalClosingCost += (float) $this->closingPrices[$item->item_id] * $item->quantity;
+                if (isset($this->closingPrices[$item->item_id]) && 
+                    $this->closingPrices[$item->item_id] !== '' && 
+                    is_numeric($this->closingPrices[$item->item_id])) {
+                    // User enters total price for this item, not unit price
+                    $totalClosingCost += (float) $this->closingPrices[$item->item_id];
                 }
             }
         } elseif ($this->credit->reference_type === 'sale' && $this->credit->sale) {
             foreach ($this->credit->sale->items as $item) {
-                if (isset($this->closingPrices[$item->item_id])) {
-                    $totalClosingCost += (float) $this->closingPrices[$item->item_id] * $item->quantity;
+                if (isset($this->closingPrices[$item->item_id]) && 
+                    $this->closingPrices[$item->item_id] !== '' && 
+                    is_numeric($this->closingPrices[$item->item_id])) {
+                    // User enters total price for this item, not unit price
+                    $totalClosingCost += (float) $this->closingPrices[$item->item_id];
                 }
             }
         }
         
-        // Allow any closing cost amount - no restriction based on credit balance
+        // For closing payments, amount must equal credit balance
+        if ($totalClosingCost != $this->credit->balance) {
+            $this->addError('closingPrices', 'The total closing cost (' . number_format($totalClosingCost, 2) . ' ETB) must equal the credit balance (' . number_format($this->credit->balance, 2) . ' ETB).');
+            return;
+        }
         
         $this->calculateClosingPaymentAmount();
         $this->showClosingPricesModal = false;
@@ -429,19 +463,14 @@ class Create extends Component
                     $paymentNotes .= '. ' . $this->reference;
                 }
             } elseif ($this->payment_method === 'bank_transfer') {
+                $referenceNumber = $this->transaction_number;
                 // Create descriptive notes for Bank Transfer closing payment
                 $paymentNotes = 'Bank Transfer Payment (Closing)';
+                if ($this->transaction_number) {
+                    $paymentNotes .= ' - Transaction: ' . $this->transaction_number;
+                }
                 if ($this->receiver_bank_name) {
-                    $paymentNotes .= ' - Bank: ' . $this->receiver_bank_name;
-                }
-                if ($this->receiver_account_number) {
-                    $paymentNotes .= ', Account: ' . $this->receiver_account_number;
-                }
-                if ($this->receiver_account_holder) {
-                    $paymentNotes .= ', Account Holder: ' . $this->receiver_account_holder;
-                }
-                if ($this->reference_no) {
-                    $paymentNotes .= ', Transaction: ' . $this->reference_no;
+                    $paymentNotes .= ', Bank: ' . $this->receiver_bank_name;
                 }
                 if ($this->reference) {
                     $paymentNotes .= '. ' . $this->reference;
@@ -557,19 +586,14 @@ class Create extends Component
                     $paymentNotes .= '. ' . $this->reference;
                 }
             } elseif ($this->payment_method === 'bank_transfer') {
+                $referenceNumber = $this->transaction_number;
                 // Create descriptive notes for Bank Transfer payment
                 $paymentNotes = 'Bank Transfer Payment';
+                if ($this->transaction_number) {
+                    $paymentNotes .= ' - Transaction: ' . $this->transaction_number;
+                }
                 if ($this->receiver_bank_name) {
-                    $paymentNotes .= ' - Bank: ' . $this->receiver_bank_name;
-                }
-                if ($this->receiver_account_number) {
-                    $paymentNotes .= ', Account: ' . $this->receiver_account_number;
-                }
-                if ($this->receiver_account_holder) {
-                    $paymentNotes .= ', Account Holder: ' . $this->receiver_account_holder;
-                }
-                if ($this->reference_no) {
-                    $paymentNotes .= ', Transaction: ' . $this->reference_no;
+                    $paymentNotes .= ', Bank: ' . $this->receiver_bank_name;
                 }
                 if ($this->reference) {
                     $paymentNotes .= '. ' . $this->reference;
@@ -690,7 +714,7 @@ class Create extends Component
             'account_holder_name.max' => 'Account holder name cannot exceed 255 characters.',
             'reference_no.required' => 'Reference number is required.',
             'reference_no.max' => 'Reference number cannot exceed 255 characters.',
-            'transaction_number.required' => 'Transaction number is required for Telebirr payments.',
+            'transaction_number.required' => 'Transaction number is required.',
             'transaction_number.min' => 'Transaction number must be at least 5 characters.',
             'transaction_number.max' => 'Transaction number cannot exceed 255 characters.',
             'receiver_bank_name.required' => 'Receiver bank name is required.',
@@ -709,6 +733,11 @@ class Create extends Component
     {
         $bankService = new BankService();
         return $bankService->getEthiopianBanks();
+    }
+    
+    public function getBankAccountsProperty()
+    {
+        return \App\Models\BankAccount::where('is_active', true)->get();
     }
 
     public function render()

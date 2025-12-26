@@ -327,11 +327,12 @@
                                     <div class="input-group">
                                         <span class="input-group-text">ETB</span>
                                         <input type="number" 
-                                            wire:model.defer="amount" 
+                                            wire:model.live="amount" 
                                             id="amount" 
                                             class="form-control @error('amount') is-invalid @enderror" 
                                             step="0.01" 
                                             min="0.01" 
+                                            {{ $paymentType === 'closing_payment' ? 'max=' . $credit->balance : '' }}
                                             required>
                                     </div>
                                     @error('amount')
@@ -339,7 +340,12 @@
                                             <div class="invalid-feedback d-block">{{ $message }}</div>
                                         @endif
                                     @enderror
-                                    <div class="form-text">Current credit balance: {{ number_format($credit->balance, 2) }} ETB</div>
+                                    <div class="form-text">
+                                        Current credit balance: {{ number_format($credit->balance, 2) }} ETB
+                                        @if($paymentType === 'closing_payment')
+                                            <br><span class="text-info"><i class="fas fa-info-circle me-1"></i>Must pay exact balance for closing payment</span>
+                                        @endif
+                                    </div>
                                 </div>
 
                                 <div class="col-12 col-md-6">
@@ -390,15 +396,16 @@
                                             @enderror
                                         @elseif($payment_method === 'bank_transfer')
                                             <!-- For Bank Transfer -->
-                                            <label for="reference_no" class="form-label">Transaction Number (Optional)</label>
-                                        <input type="text" 
-                                            wire:model.defer="reference_no" 
-                                            id="reference_no" 
-                                            class="form-control @error('reference_no') is-invalid @enderror" 
-                                            placeholder="Enter transaction number">
-                                        @error('reference_no')
-                                            <div class="invalid-feedback d-block">{{ $message }}</div>
-                                        @enderror
+                                            <label for="transaction_number" class="form-label">Transaction Number <span class="text-danger">*</span></label>
+                                            <input type="text" 
+                                                wire:model.defer="transaction_number" 
+                                                id="transaction_number" 
+                                                class="form-control @error('transaction_number') is-invalid @enderror" 
+                                                placeholder="Enter transaction number"
+                                                required>
+                                            @error('transaction_number')
+                                                <div class="invalid-feedback d-block">{{ $message }}</div>
+                                            @enderror
                                         @elseif($payment_method === 'telebirr')
                                             <!-- For Telebirr -->
                                             <label for="transaction_number" class="form-label">Transaction Number <span class="text-danger">*</span></label>
@@ -428,22 +435,11 @@
                                 </div>
                             </div>
 
-                            @if($payment_method === 'bank_transfer')
-                                <div class="row">
-                                    <div class="col-12">
-                                        <div class="alert alert-info">
-                                            <i class="fas fa-info-circle me-2"></i>
-                                            Please ensure that the bank transfer has been completed before recording this payment.
-                                        </div>
-                                    </div>
-                                </div>
-                            @endif
-
-                            <!-- Bank Details Section - Only for Bank Transfer -->
+                            <!-- Bank Transfer Details -->
                             @if($payment_method === 'bank_transfer')
                                 <div class="row g-3">
-                                    <div class="col-12 col-md-4">
-                                        <label for="receiver_bank_name" class="form-label">Receiver Bank Name <span class="text-danger">*</span></label>
+                                    <div class="col-12 col-md-6">
+                                        <label for="receiver_bank_name" class="form-label">Select Bank Account <span class="text-danger">*</span></label>
                                         <select wire:model.defer="receiver_bank_name" 
                                             id="receiver_bank_name" 
                                             class="form-select @error('receiver_bank_name') is-invalid @enderror"
@@ -454,32 +450,6 @@
                                             @endforeach
                                         </select>
                                         @error('receiver_bank_name')
-                                            <div class="invalid-feedback d-block">{{ $message }}</div>
-                                        @enderror
-                                    </div>
-
-                                    <div class="col-12 col-md-4">
-                                        <label for="receiver_account_holder" class="form-label">Account Holder Name <span class="text-danger">*</span></label>
-                                        <input type="text" 
-                                            wire:model.defer="receiver_account_holder" 
-                                            id="receiver_account_holder" 
-                                            class="form-control @error('receiver_account_holder') is-invalid @enderror" 
-                                            placeholder="Account holder name"
-                                            required>
-                                        @error('receiver_account_holder')
-                                            <div class="invalid-feedback d-block">{{ $message }}</div>
-                                        @enderror
-                                    </div>
-
-                                    <div class="col-12 col-md-4">
-                                        <label for="receiver_account_number" class="form-label">Account Number <span class="text-danger">*</span></label>
-                                        <input type="text" 
-                                            wire:model.defer="receiver_account_number" 
-                                            id="receiver_account_number" 
-                                            class="form-control @error('receiver_account_number') is-invalid @enderror" 
-                                            placeholder="Account number"
-                                            required>
-                                        @error('receiver_account_number')
                                             <div class="invalid-feedback d-block">{{ $message }}</div>
                                         @enderror
                                     </div>
@@ -561,8 +531,12 @@
                                     <div><strong>Account Holder:</strong> {{ $receiver_account_holder }}</div>
                                 @endif
                                 
-                                @if($payment_method === 'bank_transfer' && $reference_no)
-                                    <div><strong>Transaction Number:</strong> {{ $reference_no }}</div>
+                                @if($payment_method === 'bank_transfer' && $transaction_number)
+                                    <div><strong>Transaction Number:</strong> {{ $transaction_number }}</div>
+                                @endif
+                                
+                                @if($payment_method === 'bank_transfer' && $receiver_bank_name)
+                                    <div><strong>Bank:</strong> {{ $receiver_bank_name }}</div>
                                 @endif
                                 
                                 @if(in_array($payment_method, ['cash', 'check']) && $reference_no)
@@ -592,18 +566,10 @@
                         </div>
                     </div>
                     
-                    @if($payment_method === 'bank_transfer' && ($receiver_bank_name || $receiver_account_holder || $receiver_account_number))
+                    @if($payment_method === 'bank_transfer' && $receiver_bank_name)
                         <div class="mt-3">
                             <h6 class="text-muted mb-2">Bank Details</h6>
-                            @if($receiver_bank_name)
-                                <p class="mb-1"><strong>Bank Name:</strong> {{ $receiver_bank_name }}</p>
-                            @endif
-                            @if($receiver_account_holder)
-                                <p class="mb-1"><strong>Account Holder:</strong> {{ $receiver_account_holder }}</p>
-                            @endif
-                            @if($receiver_account_number)
-                                <p class="mb-1"><strong>Account Number:</strong> {{ $receiver_account_number }}</p>
-                            @endif
+                            <p class="mb-1"><strong>Bank:</strong> {{ $receiver_bank_name }}</p>
                         </div>
                     @endif
 
@@ -685,20 +651,23 @@
                             $totalClosingCost = 0;
                             if($credit->reference_type === 'purchase' && $credit->purchase) {
                                 foreach($credit->purchase->items as $item) {
-                                    if(isset($closingPrices[$item->item_id]) && is_numeric($closingPrices[$item->item_id])) {
-                                        $closingPricePerUnit = (float) $closingPrices[$item->item_id];
-                                        $totalClosingCost += $closingPricePerUnit * $item->quantity;
+                                    if(isset($closingPrices[$item->item_id]) && 
+                                       $closingPrices[$item->item_id] !== '' && 
+                                       is_numeric($closingPrices[$item->item_id])) {
+                                        // User enters total price for this item, not unit price
+                                        $totalClosingCost += (float) $closingPrices[$item->item_id];
                                     }
                                 }
                             } elseif($credit->reference_type === 'sale' && $credit->sale) {
                                 foreach($credit->sale->items as $item) {
-                                    if(isset($closingPrices[$item->item_id]) && is_numeric($closingPrices[$item->item_id])) {
-                                        $closingPricePerUnit = (float) $closingPrices[$item->item_id];
-                                        $totalClosingCost += $closingPricePerUnit * $item->quantity;
+                                    if(isset($closingPrices[$item->item_id]) && 
+                                       $closingPrices[$item->item_id] !== '' && 
+                                       is_numeric($closingPrices[$item->item_id])) {
+                                        // User enters total price for this item, not unit price
+                                        $totalClosingCost += (float) $closingPrices[$item->item_id];
                                     }
                                 }
                             }
-                            // Allow any closing cost amount
                             $displayClosingCost = $totalClosingCost;
                             $remainingToPay = $displayClosingCost;
                         @endphp
@@ -714,6 +683,9 @@
                                         <strong>Total Closing Cost:</strong> 
                                         {{ number_format($displayClosingCost, 2) }} ETB
                                         <br><strong class="text-primary">Payment Amount:</strong> {{ number_format($remainingToPay, 2) }} ETB
+                                        @if($remainingToPay != $credit->balance)
+                                            <br><span class="text-warning"><i class="fas fa-exclamation-triangle me-1"></i>Amount must equal credit balance: {{ number_format($credit->balance, 2) }} ETB</span>
+                                        @endif
                                     @else
                                         <strong class="text-muted">Enter item prices to see payment amount</strong>
                                     @endif
@@ -738,7 +710,7 @@
                                 <thead>
                                     <tr>
                                         <th>Item Name</th>
-                                        <th class="text-center">Closing Price</th>
+                                        <th class="text-center">Total Closing Price</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -752,7 +724,7 @@
                                                         class="form-control form-control-sm text-center @error('closingPrices.'.$item->item_id) is-invalid @enderror" 
                                                         step="0.01" 
                                                         min="0" 
-                                                        placeholder="Enter closing price"
+                                                        placeholder="Enter total closing price"
                                                         style="width: 120px; margin: 0 auto;">
                                                     @error('closingPrices.'.$item->item_id)
                                                         <div class="invalid-feedback">{{ $message }}</div>
@@ -770,7 +742,7 @@
                                                         class="form-control form-control-sm text-center @error('closingPrices.'.$item->item_id) is-invalid @enderror" 
                                                         step="0.01" 
                                                         min="0" 
-                                                        placeholder="Enter closing price"
+                                                        placeholder="Enter total closing price"
                                                         style="width: 120px; margin: 0 auto;">
                                                     @error('closingPrices.'.$item->item_id)
                                                         <div class="invalid-feedback">{{ $message }}</div>
