@@ -69,9 +69,7 @@ class Create extends Component
         }
 
         if ($this->form['payment_method'] === PaymentMethod::BANK_TRANSFER->value) {
-            $rules['form.receiver_bank_name'] = 'required|string|max:255';
-            $rules['form.receiver_account_holder'] = 'required|string|max:255';
-            $rules['form.receiver_account_number'] = 'required|string|max:255';
+            $rules['form.bank_account_id'] = 'required|exists:bank_accounts,id';
         }
 
         if ($this->form['payment_method'] === PaymentMethod::CREDIT_ADVANCE->value) {
@@ -89,8 +87,8 @@ class Create extends Component
         'form.transaction_number.required' => 'Transaction number is required for Telebirr or bank transfer payments.',
         'form.transaction_number.min' => 'Transaction number must be at least 5 characters.',
         'form.receiver_account_holder.required' => 'Account holder name is required.',
-        'form.receiver_bank_name.required' => 'Please choose a bank.',
-        'form.receiver_account_number.required' => 'Receiver account number is required.',
+        'form.bank_account_id.required' => 'Please select a bank account.',
+        'form.bank_account_id.exists' => 'Selected bank account is invalid.',
     ];
 
     public $form = [
@@ -101,11 +99,8 @@ class Create extends Component
         'payment_method' => 'cash',
         'payment_status' => 'paid',
         'transaction_number' => '',
-        'bank_name' => '',
-        'account_number' => '',
-        'receiver_bank_name' => '',
+        'bank_account_id' => '',
         'receiver_account_holder' => '',
-        'receiver_account_number' => '',
         'receipt_url' => '',
         'receipt_image' => '',
         'advance_amount' => 0,
@@ -163,9 +158,8 @@ class Create extends Component
             'payment_status' => PaymentStatus::PAID->value,
             'tax' => 0,
             'transaction_number' => '',
-            'receiver_bank_name' => '',
+            'bank_account_id' => '',
             'receiver_account_holder' => '',
-            'receiver_account_number' => '',
             'advance_amount' => 0,
             'notes' => '',
         ];
@@ -499,11 +493,8 @@ class Create extends Component
     {
         // Reset payment-specific fields when payment method changes
         $this->form['transaction_number'] = '';
-        $this->form['bank_name'] = '';
-        $this->form['account_number'] = '';
-        $this->form['receiver_bank_name'] = '';
+        $this->form['bank_account_id'] = '';
         $this->form['receiver_account_holder'] = '';
-        $this->form['receiver_account_number'] = '';
         $this->form['receipt_url'] = '';
         $this->form['receipt_image'] = '';
         $this->form['advance_amount'] = 0;
@@ -562,14 +553,8 @@ class Create extends Component
             } elseif (strlen((string) $this->form['transaction_number']) < 5) {
                 $validationErrors['form.transaction_number'] = 'Transaction number must be at least 5 characters.';
             }
-            if (empty($this->form['receiver_bank_name'])) {
-                $validationErrors['form.receiver_bank_name'] = 'Please choose a bank for bank transfer payments.';
-            }
-            if (empty($this->form['receiver_account_holder'])) {
-                $validationErrors['form.receiver_account_holder'] = 'Account holder name is required for bank transfer payments.';
-            }
-            if (empty($this->form['receiver_account_number'])) {
-                $validationErrors['form.receiver_account_number'] = 'Account number is required for bank transfer payments.';
+            if (empty($this->form['bank_account_id'])) {
+                $validationErrors['form.bank_account_id'] = 'Please select a bank account for bank transfer payments.';
             }
         }
 
@@ -666,9 +651,7 @@ class Create extends Component
             }
 
             if ($this->form['payment_method'] === PaymentMethod::BANK_TRANSFER->value) {
-                $purchase->receiver_bank_name = $this->form['receiver_bank_name'] ?? null;
-                $purchase->receiver_account_holder = $this->form['receiver_account_holder'] ?? null;
-                $purchase->receiver_account_number = $this->form['receiver_account_number'] ?? null;
+                $purchase->bank_account_id = $this->form['bank_account_id'] ?? null;
             }
 
             
@@ -1582,14 +1565,8 @@ class Create extends Component
             } elseif (strlen((string) $this->form['transaction_number']) < 5) {
                 $validationErrors['form.transaction_number'] = 'Transaction number must be at least 5 characters.';
             }
-            if (empty($this->form['receiver_bank_name'])) {
-                $validationErrors['form.receiver_bank_name'] = 'Please choose a bank for bank transfer payments.';
-            }
-            if (empty($this->form['receiver_account_holder'])) {
-                $validationErrors['form.receiver_account_holder'] = 'Account holder name is required for bank transfer payments.';
-            }
-            if (empty($this->form['receiver_account_number'])) {
-                $validationErrors['form.receiver_account_number'] = 'Account number is required for bank transfer payments.';
+            if (empty($this->form['bank_account_id'])) {
+                $validationErrors['form.bank_account_id'] = 'Please select a bank account for bank transfer payments.';
             }
         }
 
