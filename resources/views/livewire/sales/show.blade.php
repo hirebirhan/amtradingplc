@@ -136,22 +136,15 @@
                         </div>
                         @endif
                         @if($sale->payment_method === 'bank_transfer')
-                            @if($sale->receiver_bank_name)
+                            @if($sale->bankAccount)
+                            <div class="mb-2">
+                                <div class="text-muted small mb-1">Bank Account:</div>
+                                <div class="fw-medium">{{ $sale->bankAccount->account_name }}</div>
+                            </div>
+                            @elseif($sale->receiver_bank_name)
                             <div class="mb-2">
                                 <div class="text-muted small mb-1">Bank Name:</div>
                                 <div class="fw-medium">{{ $sale->receiver_bank_name }}</div>
-                            </div>
-                            @endif
-                            @if($sale->receiver_account_holder)
-                            <div class="mb-2">
-                                <div class="text-muted small mb-1">Account Holder Name:</div>
-                                <div class="fw-medium">{{ $sale->receiver_account_holder }}</div>
-                            </div>
-                            @endif
-                            @if($sale->receiver_account_number)
-                            <div class="mb-2">
-                                <div class="text-muted small mb-1">Account Number:</div>
-                                <div class="fw-medium">{{ $sale->receiver_account_number }}</div>
                             </div>
                             @endif
                         @endif

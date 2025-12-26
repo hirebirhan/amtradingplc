@@ -193,6 +193,14 @@ class Sale extends Model
     }
 
     /**
+     * Get the bank account used for this sale.
+     */
+    public function bankAccount(): BelongsTo
+    {
+        return $this->belongsTo(BankAccount::class);
+    }
+
+    /**
      * Get the credit associated with this sale.
      */
     public function credit(): MorphOne
