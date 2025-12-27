@@ -1150,7 +1150,7 @@ class Create extends Component
         }
     }
     
-    public function updatedNewItemUnitPrice(float $value): void
+    public function updatedNewItemUnitPrice($value): void
     {
         $this->newItem['price'] = (float)$value;
     }
