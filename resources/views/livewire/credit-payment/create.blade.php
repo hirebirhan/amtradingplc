@@ -608,7 +608,7 @@
     <!-- Closing Prices Modal -->
     @if($showClosingPricesModal)
     <div class="modal fade show d-block" style="background-color: rgba(0,0,0,0.5);" tabindex="-1">
-        <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-dialog modal-xl modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">
@@ -665,6 +665,13 @@
                             </div>
                         </div>
                         
+                        @if($totalClosingCost > 0 && $totalClosingCost != $credit->balance)
+                            <div class="alert alert-danger mb-3">
+                                <i class="fas fa-exclamation-triangle me-2"></i>
+                                <strong>Warning:</strong> The total closing cost ({{ number_format($totalClosingCost, 2) }} ETB) must equal the credit balance ({{ number_format($credit->balance, 2) }} ETB).
+                            </div>
+                        @endif
+                        
                         @error('closingPrices')
                             <div class="alert alert-danger">
                                 <i class="fas fa-exclamation-triangle me-2"></i>{{ $message }}
@@ -697,7 +704,7 @@
                                                         step="0.01" 
                                                         min="0" 
                                                         placeholder="Enter total closing price"
-                                                        style="width: 120px; margin: 0 auto;">
+                                                        style="width: 200px; margin: 0 auto;">
                                                     @error('closingPrices.'.$item->item_id)
                                                         <div class="invalid-feedback">{{ $message }}</div>
                                                     @enderror
@@ -715,7 +722,7 @@
                                                         step="0.01" 
                                                         min="0" 
                                                         placeholder="Enter total closing price"
-                                                        style="width: 120px; margin: 0 auto;">
+                                                        style="width: 200px; margin: 0 auto;">
                                                     @error('closingPrices.'.$item->item_id)
                                                         <div class="invalid-feedback">{{ $message }}</div>
                                                     @enderror
