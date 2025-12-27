@@ -1,123 +1,142 @@
-<div class="position-relative" x-data="{ 
-    open: @entangle('isOpen'),
-    selectedIndex: @entangle('selectedIndex')
-}">
-    <div class="input-group">
-        <span class="input-group-text bg-light border-end-0">
-            <i class="bi bi-search text-muted"></i>
-        </span>
+<div class="relative" x-data="itemSearchDropdown()" x-init="init()">
+    <!-- Search Input -->
+    <div class="relative">
         <input 
             type="text" 
-            wire:model.live.debounce.300ms="search"
-            @keydown.arrow-down.prevent="$wire.keyDown('ArrowDown')"
-            @keydown.arrow-up.prevent="$wire.keyDown('ArrowUp')"
-            @keydown.enter.prevent="$wire.keyDown('Enter')"
-            @keydown.escape="$wire.keyDown('Escape')"
-            @focus="open = true"
+            wire:model.live.debounce.300ms="searchTerm"
+            x-ref="searchInput"
+            x-on:keydown="handleKeydown($event)"
+            x-on:focus="$wire.isOpen = true"
+            x-on:blur="setTimeout(() => $wire.closeDropdown(), 150)"
             placeholder="{{ $placeholder }}"
-            class="form-control border-start-0 ps-0"
+            class="form-control pr-10 @error('selectedItemId') is-invalid @enderror"
             autocomplete="off"
-        />
-        @if($search)
+        >
+        
+        <!-- Clear Button -->
+        @if($selectedItem)
             <button 
-                type="button"
-                wire:click="$set('search', '')"
-                class="btn btn-outline-secondary border-start-0"
-                title="Clear search"
+                type="button" 
+                wire:click="clearSelection"
+                class="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
             >
-                <i class="bi bi-x-lg"></i>
+                <i class="fas fa-times"></i>
             </button>
+        @else
+            <div class="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400">
+                <i class="fas fa-search"></i>
+            </div>
         @endif
     </div>
 
-    @if($isOpen && strlen($search) >= 2)
-        <div 
-            class="position-absolute w-100 mt-1 bg-white border rounded shadow-lg"
-            style="z-index: 1050; max-height: 320px; overflow-y: auto;"
-            x-show="open"
-            @click.away="open = false"
-        >
-            <div wire:loading class="p-3 text-center text-muted">
-                <div class="spinner-border spinner-border-sm me-2" role="status">
-                    <span class="visually-hidden">Loading...</span>
-                </div>
-                Searching items...
-            </div>
-
-            <div wire:loading.remove>
-                @forelse($this->searchResults as $index => $item)
-                    <button
-                        type="button"
-                        wire:key="item-{{ $item->id }}"
-                        wire:click="selectItem({{ $item->id }})"
-                        class="w-100 px-3 py-2 text-start border-0 border-bottom
-                            {{ $selectedIndex === $index ? 'bg-primary bg-opacity-10' : 'bg-transparent' }}"
-                        style="transition: background-color 0.15s ease;"
-                        onmouseover="this.classList.add('bg-light')"
-                        onmouseout="this.classList.remove('bg-light')"
-                    >
-                        <div class="d-flex align-items-start justify-content-between">
-                            <div class="flex-grow-1 me-3 min-w-0">
-                                <div class="fw-medium text-truncate mb-1">{{ $item->name }}</div>
-                                <div class="small text-muted">
-                                    <span class="badge bg-light text-dark me-1">{{ $item->sku }}</span>
-                                    @if($item->barcode)
-                                        <span class="badge bg-light text-dark">{{ $item->barcode }}</span>
+    <!-- Dropdown Results -->
+    @if($isOpen && count($searchResults) > 0)
+        <div class="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+            @foreach($searchResults as $index => $item)
+                <div 
+                    wire:click="selectItem({{ $item['id'] }})"
+                    class="px-4 py-3 cursor-pointer hover:bg-gray-50 border-b border-gray-100 last:border-b-0 
+                           {{ $highlightedIndex === $index ? 'bg-blue-50' : '' }}
+                           {{ $item['is_low_stock'] ? 'bg-yellow-50' : '' }}"
+                >
+                    <div class="flex justify-between items-start">
+                        <div class="flex-1">
+                            <div class="font-medium text-gray-900">
+                                {{ $item['name'] }}
+                                @if($item['is_low_stock'])
+                                    <span class="text-yellow-600 ml-1">⚠️</span>
+                                @endif
+                            </div>
+                            <div class="text-sm text-gray-500">
+                                SKU: {{ $item['sku'] }}
+                                @if($item['barcode'])
+                                    | Barcode: {{ $item['barcode'] }}
+                                @endif
+                            </div>
+                            @if($context === 'purchase')
+                                <div class="text-sm text-blue-600">
+                                    Cost: {{ number_format($item['cost_price'], 2) }} ETB
+                                    @if($item['unit_quantity'] > 1)
+                                        ({{ number_format($item['cost_price_per_unit'], 2) }} ETB per {{ $item['item_unit'] }})
                                     @endif
                                 </div>
-                            </div>
-                            
-                            @if($showPrices || $showStock)
-                                <div class="text-end flex-shrink-0">
-                                    @if($context === 'sale' && $showPrices)
-                                        <div class="fw-semibold text-success small">
-                                            {{ number_format($item->selling_price, 2) }} ETB
-                                        </div>
-                                    @elseif($context === 'purchase' && $showPrices)
-                                        <div class="fw-semibold text-primary small">
-                                            {{ number_format($item->cost_price, 2) }} ETB
-                                        </div>
-                                        <div class="text-muted" style="font-size: 0.75rem;">
-                                            Unit: {{ $item->unit_quantity }}
-                                        </div>
-                                    @endif
-                                    
-                                    @if($context === 'sale' && $showStock && $warehouseId && $item->stocks->isNotEmpty())
-                                        @php
-                                            $stock = $item->stocks->first();
-                                            $available = $stock->available_quantity ?? 0;
-                                        @endphp
-                                        <div class="mt-1">
-                                            @if($available <= 0)
-                                                <span class="badge bg-danger text-white">Out of Stock</span>
-                                            @elseif($available < 10)
-                                                <span class="badge bg-warning text-dark">
-                                                    {{ number_format($available, 1) }} ⚠️
-                                                </span>
-                                            @else
-                                                <span class="badge bg-success text-white">
-                                                    {{ number_format($available, 1) }}
-                                                </span>
-                                            @endif
-                                        </div>
+                            @elseif($context === 'sale')
+                                <div class="text-sm text-green-600">
+                                    Price: {{ number_format($item['selling_price'], 2) }} ETB
+                                    @if($item['unit_quantity'] > 1)
+                                        ({{ number_format($item['selling_price_per_unit'], 2) }} ETB per {{ $item['item_unit'] }})
                                     @endif
                                 </div>
                             @endif
                         </div>
-                    </button>
-                @empty
-                    <div class="p-4 text-center text-muted">
-                        <i class="bi bi-search display-6 mb-2 d-block text-secondary"></i>
-                        <div class="fw-medium">No items found</div>
-                        <small>Try a different search term</small>
+                        
+                        @if($showAvailableStock && $warehouseId)
+                            <div class="text-right ml-4">
+                                <div class="text-sm font-medium 
+                                    {{ $item['available_stock'] > 0 ? 'text-green-600' : 'text-red-600' }}">
+                                    Available: {{ number_format($item['available_stock'], 2) }}
+                                </div>
+                                @if($item['is_low_stock'])
+                                    <div class="text-xs text-yellow-600">Low Stock</div>
+                                @endif
+                            </div>
+                        @endif
                     </div>
-                @endforelse
+                </div>
+            @endforeach
+        </div>
+    @elseif($isOpen && strlen($searchTerm) >= $minSearchLength && count($searchResults) === 0)
+        <div class="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg">
+            <div class="px-4 py-3 text-gray-500 text-center">
+                @if($context === 'sale' && $warehouseId)
+                    No items with available stock found at this location.
+                @else
+                    No items found matching "{{ $searchTerm }}".
+                @endif
             </div>
         </div>
-    @elseif($isOpen && strlen($search) > 0 && strlen($search) < 2)
-        <div class="position-absolute w-100 mt-1 bg-white border rounded shadow p-3 text-center text-muted" style="z-index: 1050;">
-            <i class="bi bi-info-circle me-1"></i>
-            Type at least 2 characters to search
-        </div>
     @endif
+
+    @error('selectedItemId')
+        <div class="invalid-feedback d-block">{{ $message }}</div>
+    @enderror
 </div>
+
+<script>
+function itemSearchDropdown() {
+    return {
+        init() {
+            // Initialize component
+        },
+        
+        handleKeydown(event) {
+            const key = event.key;
+            
+            if (['ArrowDown', 'ArrowUp', 'Enter', 'Escape'].includes(key)) {
+                event.preventDefault();
+                this.$wire.handleKeydown(key);
+            }
+        }
+    }
+}
+</script>
+
+<style>
+/* Custom scrollbar for dropdown */
+.max-h-60::-webkit-scrollbar {
+    width: 6px;
+}
+
+.max-h-60::-webkit-scrollbar-track {
+    background: #f1f1f1;
+}
+
+.max-h-60::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 3px;
+}
+
+.max-h-60::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+}
+</style>

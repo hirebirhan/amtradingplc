@@ -2,87 +2,219 @@
 
 namespace App\Livewire\Components;
 
-use App\Services\ItemSearchService;
+use App\Models\Item;
+use App\Models\User;
 use Livewire\Component;
-use Livewire\Attributes\On;
+use Illuminate\Support\Facades\Auth;
 
 class ItemSearchDropdown extends Component
 {
-    public string $search = '';
-    public bool $isOpen = false;
-    public int $selectedIndex = -1;
+    public $searchTerm = '';
+    public $selectedItem = null;
+    public $selectedItemId = null;
+    public $warehouseId = null;
+    public $context = 'purchase'; // 'purchase' or 'sale'
+    public $placeholder = 'Search items by name or SKU...';
+    public $showAvailableStock = true;
+    public $minSearchLength = 2;
+    public $maxResults = 15;
     
-    public string $context = 'purchase';
-    public ?int $warehouseId = null;
-    public string $placeholder = 'Search items...';
-    public bool $showStock = true;
-    public bool $showPrices = true;
+    // Events
+    public $itemSelectedEvent = 'itemSelected';
+    
+    // Internal state
+    public $isOpen = false;
+    public $searchResults = [];
+    public $highlightedIndex = -1;
+    
+    protected $listeners = ['clearSelection' => 'clearSelection'];
 
-    private ItemSearchService $itemSearchService;
-
-    public function boot(ItemSearchService $itemSearchService)
+    public function mount($warehouseId = null, $context = 'purchase', $placeholder = null, $showAvailableStock = true)
     {
-        $this->itemSearchService = $itemSearchService;
+        $this->warehouseId = $warehouseId;
+        $this->context = $context;
+        $this->showAvailableStock = $showAvailableStock;
+        
+        if ($placeholder) {
+            $this->placeholder = $placeholder;
+        }
     }
 
-    public function updatedSearch()
+    public function updatedSearchTerm()
     {
-        $this->selectedIndex = -1;
-        $this->isOpen = strlen(trim($this->search)) >= 2;
+        $this->highlightedIndex = -1;
+        
+        if (strlen($this->searchTerm) >= $this->minSearchLength) {
+            $this->searchItems();
+            $this->isOpen = true;
+        } else {
+            $this->searchResults = [];
+            $this->isOpen = false;
+        }
     }
 
-    public function getSearchResultsProperty()
+    public function searchItems()
     {
-        return $this->itemSearchService->search(
-            $this->search,
-            $this->context,
-            $this->warehouseId
-        );
+        $user = Auth::user();
+        $searchTerm = trim($this->searchTerm);
+        
+        if (strlen($searchTerm) < $this->minSearchLength) {
+            $this->searchResults = [];
+            return;
+        }
+
+        $query = Item::select([
+            'id', 'name', 'sku', 'barcode', 'branch_id',
+            'cost_price', 'selling_price', 'cost_price_per_unit', 
+            'selling_price_per_unit', 'unit_quantity', 'item_unit'
+        ])
+        ->where('is_active', true)
+        ->where(function ($q) use ($searchTerm) {
+            $q->whereRaw('LOWER(name) LIKE ?', ['%' . strtolower($searchTerm) . '%'])
+              ->orWhereRaw('LOWER(sku) LIKE ?', ['%' . strtolower($searchTerm) . '%'])
+              ->orWhereRaw('LOWER(barcode) LIKE ?', ['%' . strtolower($searchTerm) . '%']);
+        });
+
+        // Apply branch-level filtering
+        $query = $this->applyBranchFiltering($query, $user);
+
+        // For sales context, filter items with available stock
+        if ($this->context === 'sale' && $this->warehouseId) {
+            $query = $this->filterByAvailableStock($query);
+        }
+
+        $items = $query->orderBy('name')
+            ->limit($this->maxResults)
+            ->get();
+
+        // Load stock information if needed
+        if ($this->showAvailableStock && $this->warehouseId) {
+            $items->load(['stocks' => function ($q) {
+                $q->where('warehouse_id', $this->warehouseId);
+            }]);
+        }
+
+        $this->searchResults = $items->map(function ($item) {
+            return $this->formatItemForDisplay($item);
+        })->toArray();
+    }
+
+    private function applyBranchFiltering($query, User $user)
+    {
+        // SuperAdmin and GeneralManager see all items
+        if ($user->isSuperAdmin() || $user->isGeneralManager()) {
+            return $query;
+        }
+
+        // Branch users see only their branch items + global items (null branch_id)
+        if ($user->branch_id) {
+            return $query->where(function($q) use ($user) {
+                $q->where('branch_id', $user->branch_id)
+                  ->orWhereNull('branch_id');
+            });
+        }
+
+        return $query;
+    }
+
+    private function filterByAvailableStock($query)
+    {
+        return $query->whereHas('stocks', function ($q) {
+            $q->where('warehouse_id', $this->warehouseId)
+              ->where('piece_count', '>', 0);
+        });
+    }
+
+    private function formatItemForDisplay($item)
+    {
+        $availableStock = 0;
+        $isLowStock = false;
+
+        if ($this->showAvailableStock && $this->warehouseId) {
+            $stock = $item->stocks->first();
+            $availableStock = $stock ? $stock->piece_count : 0;
+            $isLowStock = $availableStock > 0 && $availableStock <= $item->reorder_level;
+        }
+
+        return [
+            'id' => $item->id,
+            'name' => $item->name,
+            'sku' => $item->sku,
+            'barcode' => $item->barcode,
+            'cost_price' => $item->cost_price,
+            'selling_price' => $item->selling_price,
+            'cost_price_per_unit' => $item->cost_price_per_unit,
+            'selling_price_per_unit' => $item->selling_price_per_unit,
+            'unit_quantity' => $item->unit_quantity,
+            'item_unit' => $item->item_unit,
+            'available_stock' => $availableStock,
+            'is_low_stock' => $isLowStock,
+            'display_text' => $this->getDisplayText($item, $availableStock, $isLowStock),
+        ];
+    }
+
+    private function getDisplayText($item, $availableStock, $isLowStock)
+    {
+        $text = $item->name . ' (' . $item->sku . ')';
+        
+        if ($this->showAvailableStock && $this->warehouseId) {
+            $text .= ' - Available: ' . number_format($availableStock, 2);
+            if ($isLowStock) {
+                $text .= ' ⚠️';
+            }
+        }
+        
+        return $text;
     }
 
     public function selectItem($itemId)
     {
-        $item = $this->itemSearchService->getItemWithStock($itemId, $this->warehouseId);
+        $item = collect($this->searchResults)->firstWhere('id', $itemId);
         
-        if (!$item) {
-            return;
+        if ($item) {
+            $this->selectedItem = $item;
+            $this->selectedItemId = $itemId;
+            $this->searchTerm = $item['display_text'];
+            $this->isOpen = false;
+            
+            // Dispatch event to parent component
+            $this->dispatch($this->itemSelectedEvent, $item);
         }
-
-        $stockWarning = false;
-        if ($this->context === 'sale' && $this->warehouseId) {
-            $stock = $item->stocks->first();
-            if (!$stock || $stock->available_quantity <= 0) {
-                $stockWarning = true;
-            }
-        }
-
-        $this->dispatch('item-selected', [
-            'item' => $item->toArray(),
-            'context' => $this->context,
-            'stock' => $this->context === 'sale' && $this->warehouseId 
-                ? $item->stocks->first()?->available_quantity ?? 0 
-                : null,
-            'stock_warning' => $stockWarning
-        ]);
-
-        $this->reset(['search', 'isOpen', 'selectedIndex']);
     }
 
-    public function keyDown($key)
+    public function clearSelection()
     {
-        $results = $this->searchResults;
-        
-        if ($key === 'ArrowDown') {
-            $this->selectedIndex = min($this->selectedIndex + 1, $results->count() - 1);
-        } elseif ($key === 'ArrowUp') {
-            $this->selectedIndex = max($this->selectedIndex - 1, -1);
-        } elseif ($key === 'Enter' && $this->selectedIndex >= 0) {
-            $item = $results->get($this->selectedIndex);
-            if ($item) {
-                $this->selectItem($item->id);
-            }
-        } elseif ($key === 'Escape') {
-            $this->reset(['search', 'isOpen', 'selectedIndex']);
+        $this->selectedItem = null;
+        $this->selectedItemId = null;
+        $this->searchTerm = '';
+        $this->searchResults = [];
+        $this->isOpen = false;
+        $this->highlightedIndex = -1;
+    }
+
+    public function closeDropdown()
+    {
+        $this->isOpen = false;
+        $this->highlightedIndex = -1;
+    }
+
+    public function handleKeydown($key)
+    {
+        switch ($key) {
+            case 'ArrowDown':
+                $this->highlightedIndex = min($this->highlightedIndex + 1, count($this->searchResults) - 1);
+                break;
+            case 'ArrowUp':
+                $this->highlightedIndex = max($this->highlightedIndex - 1, -1);
+                break;
+            case 'Enter':
+                if ($this->highlightedIndex >= 0 && isset($this->searchResults[$this->highlightedIndex])) {
+                    $this->selectItem($this->searchResults[$this->highlightedIndex]['id']);
+                }
+                break;
+            case 'Escape':
+                $this->closeDropdown();
+                break;
         }
     }
 

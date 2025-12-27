@@ -233,11 +233,11 @@ class Create extends Component
         if ($propertyName === 'form.name' && !empty($this->form['name'])) {
             $this->form['name'] = ucwords(strtolower($this->form['name']));
             
-            // Real-time duplicate check
+            // Real-time duplicate check within branch
             if (strlen($this->form['name']) >= 2) {
-                $exists = Item::where('name', $this->form['name'])->exists();
+                $exists = $this->checkItemNameExists($this->form['name']);
                 if ($exists) {
-                    $this->addError('form.name', 'This item name already exists. Please choose a different name.');
+                    $this->addError('form.name', 'This item name already exists in your branch. Please choose a different name.');
                 } else {
                     $this->resetErrorBag('form.name');
                 }
@@ -250,6 +250,19 @@ class Create extends Component
                 $this->form['unit_quantity'] = 1;
             }
         }
+    }
+
+    /**
+     * Check if item name exists within the user's branch scope
+     */
+    private function checkItemNameExists(string $name): bool
+    {
+        $user = Auth::user();
+        $branchId = $user->isSuperAdmin() ? null : $user->branch_id;
+        
+        return Item::where('name', $name)
+            ->where('branch_id', $branchId)
+            ->exists();
     }
 
 
@@ -272,7 +285,17 @@ class Create extends Component
 
         try {
             $validated = $this->validate([
-                'form.name' => 'required|string|max:255|min:2|unique:items,name',
+                'form.name' => [
+                    'required',
+                    'string',
+                    'max:255',
+                    'min:2',
+                    Rule::unique('items', 'name')->where(function ($query) {
+                        $user = Auth::user();
+                        $branchId = $user->isSuperAdmin() ? null : $user->branch_id;
+                        return $query->where('branch_id', $branchId);
+                    })
+                ],
                 'form.category_id' => 'required|exists:categories,id',
                 'form.description' => 'nullable|string|max:1000',
                 'form.unit' => 'required|string|in:piece',
@@ -282,7 +305,7 @@ class Create extends Component
                 'form.name.required' => 'Item name is required.',
                 'form.name.min' => 'Item name must be at least 2 characters.',
                 'form.name.max' => 'Item name cannot exceed 255 characters.',
-                'form.name.unique' => 'This item name already exists. Please choose a different name.',
+                'form.name.unique' => 'This item name already exists in your branch. Please choose a different name.',
                 'form.category_id.required' => 'Please select a category.',
                 'form.category_id.exists' => 'Selected category is invalid.',
                 'form.unit_quantity.required' => 'Items per piece is required.',
