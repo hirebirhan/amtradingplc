@@ -113,7 +113,7 @@ class Edit extends Component
 
         $this->bankAccount->update($bankAccountData);
 
-        $this->dispatch('notify', type: 'success', message: 'Bank account updated successfully.');
+        $this->dispatch('notify', ['type' => 'success', 'message' => 'Bank account updated successfully.']);
 
         return redirect()->route('admin.bank-accounts.show', $this->bankAccount);
     }

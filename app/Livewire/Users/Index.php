@@ -230,31 +230,31 @@ class Index extends Component
     {
         // Check policy authorization
         if (!auth()->user()->can('delete', $user)) {
-            $this->dispatch('notify', type: 'error', message: 'You do not have permission to delete this user.');
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'You do not have permission to delete this user.']);
             return;
         }
 
         // Prevent deleting yourself
         if ($user->id === auth()->id()) {
-            $this->dispatch('notify', type: 'error', message: 'You cannot delete your own account!');
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'You cannot delete your own account!']);
             return;
         }
 
         $user->delete();
-        $this->dispatch('notify', type: 'success', message: 'User deleted successfully.');
+        $this->dispatch('notify', ['type' => 'success', 'message' => 'User deleted successfully.']);
     }
 
     public function toggleStatus(User $user)
     {
         // Check policy authorization
         if (!auth()->user()->can('update', $user)) {
-            $this->dispatch('notify', type: 'error', message: 'You do not have permission to modify this user.');
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'You do not have permission to modify this user.']);
             return;
         }
 
         // Prevent deactivating yourself
         if ($user->id === auth()->id() && $user->is_active) {
-            $this->dispatch('notify', type: 'error', message: 'You cannot deactivate your own account!');
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'You cannot deactivate your own account!']);
             return;
         }
 
@@ -262,6 +262,6 @@ class Index extends Component
         $user->save();
 
         $status = $user->is_active ? 'activated' : 'deactivated';
-        $this->dispatch('notify', type: 'success', message: "User {$status} successfully.");
+        $this->dispatch('notify', ['type' => 'success', 'message' => "User {$status} successfully."]);
     }
 }

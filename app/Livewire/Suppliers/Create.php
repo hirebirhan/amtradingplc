@@ -100,7 +100,7 @@ class Create extends Component
         }
 
         if (!Auth::user()->can('create', Supplier::class)) {
-            $this->dispatch('notify', type: 'error', message: 'You are not authorized to create suppliers.');
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'You are not authorized to create suppliers.']);
             return;
         }
 
@@ -134,10 +134,10 @@ class Create extends Component
                 $this->addError('form.email', 'This email address is already registered.');
                 return;
             }
-            $this->dispatch('notify', type: 'error', message: 'Database error occurred. Please try again.');
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'Database error occurred. Please try again.']);
         } catch (\Exception $e) {
             $this->isSubmitting = false;
-            $this->dispatch('notify', type: 'error', message: 'An error occurred while creating the supplier.');
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'An error occurred while creating the supplier.']);
         }
     }
 

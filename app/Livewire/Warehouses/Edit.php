@@ -60,7 +60,7 @@ class Edit extends Component
         $this->warehouse->branches()->sync($branch_ids);
 
         // Use Livewire v3 notification dispatch
-        $this->dispatch('notify', type: 'success', message: "Warehouse '{$this->warehouse->name}' updated successfully.");
+        $this->dispatch('notify', ['type' => 'success', 'message' => "Warehouse '{$this->warehouse->name}' updated successfully."]);
         return redirect()->route('admin.warehouses.index');
     }
 

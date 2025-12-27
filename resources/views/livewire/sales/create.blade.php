@@ -80,6 +80,9 @@
     {{-- Stock Warning Modal --}}
     @include('livewire.sales.partials._stock-warning-modal')
 
+    {{-- Clear Cart Modal --}}
+    @include('livewire.partials._clear-cart-modal')
+
     {{-- Initialize Livewire Events --}}
     <script>
         document.addEventListener('livewire:init', () => {

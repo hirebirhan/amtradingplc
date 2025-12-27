@@ -127,21 +127,21 @@ class Index extends Component
     {
         // Check permission
         if (!auth()->user()->can('warehouses.delete')) {
-            $this->dispatch('notify', type: 'error', message: 'You do not have permission to delete warehouses.');
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'You do not have permission to delete warehouses.']);
             return;
         }
 
         $warehouse = Warehouse::find($warehouseId);
         
         if (!$warehouse) {
-            $this->dispatch('notify', type: 'error', message: 'Warehouse not found.');
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'Warehouse not found.']);
             $this->dispatch('warehouseDeleted', ['success' => false]);
             return;
         }
         
         // Check if warehouse has stock items
         if ($warehouse->stocks()->count() > 0) {
-            $this->dispatch('notify', type: 'error', message: 'Cannot delete warehouse with stock items. Remove items first.');
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'Cannot delete warehouse with stock items. Remove items first.']);
             $this->dispatch('warehouseDeleted', ['success' => false]);
             return;
         }
@@ -150,11 +150,11 @@ class Index extends Component
             // Delete the warehouse
             $warehouse->delete();
             
-            $this->dispatch('notify', type: 'success', message: "Warehouse '{$warehouse->name}' deleted successfully.");
+            $this->dispatch('notify', ['type' => 'success', 'message' => "Warehouse '{$warehouse->name}' deleted successfully."]);
             $this->dispatch('warehouseDeleted', ['success' => true]);
             $this->resetPage(); // Reset to first page after deletion
         } catch (\Exception $e) {
-            $this->dispatch('notify', type: 'error', message: "Error deleting warehouse: {$e->getMessage()}");
+            $this->dispatch('notify', ['type' => 'error', 'message' => "Error deleting warehouse: {$e->getMessage()}"]);
             $this->dispatch('warehouseDeleted', ['success' => false]);
         }
     }

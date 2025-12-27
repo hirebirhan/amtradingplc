@@ -114,7 +114,7 @@ class Index extends Component
         $this->deleteErrors = [];
         
         if (!$this->itemToDelete) {
-            $this->dispatch('notify', type: 'error', message: 'Item not found.');
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'Item not found.']);
             return;
         }
         
@@ -162,7 +162,7 @@ class Index extends Component
         
         // Check permission
         if (!auth()->user()->can('items.delete')) {
-            $this->dispatch('notify', type: 'error', message: 'You are not authorized to delete items.');
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'You are not authorized to delete items.']);
             $this->closeDeleteModal();
             return;
         }
@@ -171,7 +171,7 @@ class Index extends Component
         $this->validateItemDeletion();
         
         if (!empty($this->deleteErrors)) {
-            $this->dispatch('notify', type: 'error', message: 'Cannot delete item: ' . implode(', ', $this->deleteErrors));
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'Cannot delete item: ' . implode(', ', $this->deleteErrors)]);
             return;
         }
         
@@ -179,12 +179,12 @@ class Index extends Component
             $itemName = $this->itemToDelete->name;
             $this->itemToDelete->delete();
             
-            $this->dispatch('notify', type: 'success', message: "Item '{$itemName}' deleted successfully.");
+            $this->dispatch('notify', ['type' => 'success', 'message' => "Item '{$itemName}' deleted successfully."]);
             $this->closeDeleteModal();
             $this->resetPage();
             
         } catch (\Exception $e) {
-            $this->dispatch('notify', type: 'error', message: 'Error deleting item: ' . $e->getMessage());
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'Error deleting item: ' . $e->getMessage()]);
         }
     }
     
@@ -235,13 +235,13 @@ class Index extends Component
         try {
             // Check permission
             if (!auth()->user()->can('items.create')) {
-                $this->dispatch('notify', type: 'error', message: 'You do not have permission to import items.');
+                $this->dispatch('notify', ['type' => 'error', 'message' => 'You do not have permission to import items.']);
                 return;
             }
 
             // Check if file is selected
             if (!$this->importFile) {
-                $this->dispatch('notify', type: 'error', message: 'Please select a file first.');
+                $this->dispatch('notify', ['type' => 'error', 'message' => 'Please select a file first.']);
                 return;
             }
 
@@ -262,9 +262,9 @@ class Index extends Component
                 
                 // Check if it's a class not found error
                 if (strpos($e->getMessage(), 'Class') !== false && strpos($e->getMessage(), 'not found') !== false) {
-                    $this->dispatch('notify', type: 'error', message: 'Excel package not properly configured. Please contact administrator.');
+                    $this->dispatch('notify', ['type' => 'error', 'message' => 'Excel package not properly configured. Please contact administrator.']);
                 } else {
-                    $this->dispatch('notify', type: 'error', message: 'Error reading file: ' . $e->getMessage());
+                    $this->dispatch('notify', ['type' => 'error', 'message' => 'Error reading file: ' . $e->getMessage()]);
                 }
                 return;
             }
@@ -272,7 +272,7 @@ class Index extends Component
             \Log::info('File read successfully', ['rows_count' => $rows->count()]);
             
             if ($rows->isEmpty()) {
-                $this->dispatch('notify', type: 'error', message: 'No data found in the file.');
+                $this->dispatch('notify', ['type' => 'error', 'message' => 'No data found in the file.']);
                 return;
             }
 
@@ -435,7 +435,7 @@ class Index extends Component
                 'trace' => $e->getTraceAsString()
             ]);
             
-            $this->dispatch('notify', type: 'error', message: 'Error reading file: ' . $e->getMessage());
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'Error reading file: ' . $e->getMessage()]);
         }
     }
 
@@ -449,7 +449,7 @@ class Index extends Component
         try {
             // Check permission
             if (!auth()->user()->can('items.create')) {
-                $this->dispatch('notify', type: 'error', message: 'You do not have permission to import items.');
+                $this->dispatch('notify', ['type' => 'error', 'message' => 'You do not have permission to import items.']);
                 return;
             }
 
@@ -504,9 +504,9 @@ class Index extends Component
                     }
                 }
 
-                $this->dispatch('notify', type: 'success', message: $message);
+                $this->dispatch('notify', ['type' => 'success', 'message' => $message]);
             } else {
-                $this->dispatch('notify', type: 'error', message: 'No items were imported. Please check your file format and try again.');
+                $this->dispatch('notify', ['type' => 'error', 'message' => 'No items were imported. Please check your file format and try again.']);
             }
         } catch (\Exception $e) {
             \Log::error('Fatal error in importItems', [
@@ -515,7 +515,7 @@ class Index extends Component
             ]);
             
             $this->importing = false;
-            $this->dispatch('notify', type: 'error', message: 'Error importing items: ' . $e->getMessage());
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'Error importing items: ' . $e->getMessage()]);
         }
     }
 
@@ -535,7 +535,7 @@ class Index extends Component
     {
         try {
             if (!$this->importFile) {
-                $this->dispatch('notify', type: 'error', message: 'No file selected');
+                $this->dispatch('notify', ['type' => 'error', 'message' => 'No file selected']);
                 return;
             }
             
@@ -557,11 +557,11 @@ class Index extends Component
                 'extension' => $extension
             ]);
             
-            $this->dispatch('notify', type: 'success', message: $message);
+            $this->dispatch('notify', ['type' => 'success', 'message' => $message]);
             
         } catch (\Exception $e) {
             \Log::error('Simple file test failed', ['error' => $e->getMessage()]);
-            $this->dispatch('notify', type: 'error', message: 'File test failed: ' . $e->getMessage());
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'File test failed: ' . $e->getMessage()]);
         }
     }
 
@@ -592,11 +592,11 @@ class Index extends Component
                 throw new \Exception('Could not create ItemsImport instance');
             }
             
-            $this->dispatch('notify', type: 'success', message: 'Excel functionality is working correctly. All components loaded.');
+            $this->dispatch('notify', ['type' => 'success', 'message' => 'Excel functionality is working correctly. All components loaded.']);
             
         } catch (\Exception $e) {
             \Log::error('Excel test failed', ['error' => $e->getMessage()]);
-            $this->dispatch('notify', type: 'error', message: 'Excel test failed: ' . $e->getMessage());
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'Excel test failed: ' . $e->getMessage()]);
         }
     }
 
@@ -604,7 +604,7 @@ class Index extends Component
     {
         try {
             if (!$this->importFile) {
-                $this->dispatch('notify', type: 'error', message: 'No file selected');
+                $this->dispatch('notify', ['type' => 'error', 'message' => 'No file selected']);
                 return;
             }
             
@@ -641,11 +641,11 @@ class Index extends Component
             
             \Log::info('Fallback import parsed rows', ['count' => count($rows)]);
             
-            $this->dispatch('notify', type: 'success', message: 'Fallback import parsed ' . count($rows) . ' rows successfully.');
+            $this->dispatch('notify', ['type' => 'success', 'message' => 'Fallback import parsed ' . count($rows) . ' rows successfully.']);
             
         } catch (\Exception $e) {
             \Log::error('Fallback import failed', ['error' => $e->getMessage()]);
-            $this->dispatch('notify', type: 'error', message: 'Fallback import failed: ' . $e->getMessage());
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'Fallback import failed: ' . $e->getMessage()]);
         }
     }
 
@@ -653,7 +653,7 @@ class Index extends Component
     {
         try {
             if (!$this->importFile) {
-                $this->dispatch('notify', type: 'error', message: 'No file selected');
+                $this->dispatch('notify', ['type' => 'error', 'message' => 'No file selected']);
                 return;
             }
             
@@ -664,18 +664,18 @@ class Index extends Component
                 'extension' => $this->importFile->getClientOriginalExtension()
             ]);
             
-            $this->dispatch('notify', type: 'success', message: 'File upload test successful: ' . $this->importFile->getClientOriginalName());
+            $this->dispatch('notify', ['type' => 'success', 'message' => 'File upload test successful: ' . $this->importFile->getClientOriginalName()]);
             
         } catch (\Exception $e) {
             \Log::error('File upload test failed', ['error' => $e->getMessage()]);
-            $this->dispatch('notify', type: 'error', message: 'File upload test failed: ' . $e->getMessage());
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'File upload test failed: ' . $e->getMessage()]);
         }
     }
 
     public function showFileInfo()
     {
         if (!$this->importFile) {
-            $this->dispatch('notify', type: 'error', message: 'No file selected');
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'No file selected']);
             return;
         }
         
@@ -692,7 +692,7 @@ class Index extends Component
             $message .= "• {$key}: {$value}\n";
         }
         
-        $this->dispatch('notify', type: 'info', message: $message);
+        $this->dispatch('notify', ['type' => 'info', 'message' => $message]);
     }
 
     public function render()
@@ -832,11 +832,11 @@ class Index extends Component
             // Dispatch JavaScript to close modals
             $this->dispatch('force-close-modals');
             
-            $this->dispatch('notify', type: 'success', message: 'Modals cleared successfully.');
+            $this->dispatch('notify', ['type' => 'success', 'message' => 'Modals cleared successfully.']);
             
         } catch (\Exception $e) {
             \Log::error('Error force closing modals', ['error' => $e->getMessage()]);
-            $this->dispatch('notify', type: 'error', message: 'Error clearing modals: ' . $e->getMessage());
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'Error clearing modals: ' . $e->getMessage()]);
         }
     }
 

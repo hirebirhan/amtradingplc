@@ -90,7 +90,7 @@ class Index extends Component
             'item_ids' => $movements->pluck('item_id')->unique()->toArray(),
         ]);
         
-        $this->dispatch('notify', type: 'info', message: 'Filter test: Found ' . $movements->count() . ' movements for selected filters.');
+        $this->dispatch('notify', ['type' => 'info', 'message' => 'Filter test: Found ' . $movements->count() . ' movements for selected filters.']);
     }
 
     public function toggleAddForm()
@@ -303,7 +303,7 @@ class Index extends Component
     public function verifyItemFilter()
     {
         if (!$this->itemFilter) {
-            $this->dispatch('notify', type: 'warning', message: 'No item selected for filtering.');
+            $this->dispatch('notify', ['type' => 'warning', 'message' => 'No item selected for filtering.']);
             return;
         }
         
@@ -317,7 +317,7 @@ class Index extends Component
         $message .= "• Item IDs in results: " . implode(', ', $itemIds->toArray()) . "\n";
         $message .= "• Item names in results: " . implode(', ', $itemNames->toArray());
         
-        $this->dispatch('notify', type: 'info', message: $message);
+        $this->dispatch('notify', ['type' => 'info', 'message' => $message]);
         
         \Log::info('Item filter verification', [
             'selected_item_id' => $this->itemFilter,

@@ -318,8 +318,7 @@
                                 <i class="bi bi-arrow-clockwise"></i>
                             </button>
                             @if(count($items) > 0)
-                                <button type="button" class="btn btn-outline-danger btn-sm" wire:click="clearCart"
-                                    wire:confirm="Are you sure you want to clear all items from the cart?"
+                                <button type="button" class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#clearCartModal"
                                     title="Clear all items">
                                     <i class="bi bi-trash"></i>
                                 </button>
@@ -692,6 +691,9 @@
             </div>
         </div>
     </div>
+
+    {{-- Clear Cart Modal --}}
+    @include('livewire.partials._clear-cart-modal')
 
     <!-- JavaScript for Modal Handling -->
     <script>

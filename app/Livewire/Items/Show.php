@@ -26,19 +26,19 @@ class Show extends Component
         
         // Check permission
         if (!auth()->user()->can('delete', $item)) {
-            $this->dispatch('notify', type: 'error', message: 'You are not authorized to delete this item.');
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'You are not authorized to delete this item.']);
             return;
         }
 
         // Check if the item has stock history
         if ($item->stockHistories()->count() > 0) {
-            $this->dispatch('notify', type: 'error', message: 'Cannot delete item with stock history records.');
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'Cannot delete item with stock history records.']);
             return;
         }
 
         // Check if the item has stock
         if ($item->stocks()->sum('quantity') > 0) {
-            $this->dispatch('notify', type: 'error', message: 'Cannot delete item with existing stock. Please adjust stock to zero first.');
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'Cannot delete item with existing stock. Please adjust stock to zero first.']);
             return;
         }
 
@@ -46,7 +46,7 @@ class Show extends Component
         $itemName = $item->name;
         $item->delete();
         
-        $this->dispatch('notify', type: 'success', message: "Item '{$itemName}' deleted successfully!");
+        $this->dispatch('notify', ['type' => 'success', 'message' => "Item '{$itemName}' deleted successfully!"]);
         
         // Redirect to items index
         return $this->redirect(route('admin.items.index'));

@@ -102,7 +102,7 @@ class Edit extends Component
         }
 
         if (!Auth::user()->can('update', $this->customer)) {
-            $this->dispatch('notify', type: 'error', message: 'You are not authorized to update this customer.');
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'You are not authorized to update this customer.']);
             return;
         }
 
@@ -124,7 +124,7 @@ class Edit extends Component
 
         } catch (\Exception $e) {
             $this->isSubmitting = false;
-            $this->dispatch('notify', type: 'error', message: 'An error occurred while updating the customer.');
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'An error occurred while updating the customer.']);
         }
     }
 
