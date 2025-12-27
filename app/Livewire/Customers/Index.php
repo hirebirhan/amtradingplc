@@ -96,7 +96,7 @@ class Index extends Component
     public function exportCustomers()
     {
         $this->authorize('export', Customer::class);
-        $this->dispatch('notify', type: 'info', message: 'Your customer export is being generated and will download shortly.');
+        $this->dispatch('notify', ['type' => 'info', 'message' => 'Your customer export is being generated and will download shortly.']);
         return Excel::download(new CreditsExport, 'customers.xlsx');
     }
 

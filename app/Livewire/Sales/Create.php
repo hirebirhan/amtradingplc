@@ -901,7 +901,7 @@ class Create extends Component
     {
         match($type) {
             'success' => $this->flashSuccess($message),
-            default => $this->dispatch('notify', type: $type, message: $message)
+            default => $this->dispatch('notify', ['type' => $type, 'message' => $message])
         };
     }
 

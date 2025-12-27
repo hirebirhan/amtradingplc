@@ -12,7 +12,7 @@ trait HasNotifications
      */
     protected function notify(string $message, string $type = 'info'): void
     {
-        $this->dispatch('notify', type: $type, message: $message);
+        $this->dispatch('notify', ['type' => $type, 'message' => $message]);
     }
     
     /**

@@ -88,7 +88,7 @@ class Create extends Component
 
         $bankAccount = BankAccount::create($bankAccountData);
 
-        $this->dispatch('notify', type: 'success', message: 'Bank account created successfully.');
+        $this->dispatch('notify', ['type' => 'success', 'message' => 'Bank account created successfully.']);
 
         return redirect()->route('admin.bank-accounts.show', $bankAccount);
     }

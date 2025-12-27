@@ -23,13 +23,13 @@ class Show extends Component
         
         // Check if user has permission to delete
         if (!$currentUser->isSuperAdmin() && $currentUser->branch_id !== $this->bankAccount->branch_id) {
-            $this->dispatch('notify', type: 'error', message: 'You do not have permission to delete this bank account.');
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'You do not have permission to delete this bank account.']);
             return;
         }
 
         $this->bankAccount->delete();
 
-        $this->dispatch('notify', type: 'success', message: 'Bank account deleted successfully.');
+        $this->dispatch('notify', ['type' => 'success', 'message' => 'Bank account deleted successfully.']);
 
         return redirect()->route('admin.bank-accounts.index');
     }

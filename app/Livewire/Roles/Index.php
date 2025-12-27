@@ -147,14 +147,14 @@ class Index extends Component
                 'description' => $this->description
             ]);
             $role->syncPermissions($this->selectedPermissions);
-            $this->dispatch('notify', type: 'success', message: 'Role updated successfully!');
+            $this->dispatch('notify', ['type' => 'success', 'message' => 'Role updated successfully!']);
         } else {
             $role = Role::create([
                 'name' => $this->name,
                 'description' => $this->description
             ]);
             $role->syncPermissions($this->selectedPermissions);
-            $this->dispatch('notify', type: 'success', message: 'Role created successfully!');
+            $this->dispatch('notify', ['type' => 'success', 'message' => 'Role created successfully!']);
         }
 
         $this->resetInputFields();
@@ -183,30 +183,30 @@ class Index extends Component
     public function deleteRole($roleIdToDelete = null)
     {
         if (!$roleIdToDelete) {
-            $this->dispatch('notify', type: 'error', message: 'No role selected for deletion.');
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'No role selected for deletion.']);
             return;
         }
         
         $role = Role::find($roleIdToDelete);
         if (!$role) {
-            $this->dispatch('notify', type: 'error', message: 'Role not found.');
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'Role not found.']);
             return;
         }
 
         // Prevent deletion of system roles
         $systemRoles = ['SuperAdmin', 'BranchManager', 'WarehouseUser', 'Sales'];
         if (in_array($role->name, $systemRoles)) {
-            $this->dispatch('notify', type: 'error', message: 'Cannot delete system roles.');
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'Cannot delete system roles.']);
             return;
         }
         
         $usersCount = $role->users->count();
         
         if ($usersCount > 0) {
-            $this->dispatch('notify', type: 'error', message: 'Cannot delete role that is assigned to users. Please reassign users first.');
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'Cannot delete role that is assigned to users. Please reassign users first.']);
         } else {
             $role->delete();
-            $this->dispatch('notify', type: 'success', message: 'Role deleted successfully!');
+            $this->dispatch('notify', ['type' => 'success', 'message' => 'Role deleted successfully!']);
             
             // Clear permission cache
             app()['cache']->forget('spatie.permission.cache');

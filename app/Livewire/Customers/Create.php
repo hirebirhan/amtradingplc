@@ -101,7 +101,7 @@ class Create extends Component
 
         // Check permissions
         if (!Auth::user()->can('create', Customer::class)) {
-            $this->dispatch('notify', type: 'error', message: 'You are not authorized to create customers.');
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'You are not authorized to create customers.']);
             return;
         }
 
@@ -152,13 +152,13 @@ class Create extends Component
                 return;
             }
             
-            $this->dispatch('notify', type: 'error', message: 'Database error occurred. Please try again.');
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'Database error occurred. Please try again.']);
             
         } catch (\Exception $e) {
             DB::rollBack();
             $this->isSubmitting = false;
             
-            $this->dispatch('notify', type: 'error', message: 'An error occurred while creating the customer. Please try again.');
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'An error occurred while creating the customer. Please try again.']);
         }
     }
 

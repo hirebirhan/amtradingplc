@@ -53,10 +53,10 @@ class Edit extends Component
                 'is_active' => $this->isActive,
             ]);
 
-            $this->dispatch('notify', type: 'success', message: 'Branch updated successfully.');
+            $this->dispatch('notify', ['type' => 'success', 'message' => 'Branch updated successfully.']);
             return redirect()->route('admin.branches.index');
         } catch (\Exception $e) {
-            $this->dispatch('notify', type: 'error', message: 'Error updating branch: ' . $e->getMessage());
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'Error updating branch: ' . $e->getMessage()]);
         }
     }
 

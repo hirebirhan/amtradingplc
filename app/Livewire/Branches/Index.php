@@ -169,12 +169,12 @@ class Index extends Component
         try {
         // Check permission
         if (!auth()->user()->can('branches.delete')) {
-            $this->dispatch('notify', type: 'error', message: 'You do not have permission to delete branches.');
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'You do not have permission to delete branches.']);
             return;
         }
 
             if (!$this->branchToDelete) {
-                $this->dispatch('notify', type: 'error', message: 'No branch selected for deletion.');
+                $this->dispatch('notify', ['type' => 'error', 'message' => 'No branch selected for deletion.']);
                 return;
             }
 
@@ -183,14 +183,14 @@ class Index extends Component
             // Check if branch has users
             $userCount = \App\Models\User::where('branch_id', $branch->id)->count();
             if ($userCount > 0) {
-                $this->dispatch('notify', type: 'error', message: 'Cannot delete branch. Please reassign all users first.');
+                $this->dispatch('notify', ['type' => 'error', 'message' => 'Cannot delete branch. Please reassign all users first.']);
                 return;
             }
 
             // Check if branch has warehouses with stock
             $stockCount = $this->getBranchStockCount($branch);
             if ($stockCount > 0) {
-                $this->dispatch('notify', type: 'error', message: "Cannot delete branch. It has {$stockCount} items in stock. Please transfer items first or use the transfer option.");
+                $this->dispatch('notify', ['type' => 'error', 'message' => "Cannot delete branch. It has {$stockCount} items in stock. Please transfer items first or use the transfer option."]);
                 return;
             }
 
@@ -200,14 +200,14 @@ class Index extends Component
             $branchName = $branch->name;
             $branch->delete();
             
-            $this->dispatch('notify', type: 'success', message: "Branch '{$branchName}' deleted successfully.");
+            $this->dispatch('notify', ['type' => 'success', 'message' => "Branch '{$branchName}' deleted successfully."]);
             
             // Dispatch event to close modal
             $this->dispatch('branchDeleted');
             $this->branchToDelete = null;
             
         } catch (\Exception $e) {
-            $this->dispatch('notify', type: 'error', message: 'Error deleting branch: ' . $e->getMessage());
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'Error deleting branch: ' . $e->getMessage()]);
         }
     }
 
@@ -235,7 +235,7 @@ class Index extends Component
             });
 
         if ($this->targetBranches->isEmpty()) {
-            $this->dispatch('notify', type: 'error', message: 'No other branches with warehouses available for stock transfer.');
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'No other branches with warehouses available for stock transfer.']);
             return;
         }
 
@@ -249,7 +249,7 @@ class Index extends Component
         
         try {
             if (!$this->branchToDelete || !$targetBranchId) {
-                $this->dispatch('notify', type: 'error', message: 'Missing branch information for transfer.');
+                $this->dispatch('notify', ['type' => 'error', 'message' => 'Missing branch information for transfer.']);
                 return;
             }
 
@@ -257,7 +257,7 @@ class Index extends Component
             $targetBranch = Branch::with('warehouses')->findOrFail($targetBranchId);
 
             if ($targetBranch->warehouses->isEmpty()) {
-                $this->dispatch('notify', type: 'error', message: 'Target branch has no warehouses for stock transfer.');
+                $this->dispatch('notify', ['type' => 'error', 'message' => 'Target branch has no warehouses for stock transfer.']);
                 return;
             }
 
@@ -313,7 +313,7 @@ class Index extends Component
 
             \DB::commit();
 
-            $this->dispatch('notify', type: 'success', message: "Branch '{$branchName}' deleted successfully. {$transferredItems} items transferred to '{$targetBranch->name}'.");
+            $this->dispatch('notify', ['type' => 'success', 'message' => "Branch '{$branchName}' deleted successfully. {$transferredItems} items transferred to '{$targetBranch->name}'."]);
             
             $this->showTransferModal = false;
             $this->branchToDelete = null;
@@ -322,7 +322,7 @@ class Index extends Component
 
         } catch (\Exception $e) {
             \DB::rollBack();
-            $this->dispatch('notify', type: 'error', message: 'Error during transfer and deletion: ' . $e->getMessage());
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'Error during transfer and deletion: ' . $e->getMessage()]);
         }
     }
 

@@ -967,7 +967,7 @@ class Create extends Component
         ]);
         
         // Dispatch the notification event to the frontend
-        $this->dispatch('notify', type: $type, message: $message);
+        $this->dispatch('notify', ['type' => $type, 'message' => $message]);
     }
 
     public function setItemAndCost($itemId, $cost = null)

@@ -100,13 +100,13 @@ class Index extends Component
         $categoryId = $id ?? $this->modalCategoryId;
         
         if (!$categoryId) {
-            $this->dispatch('notify', type: 'error', message: 'No category selected for deletion.');
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'No category selected for deletion.']);
             return;
         }
 
         // Check permission
         if (!auth()->user()->can('categories.delete')) {
-            $this->dispatch('notify', type: 'error', message: 'You do not have permission to delete categories.');
+            $this->dispatch('notify', ['type' => 'error', 'message' => 'You do not have permission to delete categories.']);
             return;
         }
 
@@ -159,7 +159,7 @@ class Index extends Component
                 'trace' => $e->getTraceAsString(),
                 'category_id' => $categoryId
             ]);
-            $this->dispatch('notify', type: 'error', message: "Error deleting category: {$e->getMessage()}");
+            $this->dispatch('notify', ['type' => 'error', 'message' => "Error deleting category: {$e->getMessage()}"]);
         }
     }
 
