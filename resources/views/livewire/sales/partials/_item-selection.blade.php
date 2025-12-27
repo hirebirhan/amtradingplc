@@ -29,6 +29,25 @@
         </div>
     </div>
 
+    {{-- Item Selection Error Alert --}}
+    @if($errors->hasAny(['newItem.item_id', 'newItem.quantity', 'newItem.price', 'newItem.unit_price']))
+        <div class="alert alert-danger alert-dismissible fade show mb-3" role="alert">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                <div class="flex-grow-1">
+                    <strong>Item Selection Error:</strong>
+                    <ul class="mb-0 mt-1 small">
+                        @error('newItem.item_id')<li>{{ $message }}</li>@enderror
+                        @error('newItem.quantity')<li>{{ $message }}</li>@enderror
+                        @error('newItem.price')<li>{{ $message }}</li>@enderror
+                        @error('newItem.unit_price')<li>{{ $message }}</li>@enderror
+                    </ul>
+                </div>
+            </div>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    @endif
+
     {{-- Add Item Form --}}
     <div class="border rounded p-3">
         <div class="row g-3">

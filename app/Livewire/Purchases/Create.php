@@ -64,10 +64,6 @@ class Create extends Component
             ];
         }
 
-        if ($this->form['payment_method'] === PaymentMethod::TELEBIRR->value) {
-            $rules['form.receiver_account_holder'] = 'required|string|max:255';
-        }
-
         if ($this->form['payment_method'] === PaymentMethod::BANK_TRANSFER->value) {
             $rules['form.bank_account_id'] = 'required|exists:bank_accounts,id';
         }
@@ -84,9 +80,8 @@ class Create extends Component
         'form.branch_id.required' => 'Please select a branch.',
         'items.required' => 'Please add at least one item to the purchase.',
         'items.min' => 'Please add at least one item to the purchase.',
-        'form.transaction_number.required' => 'Transaction number is required for Telebirr or bank transfer payments.',
+        'form.transaction_number.required' => 'Transaction number is required for this payment method.',
         'form.transaction_number.min' => 'Transaction number must be at least 5 characters.',
-        'form.receiver_account_holder.required' => 'Account holder name is required.',
         'form.bank_account_id.required' => 'Please select a bank account.',
         'form.bank_account_id.exists' => 'Selected bank account is invalid.',
     ];
@@ -100,7 +95,8 @@ class Create extends Component
         'payment_status' => 'paid',
         'transaction_number' => '',
         'bank_account_id' => '',
-        'receiver_account_holder' => '',
+        'receiver_bank_name' => '',
+        'receiver_account_number' => '',
         'receipt_url' => '',
         'receipt_image' => '',
         'advance_amount' => 0,
@@ -159,7 +155,8 @@ class Create extends Component
             'tax' => 0,
             'transaction_number' => '',
             'bank_account_id' => '',
-            'receiver_account_holder' => '',
+            'receiver_bank_name' => '',
+            'receiver_account_number' => '',
             'advance_amount' => 0,
             'notes' => '',
         ];
@@ -494,7 +491,8 @@ class Create extends Component
         // Reset payment-specific fields when payment method changes
         $this->form['transaction_number'] = '';
         $this->form['bank_account_id'] = '';
-        $this->form['receiver_account_holder'] = '';
+        $this->form['receiver_bank_name'] = '';
+        $this->form['receiver_account_number'] = '';
         $this->form['receipt_url'] = '';
         $this->form['receipt_image'] = '';
         $this->form['advance_amount'] = 0;
@@ -515,84 +513,21 @@ class Create extends Component
         $this->updateTotals();
     }
 
+    public function updatedFormTransactionNumber($value)
+    {
+        // Clear any existing errors for this field
+        $this->resetErrorBag('form.transaction_number');
+    }
+
     public function save()
     {
-        // Clear any previous validation errors
-        $this->resetErrorBag();
-        
-        // Basic validation first - collect errors instead of throwing exceptions
-        $validationErrors = [];
-        
-        if (empty($this->items) || count($this->items) === 0) {
-            $validationErrors['items'] = 'No items found for this purchase. Please add at least one item.';
-        }
-
-        if (empty($this->form['supplier_id'])) {
-            $validationErrors['form.supplier_id'] = 'Please select a supplier.';
-        }
-
-        if (empty($this->form['branch_id'])) {
-            $validationErrors['form.branch_id'] = 'Please select a branch.';
-        }
-
-        // Check payment method specific validations
-        if ($this->form['payment_method'] === PaymentMethod::TELEBIRR->value) {
-            if (empty($this->form['transaction_number'])) {
-                $validationErrors['form.transaction_number'] = 'Transaction number is required for Telebirr payments.';
-            } elseif (strlen((string) $this->form['transaction_number']) < 5) {
-                $validationErrors['form.transaction_number'] = 'Transaction number must be at least 5 characters.';
-            }
-            if (empty($this->form['receiver_account_holder'])) {
-                $validationErrors['form.receiver_account_holder'] = 'Account holder name is required for Telebirr payments.';
-            }
-        }
-
-        if ($this->form['payment_method'] === PaymentMethod::BANK_TRANSFER->value) {
-            if (empty($this->form['transaction_number'])) {
-                $validationErrors['form.transaction_number'] = 'Transaction number is required for bank transfer payments.';
-            } elseif (strlen((string) $this->form['transaction_number']) < 5) {
-                $validationErrors['form.transaction_number'] = 'Transaction number must be at least 5 characters.';
-            }
-            if (empty($this->form['bank_account_id'])) {
-                $validationErrors['form.bank_account_id'] = 'Please select a bank account for bank transfer payments.';
-            }
-        }
-
-
-        if ($this->form['payment_method'] === PaymentMethod::CREDIT_ADVANCE->value) {
-            if (empty($this->form['advance_amount']) || $this->form['advance_amount'] <= 0) {
-                $validationErrors['form.advance_amount'] = 'Advance amount is required and must be greater than zero.';
-            } elseif ($this->form['advance_amount'] > $this->totalAmount) {
-                $validationErrors['form.advance_amount'] = 'Advance amount cannot exceed the total amount.';
-            }
-        }
-
-        // If there are validation errors, add them and return false
-        if (!empty($validationErrors)) {
-            foreach ($validationErrors as $field => $message) {
-                $this->addError($field, $message);
-            }
-            
-            $this->notify('❌ Please fix the validation errors before saving.', 'error');
-            return false;
-        }
-
-        // Validate form data using Laravel validation
         try {
             $this->validate();
         } catch (\Illuminate\Validation\ValidationException $e) {
-            // Add validation errors to the component
-            foreach ($e->validator->errors()->getMessages() as $field => $messages) {
-                foreach ($messages as $message) {
-                    $this->addError($field, $message);
-                }
-            }
-            
-            $this->notify('❌ Please fix the validation errors before saving.', 'error');
             return false;
         }
         
-            // Generate unique reference number
+        // Generate unique reference number
         $referenceNo = $this->generateUniqueReferenceNumber();
             
         // Start a transaction to ensure all related operations succeed or fail together
@@ -920,6 +855,9 @@ class Create extends Component
     public function updatedFormSupplierId($value)
     {
         $this->form['supplier_id'] = (int)$value;
+        
+        // Clear any existing errors for this field
+        $this->resetErrorBag('form.supplier_id');
         
         if (!empty($this->form['supplier_id'])) {
             $supplier = $this->suppliers->firstWhere('id', $this->form['supplier_id']);
@@ -1449,79 +1387,20 @@ class Create extends Component
      */
     public function validateAndShowModal()
     {
-        // Clear any previous validation errors
-        $this->resetErrorBag();
-        
-        // Basic validation first - collect errors instead of throwing exceptions
-        $validationErrors = [];
-        
-        if (empty($this->items) || count($this->items) === 0) {
-            $validationErrors['items'] = 'No items found for this purchase. Please add at least one item.';
-        }
-
-        if (empty($this->form['supplier_id'])) {
-            $validationErrors['form.supplier_id'] = 'Please select a supplier.';
-        }
-
-        if (empty($this->form['branch_id'])) {
-            $validationErrors['form.branch_id'] = 'Please select a branch.';
-        }
-
-        // Check payment method specific validations
-        if ($this->form['payment_method'] === PaymentMethod::TELEBIRR->value) {
-            if (empty($this->form['transaction_number'])) {
-                $validationErrors['form.transaction_number'] = 'Transaction number is required for Telebirr payments.';
-            } elseif (strlen((string) $this->form['transaction_number']) < 5) {
-                $validationErrors['form.transaction_number'] = 'Transaction number must be at least 5 characters.';
+        try {
+            $this->validate();
+            $this->dispatch('showConfirmationModal');
+            return true;
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            // Manually add validation errors to the error bag
+            foreach ($e->validator->errors()->getMessages() as $field => $messages) {
+                foreach ($messages as $message) {
+                    $this->addError($field, $message);
+                }
             }
-            if (empty($this->form['receiver_account_holder'])) {
-                $validationErrors['form.receiver_account_holder'] = 'Account holder name is required for Telebirr payments.';
-            }
-        }
-
-        if ($this->form['payment_method'] === PaymentMethod::BANK_TRANSFER->value) {
-            if (empty($this->form['transaction_number'])) {
-                $validationErrors['form.transaction_number'] = 'Transaction number is required for bank transfer payments.';
-            } elseif (strlen((string) $this->form['transaction_number']) < 5) {
-                $validationErrors['form.transaction_number'] = 'Transaction number must be at least 5 characters.';
-            }
-            if (empty($this->form['receiver_bank_name'])) {
-                $validationErrors['form.receiver_bank_name'] = 'Please choose a bank for bank transfer payments.';
-            }
-            if (empty($this->form['receiver_account_holder'])) {
-                $validationErrors['form.receiver_account_holder'] = 'Account holder name is required for bank transfer payments.';
-            }
-            if (empty($this->form['receiver_account_number'])) {
-                $validationErrors['form.receiver_account_number'] = 'Account number is required for bank transfer payments.';
-            }
-        }
-
-        if ($this->form['payment_method'] === PaymentMethod::CREDIT_ADVANCE->value) {
-            if (empty($this->form['advance_amount']) || $this->form['advance_amount'] <= 0) {
-                $validationErrors['form.advance_amount'] = 'Advance amount is required and must be greater than zero.';
-            } elseif ($this->form['advance_amount'] > $this->totalAmount) {
-                $validationErrors['form.advance_amount'] = 'Advance amount cannot exceed the total amount.';
-            }
-        }
-
-        // If there are validation errors, add them and return
-        if (!empty($validationErrors)) {
-            foreach ($validationErrors as $field => $message) {
-                $this->addError($field, $message);
-            }
-            
-            $this->notify('❌ Please fix the validation errors before proceeding.', 'error');
-            
-            // Scroll to the first error
             $this->dispatch('scrollToFirstError');
-            
             return false;
         }
-
-        // If validation passes, show the modal
-        $this->dispatch('showConfirmationModal');
-        
-        return true;
     }
 
     /**
@@ -1529,97 +1408,22 @@ class Create extends Component
      */
     public function confirmPurchase()
     {
-        // Clear any previous validation errors
-        $this->resetErrorBag();
-        
-        // First validate basic requirements
-        $validationErrors = [];
-        
-        if (empty($this->items) || count($this->items) === 0) {
-            $validationErrors['items'] = 'Cannot create purchase: No items added';
-        }
-
-        if (empty($this->form['supplier_id'])) {
-            $validationErrors['form.supplier_id'] = 'Cannot create purchase: Please select a supplier';
-        }
-
-        if (empty($this->form['branch_id'])) {
-            $validationErrors['form.branch_id'] = 'Cannot create purchase: Please select a branch';
-        }
-
-        // Check payment method specific validations
-        if ($this->form['payment_method'] === PaymentMethod::TELEBIRR->value) {
-            if (empty($this->form['transaction_number'])) {
-                $validationErrors['form.transaction_number'] = 'Transaction number is required for Telebirr payments.';
-            } elseif (strlen((string) $this->form['transaction_number']) < 5) {
-                $validationErrors['form.transaction_number'] = 'Transaction number must be at least 5 characters.';
-            }
-            if (empty($this->form['receiver_account_holder'])) {
-                $validationErrors['form.receiver_account_holder'] = 'Account holder name is required for Telebirr payments.';
-            }
-        }
-
-        if ($this->form['payment_method'] === PaymentMethod::BANK_TRANSFER->value) {
-            if (empty($this->form['transaction_number'])) {
-                $validationErrors['form.transaction_number'] = 'Transaction number is required for bank transfer payments.';
-            } elseif (strlen((string) $this->form['transaction_number']) < 5) {
-                $validationErrors['form.transaction_number'] = 'Transaction number must be at least 5 characters.';
-            }
-            if (empty($this->form['bank_account_id'])) {
-                $validationErrors['form.bank_account_id'] = 'Please select a bank account for bank transfer payments.';
-            }
-        }
-
-        if ($this->form['payment_method'] === PaymentMethod::CREDIT_ADVANCE->value) {
-            if (empty($this->form['advance_amount']) || $this->form['advance_amount'] <= 0) {
-                $validationErrors['form.advance_amount'] = 'Advance amount is required and must be greater than zero';
-            } elseif ($this->form['advance_amount'] > $this->totalAmount) {
-                $validationErrors['form.advance_amount'] = 'Advance amount cannot exceed the total amount';
-            }
-        }
-
-        // If there are validation errors, add them and return
-        if (!empty($validationErrors)) {
-            foreach ($validationErrors as $field => $message) {
-                $this->addError($field, $message);
-            }
+        try {
+            $this->validate();
+            $result = $this->save();
             
-            $this->notify('❌ Please fix the errors before creating the purchase.', 'error');
-            
-            // Close the modal and show errors on the form
+            if ($result !== false) {
+                $this->dispatch('closePurchaseModal');
+                $this->dispatch('purchaseCompleted');
+                return redirect()->route('admin.purchases.index')
+                    ->with('success', 'Purchase created successfully!');
+            }
+        } catch (\Illuminate\Validation\ValidationException $e) {
             $this->dispatch('closePurchaseModal');
             $this->dispatch('scrollToFirstError');
-            
-            return false;
         }
-
-        // Show loading state
-        $this->notify('💾 Creating purchase...', 'info');
-
-        // Call the save method directly instead of submitForm
-        $result = $this->save();
         
-        if ($result !== false) {
-            // If successful, dispatch event to close modal
-            $this->dispatch('closePurchaseModal');
-            $this->dispatch('purchaseCompleted');
-            
-            // Redirect to purchases index
-            return redirect()->route('admin.purchases.index')
-                ->with('success', 'Purchase created successfully!');
-        } else {
-            // The save method already handles validation errors and notifications
-            // Close the modal to show errors on the form
-            $this->dispatch('closePurchaseModal');
-            
-            // Show a general error message if no specific errors were set
-            if ($this->getErrorBag()->isEmpty()) {
-                $this->addError('general', 'An error occurred while creating the purchase. Please try again.');
-                $this->notify('❌ Failed to create purchase. Please check the form and try again.', 'error');
-            }
-            
-            return false;
-        }
+        return false;
     }
 
     /**

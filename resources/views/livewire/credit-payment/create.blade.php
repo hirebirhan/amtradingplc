@@ -50,16 +50,7 @@
                     </div>
                     <div class="card-body p-4">
                         <!-- Global Validation Messages (excluding notifications handled by JavaScript) -->
-                        @if ($errors->any())
-                            <div class="alert alert-danger">
-                                <strong>There were errors with your submission:</strong>
-                                <ul class="mb-0">
-                                    @foreach ($errors->all() as $error)
-                                        <li>{{ $error }}</li>
-                                    @endforeach
-                                </ul>
-                            </div>
-                        @endif
+                        <!-- Error display removed - using under-field errors only -->
                         <!-- End Global Messages -->
                         <!-- Add loading indicator during form processing -->
                         <div wire:loading wire:target="store" class="alert alert-info mb-4">
@@ -401,8 +392,7 @@
                                                 wire:model.defer="transaction_number" 
                                                 id="transaction_number" 
                                                 class="form-control @error('transaction_number') is-invalid @enderror" 
-                                                placeholder="Enter transaction number"
-                                                required>
+                                                placeholder="Enter transaction number">
                                             @error('transaction_number')
                                                 <div class="invalid-feedback d-block">{{ $message }}</div>
                                             @enderror
@@ -413,8 +403,7 @@
                                                 wire:model.defer="transaction_number" 
                                                 id="transaction_number" 
                                                 class="form-control @error('transaction_number') is-invalid @enderror" 
-                                                placeholder="Telebirr Transaction ID"
-                                                required>
+                                                placeholder="Telebirr Transaction ID">
                                             @error('transaction_number')
                                                 <div class="invalid-feedback d-block">{{ $message }}</div>
                                             @enderror
@@ -425,8 +414,7 @@
                                                 wire:model.defer="reference_no" 
                                                 id="reference_no" 
                                                 class="form-control @error('reference_no') is-invalid @enderror" 
-                                                placeholder="Check Number"
-                                                required>
+                                                placeholder="Check Number">
                                             @error('reference_no')
                                                 <div class="invalid-feedback d-block">{{ $message }}</div>
                                             @enderror
@@ -437,13 +425,12 @@
 
                             <!-- Bank Transfer Details -->
                             @if($payment_method === 'bank_transfer')
-                                <div class="row g-3">
+                                <div class="row g-3 mb-3">
                                     <div class="col-12 col-md-6">
                                         <label for="receiver_bank_name" class="form-label">Select Bank Account <span class="text-danger">*</span></label>
                                         <select wire:model.defer="receiver_bank_name" 
                                             id="receiver_bank_name" 
-                                            class="form-select @error('receiver_bank_name') is-invalid @enderror"
-                                            required>
+                                            class="form-select @error('receiver_bank_name') is-invalid @enderror">
                                             <option value="">Select Bank</option>
                                             @foreach($this->banks as $bank)
                                                 <option value="{{ $bank }}">{{ $bank }}</option>
@@ -458,19 +445,8 @@
 
                             <!-- Telebirr Account Holder Section -->
                             @if($payment_method === 'telebirr')
-                                <div class="row g-3">
-                                    <div class="col-12 col-md-6">
-                                        <label for="receiver_account_holder" class="form-label">Account Holder Name <span class="text-danger">*</span></label>
-                                        <input type="text" 
-                                            wire:model.defer="receiver_account_holder" 
-                                            id="receiver_account_holder" 
-                                            class="form-control @error('receiver_account_holder') is-invalid @enderror" 
-                                            placeholder="Account holder name"
-                                            required>
-                                        @error('receiver_account_holder')
-                                            <div class="invalid-feedback d-block">{{ $message }}</div>
-                                        @enderror
-                                    </div>
+                                <div class="row g-3 mb-3">
+                                    <!-- Account Holder Name field removed -->
                                 </div>
                             @endif
 
@@ -500,7 +476,7 @@
     <!-- Confirmation Modal -->
     @if($showConfirmation)
     <div class="modal fade show d-block" style="background-color: rgba(0,0,0,0.5);" tabindex="-1">
-        <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">
@@ -525,10 +501,6 @@
                                 
                                 @if($payment_method === 'telebirr' && $transaction_number)
                                     <div><strong>Transaction ID:</strong> {{ $transaction_number }}</div>
-                                @endif
-                                
-                                @if($payment_method === 'telebirr' && $receiver_account_holder)
-                                    <div><strong>Account Holder:</strong> {{ $receiver_account_holder }}</div>
                                 @endif
                                 
                                 @if($payment_method === 'bank_transfer' && $transaction_number)

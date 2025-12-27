@@ -130,7 +130,7 @@ class Create extends Component
         }
 
         // Payment method specific validations
-        if ($this->form['payment_method'] === 'telebirr') {
+        if (in_array($this->form['payment_method'], ['telebirr', 'bank_transfer'])) {
             $rules['form.transaction_number'] = [
                 'required',
                 'string',
@@ -142,21 +142,9 @@ class Create extends Component
                     }
                 },
             ];
-            $rules['form.receiver_account_holder'] = 'required|string|max:255';
         }
 
         if ($this->form['payment_method'] === 'bank_transfer') {
-            $rules['form.transaction_number'] = [
-                'required',
-                'string',
-                'min:5',
-                'max:255',
-                function ($attribute, $value, $fail) {
-                    if ($this->transactionNumberExists((string) $value)) {
-                        $fail('This transaction number has already been used.');
-                    }
-                },
-            ];
             $rules['form.bank_account_id'] = 'required|exists:bank_accounts,id';
         }
 
@@ -173,9 +161,8 @@ class Create extends Component
         'form.warehouse_id.required_without' => 'Please select either a branch or warehouse.',
         'items.required' => 'Please add at least one item to the sale.',
         'items.min' => 'Please add at least one item to the sale.',
-        'form.transaction_number.required' => 'Transaction number is required for Telebirr or bank transfer payments.',
+        'form.transaction_number.required' => 'Transaction number is required for this payment method.',
         'form.transaction_number.min' => 'Transaction number must be at least 5 characters.',
-        'form.receiver_account_holder.required' => 'Account holder name is required.',
         'form.bank_account_id.required' => 'Please select a bank account.',
         'form.bank_account_id.exists' => 'Selected bank account is invalid.',
         'form.advance_amount.required' => 'Please enter an advance amount.',
@@ -722,6 +709,21 @@ class Create extends Component
         $this->updateTotals();
     }
 
+    public function updatedFormTransactionNumber(): void
+    {
+        $this->resetErrorBag('form.transaction_number');
+    }
+
+    public function updatedFormBankAccountId(): void
+    {
+        $this->resetErrorBag('form.bank_account_id');
+    }
+
+    public function updatedFormCustomerId(): void
+    {
+        $this->resetErrorBag('form.customer_id');
+    }
+
     public function updatedFormPaymentMethod(string $value): void
     {
         // Reset payment-specific fields
@@ -730,6 +732,13 @@ class Create extends Component
         $this->form['receiver_account_holder'] = '';
         $this->form['receipt_url'] = '';
         $this->form['advance_amount'] = 0;
+
+        // Clear validation errors for payment-specific fields
+        $this->resetErrorBag([
+            'form.transaction_number',
+            'form.bank_account_id',
+            'form.advance_amount'
+        ]);
 
         $this->updatePaymentStatus();
         $this->updateTotals();
@@ -1001,14 +1010,11 @@ class Create extends Component
         switch ($this->form['payment_method']) {
             case 'telebirr':
                 return !empty($this->form['transaction_number']) && 
-                       strlen((string) $this->form['transaction_number']) >= 5 &&
-                       !empty($this->form['receiver_account_holder']);
+                       strlen((string) $this->form['transaction_number']) >= 5;
             case 'bank_transfer':
                 return !empty($this->form['transaction_number']) && 
                        strlen((string) $this->form['transaction_number']) >= 5 &&
-                       !empty($this->form['receiver_bank_name']) && 
-                       !empty($this->form['receiver_account_holder']) && 
-                       !empty($this->form['receiver_account_number']);
+                       !empty($this->form['bank_account_id']);
             case 'credit_advance':
                 return $this->form['advance_amount'] > 0 && 
                        $this->form['advance_amount'] < $this->totalAmount;
@@ -1022,80 +1028,20 @@ class Create extends Component
      */
     public function validateAndShowModal(): bool
     {
-        // Clear any previous validation errors
-        $this->resetErrorBag();
-        
-        // Basic validation first - collect errors instead of throwing exceptions
-        $validationErrors = [];
-        
-        if (empty($this->items) || count($this->items) === 0) {
-            $validationErrors['items'] = 'No items found for this sale. Please add at least one item.';
-        }
-
-        if (!$this->form['is_walking_customer'] && empty($this->form['customer_id'])) {
-            $validationErrors['form.customer_id'] = 'Please select a customer or check walking customer.';
-        }
-
-        if (empty($this->form['warehouse_id']) && empty($this->form['branch_id'])) {
-            $validationErrors['form.warehouse_id'] = 'Please select either a warehouse or branch.';
-        }
-
-        // Check payment method specific validations
-        if ($this->form['payment_method'] === 'telebirr') {
-            if (empty($this->form['transaction_number'])) {
-                $validationErrors['form.transaction_number'] = 'Transaction number is required for Telebirr payments.';
-            } elseif (strlen((string) $this->form['transaction_number']) < 5) {
-                $validationErrors['form.transaction_number'] = 'Transaction number must be at least 5 characters.';
+        try {
+            $this->validate();
+            $this->dispatch('showConfirmationModal');
+            return true;
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            // Manually add validation errors to the error bag
+            foreach ($e->validator->errors()->getMessages() as $field => $messages) {
+                foreach ($messages as $message) {
+                    $this->addError($field, $message);
+                }
             }
-            if (empty($this->form['receiver_account_holder'])) {
-                $validationErrors['form.receiver_account_holder'] = 'Account holder name is required for Telebirr payments.';
-            }
-        }
-
-        if ($this->form['payment_method'] === 'bank_transfer') {
-            if (empty($this->form['transaction_number'])) {
-                $validationErrors['form.transaction_number'] = 'Transaction number is required for bank transfer payments.';
-            } elseif (strlen((string) $this->form['transaction_number']) < 5) {
-                $validationErrors['form.transaction_number'] = 'Transaction number must be at least 5 characters.';
-            }
-            if (empty($this->form['receiver_bank_name'])) {
-                $validationErrors['form.receiver_bank_name'] = 'Please choose a bank for bank transfer payments.';
-            }
-            if (empty($this->form['receiver_account_holder'])) {
-                $validationErrors['form.receiver_account_holder'] = 'Account holder name is required for bank transfer payments.';
-            }
-            if (empty($this->form['receiver_account_number'])) {
-                $validationErrors['form.receiver_account_number'] = 'Account number is required for bank transfer payments.';
-            }
-        }
-
-
-        if ($this->form['payment_method'] === 'credit_advance') {
-            if (empty($this->form['advance_amount']) || $this->form['advance_amount'] <= 0) {
-                $validationErrors['form.advance_amount'] = 'Advance amount is required and must be greater than zero.';
-            } elseif ($this->form['advance_amount'] > $this->totalAmount) {
-                $validationErrors['form.advance_amount'] = 'Advance amount cannot exceed the total amount.';
-            }
-        }
-
-        // If there are validation errors, add them and return
-        if (!empty($validationErrors)) {
-            foreach ($validationErrors as $field => $message) {
-                $this->addError($field, $message);
-            }
-            
-            $this->notify('❌ Please fix the validation errors before proceeding.', 'error');
-            
-            // Scroll to the first error
             $this->dispatch('scrollToFirstError');
-            
             return false;
         }
-
-        // If validation passes, show the modal
-        $this->dispatch('showConfirmationModal');
-        
-        return true;
     }
 
     /**
