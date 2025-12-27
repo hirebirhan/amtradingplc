@@ -31,7 +31,8 @@
             border-radius: calc(var(--border-radius) * 2);
             box-shadow: var(--shadow-md);
             transition: all 0.3s ease;
-            max-width: 28rem;
+            max-width: 36rem;
+            width: 100%;
             margin: 0 auto;
         }
         
@@ -89,15 +90,17 @@
         }
         
         /* Responsive adjustments using Bootstrap breakpoints */
-        @media (max-width: 576px) {
+        @media (max-width: 768px) {
             .card {
+                max-width: 32rem;
                 margin: 1rem;
                 padding: 2rem 1.5rem !important;
             }
         }
         
-        @media (max-width: 480px) {
+        @media (max-width: 576px) {
             .card {
+                max-width: 28rem;
                 padding: 1.5rem 1rem !important;
             }
         }
