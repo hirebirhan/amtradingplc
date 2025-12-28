@@ -82,6 +82,14 @@ class BankAccount extends Model
     }
 
     /**
+     * Scope a query to order bank accounts by account name.
+     */
+    public function scopeOrdered($query)
+    {
+        return $query->orderBy('account_name');
+    }
+
+    /**
      * Scope a query to get the default bank account.
      */
     public function scopeDefault($query)

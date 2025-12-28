@@ -662,6 +662,11 @@
                 console.log('Validation errors:', errors);
             });
             
+            // Handle notifications
+            Livewire.on('notify', (data) => {
+                showNotification(data.message, data.type);
+            });
+            
             // Handle item creation modal
             const createItemModal = document.getElementById('createItemModal');
             if (createItemModal) {
@@ -672,6 +677,39 @@
                 });
             }
         });
+        
+        // Notification function
+        function showNotification(message, type = 'info') {
+            let container = document.getElementById('notification-container');
+            if (!container) {
+                container = document.createElement('div');
+                container.id = 'notification-container';
+                container.className = 'position-fixed top-0 end-0 z-3 mt-3 me-3';
+                document.body.appendChild(container);
+            }
+            
+            const alertClass = {
+                'success': 'alert-success',
+                'error': 'alert-danger', 
+                'warning': 'alert-warning',
+                'info': 'alert-info'
+            }[type] || 'alert-info';
+            
+            const notification = document.createElement('div');
+            notification.className = `alert ${alertClass} alert-dismissible fade show`;
+            notification.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            
+            container.appendChild(notification);
+            
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.remove();
+                }
+            }, 5000);
+        }
     </script>
 
 
