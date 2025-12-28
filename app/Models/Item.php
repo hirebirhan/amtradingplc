@@ -610,6 +610,40 @@ class Item extends Model
     }
 
     /**
+     * Check if a selling price would result in a loss.
+     *
+     * @param float $sellingPrice
+     * @return bool
+     */
+    public function isPriceBelowCost(float $sellingPrice): bool
+    {
+        $costPrice = $this->cost_price_per_unit ?: ($this->cost_price / max($this->unit_quantity, 1));
+        return $sellingPrice < $costPrice;
+    }
+
+    /**
+     * Get the minimum selling price (cost price).
+     *
+     * @return float
+     */
+    public function getMinimumSellingPrice(): float
+    {
+        return $this->cost_price_per_unit ?: ($this->cost_price / max($this->unit_quantity, 1));
+    }
+
+    /**
+     * Calculate profit margin for a given selling price.
+     *
+     * @param float $sellingPrice
+     * @return float
+     */
+    public function calculateProfitMargin(float $sellingPrice): float
+    {
+        $costPrice = $this->getMinimumSellingPrice();
+        return $costPrice > 0 ? (($sellingPrice - $costPrice) / $costPrice) * 100 : 0;
+    }
+
+    /**
      * Get the user who deleted this item.
      */
     public function deleter(): BelongsTo

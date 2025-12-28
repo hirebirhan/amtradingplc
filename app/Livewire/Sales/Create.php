@@ -38,6 +38,7 @@ class Create extends Component
     public ?int $editingItemIndex = null;
     public ?string $stockWarningType = null;
     public ?array $stockWarningItem = null;
+    public bool $warningAcknowledged = false;
 
     // Calculations
     public float $subtotal = 0;
@@ -108,10 +109,20 @@ class Create extends Component
         $this->validateItem();
         if ($this->getErrorBag()->isNotEmpty()) return;
         
-        $this->validateStock();
-        if ($this->getErrorBag()->isNotEmpty()) return;
+        // Check for warnings only if not already acknowledged
+        if (!$this->warningAcknowledged) {
+            $this->validateStock();
+            if ($this->getErrorBag()->isNotEmpty()) return;
+            
+            // If there's a warning, show modal and wait for acknowledgment
+            if ($this->stockWarningType) {
+                return;
+            }
+        }
         
+        // Proceed to add item (either no warnings or warnings acknowledged)
         $this->processAddItem();
+        $this->warningAcknowledged = false; // Reset for next item
     }
 
     public function editItem(int $index): void
@@ -165,6 +176,41 @@ class Create extends Component
     public function updatedFormWarehouseId($value): void { if ($value) $this->form['branch_id'] = ''; }
 
     // Validation & Error Handling
+    public function updatedNewItemQuantity($value): void
+    {
+        $this->resetErrorBag('newItem.quantity');
+        $this->clearStockWarning();
+        $this->warningAcknowledged = false; // Reset acknowledgment on change
+        
+        if ($value && $this->availableStock > 0) {
+            $quantity = floatval($value);
+            if ($quantity > $this->availableStock) {
+                $this->stockWarningType = 'insufficient_stock';
+                $this->stockWarningItem = [
+                    'name' => $this->selectedItem['name'],
+                    'available' => $this->availableStock,
+                    'requested' => $quantity,
+                    'deficit' => $quantity - $this->availableStock
+                ];
+            }
+        }
+    }
+
+    public function updatedNewItemUnitPrice($value): void
+    {
+        $this->resetErrorBag('newItem.unit_price');
+        $this->clearStockWarning();
+        $this->warningAcknowledged = false; // Reset acknowledgment on change
+        
+        if (!$value || floatval($value) <= 0) {
+            $this->addError('newItem.unit_price', 'Price must be greater than zero');
+            return;
+        }
+        
+        // Debounced below-cost pricing check (only after user stops typing)
+        $this->dispatch('checkBelowCostPrice', ['price' => $value]);
+    }
+
     public function updatedFormTransactionNumber(): void { $this->resetErrorBag('form.transaction_number'); }
     public function updatedFormBankAccountId(): void { 
         $this->resetErrorBag(['form.bank_account_id', 'form.transaction_number']);
@@ -205,13 +251,33 @@ class Create extends Component
     // Stock Warnings
     public function proceedWithWarning(): void
     {
-        $this->processAddItem();
+        $this->warningAcknowledged = true;
         $this->clearStockWarning();
+        // Don't add item here - let user click Add button again
     }
     
     public function cancelStockWarning(): void
     {
         $this->clearStockWarning();
+        $this->warningAcknowledged = false;
+    }
+
+    public function checkBelowCostPrice($price): void
+    {
+        if ($this->selectedItem) {
+            $item = Item::find($this->selectedItem['id']);
+            if ($item && $item->isPriceBelowCost(floatval($price))) {
+                $minPrice = $item->getMinimumSellingPrice();
+                $this->stockWarningType = 'below_cost_warning';
+                $this->stockWarningItem = [
+                    'name' => $item->name,
+                    'selling_price' => floatval($price),
+                    'cost_price' => $minPrice,
+                    'loss_amount' => $minPrice - floatval($price),
+                    'loss_percentage' => $minPrice > 0 ? (($minPrice - floatval($price)) / $minPrice) * 100 : 0
+                ];
+            }
+        }
     }
 
     public function cancelEdit(): void
@@ -344,7 +410,7 @@ class Create extends Component
         }
     }
 
-    private function clearSelectedItem(): void
+    public function clearSelectedItem(): void
     {
         $this->resetNewItem();
         $this->selectedItem = null;
@@ -376,13 +442,46 @@ class Create extends Component
 
     private function validateStock(): void
     {
-        if ($this->availableStock <= 0) {
-            $this->addError('newItem.quantity', 'Item is out of stock');
+        $quantity = floatval($this->newItem['quantity']);
+        $price = floatval($this->newItem['unit_price']);
+        
+        // Priority 1: Check for below-cost pricing (most critical)
+        if ($this->selectedItem && $price > 0) {
+            $item = Item::find($this->selectedItem['id']);
+            if ($item && $item->isPriceBelowCost($price)) {
+                $minPrice = $item->getMinimumSellingPrice();
+                $this->stockWarningType = 'below_cost_warning';
+                $this->stockWarningItem = [
+                    'name' => $item->name,
+                    'selling_price' => $price,
+                    'cost_price' => $minPrice,
+                    'loss_amount' => $minPrice - $price,
+                    'loss_percentage' => $minPrice > 0 ? (($minPrice - $price) / $minPrice) * 100 : 0
+                ];
+                return; // Stop here, handle pricing first
+            }
+        }
+        
+        // Priority 2: Check stock availability (warning, not error)
+        if ($this->availableStock <= 0 && !$this->warningAcknowledged) {
+            $this->stockWarningType = 'out_of_stock';
+            $this->stockWarningItem = [
+                'name' => $this->selectedItem['name'],
+                'price' => $price,
+                'stock' => $this->availableStock
+            ];
             return;
         }
         
-        if (floatval($this->newItem['quantity']) > $this->availableStock) {
-            $this->addError('newItem.quantity', 'Quantity exceeds available stock (' . $this->availableStock . ')');
+        // Priority 3: Check quantity vs available stock
+        if ($quantity > $this->availableStock && !$this->warningAcknowledged) {
+            $this->stockWarningType = 'insufficient_stock';
+            $this->stockWarningItem = [
+                'name' => $this->selectedItem['name'],
+                'available' => $this->availableStock,
+                'requested' => $quantity,
+                'deficit' => $quantity - $this->availableStock
+            ];
         }
     }
 
@@ -416,14 +515,27 @@ class Create extends Component
 
     private function buildItemData(): array
     {
+        if (!$this->selectedItem && !empty($this->newItem['item_id'])) {
+            $item = Item::find($this->newItem['item_id']);
+            if ($item) {
+                $this->selectedItem = [
+                    'id' => $item->id,
+                    'name' => $item->name,
+                    'sku' => $item->sku,
+                    'unit_quantity' => $item->unit_quantity ?? 1,
+                    'item_unit' => $item->item_unit ?? 'piece',
+                ];
+            }
+        }
+        
         return [
-            'item_id' => $this->newItem['item_id'],
-            'name' => $this->selectedItem['name'],
-            'sku' => $this->selectedItem['sku'],
-            'quantity' => floatval($this->newItem['quantity']),
-            'sale_method' => $this->newItem['sale_method'],
-            'price' => floatval($this->newItem['unit_price']),
-            'subtotal' => floatval($this->newItem['quantity']) * floatval($this->newItem['unit_price']),
+            'item_id' => $this->newItem['item_id'] ?? '',
+            'name' => $this->selectedItem['name'] ?? 'Unknown Item',
+            'sku' => $this->selectedItem['sku'] ?? '',
+            'quantity' => floatval($this->newItem['quantity'] ?? 0),
+            'sale_method' => $this->newItem['sale_method'] ?? 'piece',
+            'price' => floatval($this->newItem['unit_price'] ?? 0),
+            'subtotal' => floatval($this->newItem['quantity'] ?? 0) * floatval($this->newItem['unit_price'] ?? 0),
             'unit_quantity' => $this->selectedItem['unit_quantity'] ?? 1,
             'item_unit' => $this->selectedItem['item_unit'] ?? 'piece',
             'notes' => $this->newItem['notes'] ?? null,
@@ -449,8 +561,8 @@ class Create extends Component
             $this->availableStock = $this->getServices()->cart()->getAvailableStockForEdit(
                 $item['item_id'],
                 $item['quantity'],
-                $this->form['warehouse_id'],
-                $this->form['branch_id']
+                (int)($this->form['warehouse_id'] ?? 0),
+                (int)($this->form['branch_id'] ?? 0)
             );
         }
     }
