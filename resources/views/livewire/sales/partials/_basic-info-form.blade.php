@@ -178,9 +178,9 @@
                     required
                 >
                     <option value="">Select Bank Account</option>
-                    @if(isset($bankAccounts) && $bankAccounts->count() > 0)
+                    @if(isset($bankAccounts) && count($bankAccounts) > 0)
                         @foreach($bankAccounts as $account)
-                            <option value="{{ $account->id }}">{{ $account->account_name }} - {{ $account->account_number }}</option>
+                            <option value="{{ $account['id'] }}">{{ $account['account_name'] }} - {{ $account['account_number'] }}</option>
                         @endforeach
                     @else
                         <option disabled>No bank accounts available</option>
@@ -190,10 +190,27 @@
                     <div class="invalid-feedback">{{ $message }}</div> 
                 @enderror
             </div>
+            
+            <div class="col-12 col-md-4">
+                <label for="transaction_number" class="form-label fw-medium">
+                    Transaction Number <span class="text-primary">*</span>
+                </label>
+                <input 
+                    type="text" 
+                    wire:model.live="form.transaction_number" 
+                    id="transaction_number" 
+                    class="form-control @error('form.transaction_number') is-invalid @enderror" 
+                    placeholder="Enter bank transaction number" 
+                    required
+                >
+                @error('form.transaction_number') 
+                    <div class="invalid-feedback">{{ $message }}</div> 
+                @enderror
+            </div>
         @endif
 
         {{-- Payment Method Specific Fields --}}
-        @if(in_array($form['payment_method'], ['telebirr', 'bank_transfer']))
+        @if($form['payment_method'] === 'telebirr')
             <div class="col-12 col-md-4">
                 <label for="transaction_number" class="form-label fw-medium">
                     Transaction Number <span class="text-primary">*</span>
