@@ -85,6 +85,14 @@ class Supplier extends Model
     }
 
     /**
+     * Scope a query to order suppliers by name.
+     */
+    public function scopeOrdered($query)
+    {
+        return $query->orderBy('name');
+    }
+
+    /**
      * Get the user who created this record.
      */
     public function creator(): BelongsTo

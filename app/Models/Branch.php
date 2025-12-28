@@ -88,4 +88,20 @@ class Branch extends Model
     {
         return $this->belongsTo(User::class, 'deleted_by');
     }
+
+    /**
+     * Scope a query to only include active branches.
+     */
+    public function scopeActive($query)
+    {
+        return $query->where('is_active', true);
+    }
+
+    /**
+     * Scope a query to order branches by name.
+     */
+    public function scopeOrdered($query)
+    {
+        return $query->orderBy('name');
+    }
 }
