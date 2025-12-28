@@ -9,7 +9,7 @@
     <style>
         @media print {
             .no-print { display: none; }
-            body { font-size: 11px; margin: 0; padding: 0; }
+            body { font-size: 20px; margin: 0; padding: 0; }
             .page-break { page-break-before: always; }
             @page { size: A4; margin: 0.5in; }
             .card { box-shadow: none !important; border: none !important; }
@@ -55,11 +55,12 @@
                                 </div>
                             </div>
                             <div class="col-12 col-md-8 text-center mb-2 mb-md-0">
-                                <h2 class="fw-bold text-primary mb-1">AM Trading PLC</h2>
-                                <p class="text-muted mb-1 fw-medium small">SMART SOLUTIONS WITH GENUINE CARE</p>
-                                <div class="small text-muted">
-                                    <div>Tel: +251-11-26 76 26 / 011-11-22 37 | Email: AMTradingPLC@gmail.com</div>
-                                    <div>Habte Giorgis, Tefera Business Center</div>
+                                <h2 class="fw-bold text-primary mb-1">MUHDIN GENERAL TRADING</h2>
+                                <p class="text-muted mb-1 fw-bold small">SMART SOLUTIONS WITH GENUINE CARE</p>
+                                <div class="small text-muted fw-bold">
+                                    <div>Tel: +251-11-26 76 26 / 011-11-22 37 / 011-11-39-10 / +251-9-11-26-75-26</div>
+                                    <div>Email: muhdintrading@gmail.com</div>
+                                    <div>Addis Ababa, Ethiopia</div>
                                 </div>
                             </div>
                             <div class="col-12 col-md-2 text-center text-md-end">
