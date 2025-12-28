@@ -23,6 +23,7 @@ use Livewire\Attributes\Layout;
 use Livewire\Attributes\On;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
@@ -114,13 +115,15 @@ class Create extends Component
         ];
 
         // Location validation - either branch OR warehouse, not both
-        if (!auth()->user()->branch_id && !auth()->user()->warehouse_id) {
+        if (!Auth::user()->branch_id && !Auth::user()->warehouse_id) {
             $rules['form.branch_id'] = 'required_without:form.warehouse_id|nullable|exists:branches,id';
             $rules['form.warehouse_id'] = 'required_without:form.branch_id|nullable|exists:warehouses,id';
         }
 
         // Enforce warehouse access for non-admin users only
-        if (!auth()->user()->isSuperAdmin() && !auth()->user()->isGeneralManager()) {
+        $user = Auth::user();
+        /** @var \App\Models\User $user */
+        if (!$user->hasRole('SuperAdmin') && !$user->hasRole('GeneralManager')) {
             $rules['form.warehouse_id'] = [
                 $rules['form.warehouse_id'] ?? 'nullable',
                 function ($attribute, $value, $fail) {
@@ -218,7 +221,8 @@ class Create extends Component
         }
         
         // Auto-set location based on user assignment
-        $user = auth()->user();
+        $user = Auth::user();
+        /** @var \App\Models\User $user */
         
         if ($user->warehouse_id) {
             // Warehouse user - auto-select their warehouse
@@ -226,7 +230,7 @@ class Create extends Component
             $this->userLocationType = 'warehouse';
             $this->userLocationId = $user->warehouse_id;
             $this->loadAvailableItems();
-        } elseif ($user->isBranchManager() && $user->branch_id) {
+        } elseif ($user->hasRole('BranchManager') && $user->branch_id) {
             // Branch manager - auto-select first warehouse in their branch
             $branchWarehouse = Warehouse::whereHas('branches', function($q) use ($user) {
                 $q->where('branches.id', $user->branch_id);
@@ -282,15 +286,17 @@ class Create extends Component
 
     private function loadLocations(): void
     {
-        $user = auth()->user();
+        $user = Auth::user();
+        /** @var \App\Models\User $user */
         
         // SuperAdmin and GeneralManager see all locations
-        if ($user->isSuperAdmin() || $user->isGeneralManager()) {
+        if ($user->hasRole('SuperAdmin') || $user->hasRole('GeneralManager')) {
             $this->branches = Branch::orderBy('name')->get();
             $this->warehouses = Warehouse::orderBy('name')->get();
         }
         // Branch Manager sees warehouses in their branch
-        elseif ($user->isBranchManager() && $user->branch_id) {
+        /** @var \App\Models\User $user */
+        elseif ($user->hasRole('BranchManager') && $user->branch_id) {
             $this->branches = Branch::where('id', $user->branch_id)->get();
             $this->warehouses = Warehouse::whereHas('branches', function($q) use ($user) {
                 $q->where('branches.id', $user->branch_id);
@@ -426,7 +432,7 @@ class Create extends Component
             
             // If stock is 0, check purchase history and sync
             if ($stockValue <= 0) {
-                $totalPurchased = \DB::table('purchase_items')
+                $totalPurchased = DB::table('purchase_items')
                     ->join('purchases', 'purchase_items.purchase_id', '=', 'purchases.id')
                     ->where('purchase_items.item_id', $item->id)
                     ->where('purchases.warehouse_id', $this->form['warehouse_id'])
@@ -815,7 +821,7 @@ class Create extends Component
                 $sale->branch_id = $branchId;
                 $sale->warehouse_id = null;
             }
-            $sale->user_id = auth()->id();
+            $sale->user_id = Auth::id();
             $sale->sale_date = $this->form['sale_date'];
             $sale->payment_method = $this->form['payment_method'];
             $sale->payment_status = $this->form['payment_status'];
@@ -932,9 +938,9 @@ class Create extends Component
 
 
     // Computed properties
-    public function getFilteredCustomersProperty(): \Illuminate\Database\Eloquent\Collection
+    public function getFilteredCustomersProperty(): \Illuminate\Support\Collection
     {
-        return $this->customers;
+        return collect($this->customers);
     }
 
     public function getFilteredItemOptionsProperty(): array
@@ -950,7 +956,7 @@ class Create extends Component
         
         $searchTerm = trim($this->itemSearch);
         
-        $results = Item::forUser(auth()->user())
+        $results = Item::forUser(Auth::user())
             ->where('is_active', true)
             ->where(function ($query) use ($searchTerm) {
                 $query->whereRaw('LOWER(name) LIKE ?', ['%' . strtolower($searchTerm) . '%'])
@@ -979,7 +985,7 @@ class Create extends Component
                 );
                 
                 if ($stockValue <= 0) {
-                    $totalPurchased = \DB::table('purchase_items')
+                    $totalPurchased = DB::table('purchase_items')
                         ->join('purchases', 'purchase_items.purchase_id', '=', 'purchases.id')
                         ->where('purchase_items.item_id', $item->id)
                         ->where('purchases.warehouse_id', $warehouseId)
@@ -1387,10 +1393,10 @@ class Create extends Component
         $baseUnit = $this->selectedItem['item_unit'] ?? 'piece';
         
         try {
-            $availableUnits = \App\Services\UnitConversionService::getAvailableSaleUnits($baseUnit);
+            $availableUnits = ['each' => 'Each'];
             
             // Always include "Each" option
-            return array_merge(['each' => 'Each'], $availableUnits);
+            return $availableUnits;
         } catch (\Exception $e) {
             // Fallback to just "Each" if there's an error
             return ['each' => 'Each'];
@@ -1428,12 +1434,12 @@ class Create extends Component
             }
         }
         
-        if (auth()->user()->branch_id) {
-            return (int)auth()->user()->branch_id;
+        if (Auth::user()->branch_id) {
+            return (int)Auth::user()->branch_id;
         }
         
-        if (auth()->user()->warehouse_id) {
-            $warehouse = Warehouse::with('branches')->find(auth()->user()->warehouse_id);
+        if (Auth::user()->warehouse_id) {
+            $warehouse = Warehouse::with('branches')->find(Auth::user()->warehouse_id);
             if ($warehouse && $warehouse->branches->isNotEmpty()) {
                 return (int)$warehouse->branches->first()->id;
             }

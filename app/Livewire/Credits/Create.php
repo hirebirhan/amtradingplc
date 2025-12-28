@@ -3,6 +3,7 @@
 namespace App\Livewire\Credits;
 
 use Livewire\Component;
+use Livewire\Attributes\Layout;
 use App\Models\Credit;
 use App\Models\Customer;
 use App\Models\Supplier;
@@ -10,6 +11,7 @@ use App\Traits\HasFlashMessages;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 
+#[Layout('layouts.app')]
 class Create extends Component
 {
     use HasFlashMessages;
@@ -99,6 +101,6 @@ class Create extends Component
 
     public function render()
     {
-        return view('livewire.credits.create')->layout('layouts.app');
+        return view('livewire.credits.create');
     }
 }

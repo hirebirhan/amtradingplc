@@ -21,6 +21,9 @@ use Livewire\Component;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\On;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 
 #[Layout('layouts.app')]
@@ -169,7 +172,7 @@ class Create extends Component
         $this->bankAccounts = BankAccount::where('is_active', true)->orderBy('account_name')->get();
         
         // Auto-select branch based on user assignment
-        $user = auth()->user();
+        $user = Auth::user();
         if ($user && $user->branch_id) {
             $this->form['branch_id'] = $user->branch_id;
         } elseif ($this->branches->count() >= 1) {
@@ -191,30 +194,31 @@ class Create extends Component
      */
     private function canCreatePurchases()
     {
-        $user = auth()->user();
+        $user = Auth::user();
+        /** @var \App\Models\User $user */
         
         // SuperAdmin and GeneralManager can create purchases
-        if ($user->isSuperAdmin()) {
+        if ($user->hasRole('SuperAdmin')) {
             return true;
         }
         
         // Sales users can create purchases for their assigned branch
-        if ($user->isSales() && $user->branch_id) {
+        if ($user->hasRole('Sales') && $user->branch_id) {
             return true;
         }
         
         // BranchManager can create purchases
-        if ($user->isBranchManager()) {
+        if ($user->hasRole('BranchManager')) {
             return true;
         }
         
         // WarehouseUser can create purchases for their assigned warehouse
-        if ($user->isWarehouseUser() && $user->warehouse_id) {
+        if ($user->hasRole('WarehouseUser') && $user->warehouse_id) {
             return true;
         }
         
         // Check if user has the purchases.create permission
-        return $user->hasPermissionTo('purchases.create');
+        return $user->can('purchases.create');
     }
 
     /**
@@ -222,15 +226,16 @@ class Create extends Component
      */
     private function getAccessibleBranches()
     {
-        $user = auth()->user();
+        $user = Auth::user();
+        /** @var \App\Models\User $user */
         
         // SuperAdmin and GeneralManager can access all branches
-        if ($user->isSuperAdmin() || $user->isGeneralManager()) {
+        if ($user->hasRole('SuperAdmin') || $user->hasRole('GeneralManager')) {
             return Branch::where('is_active', true)->orderBy('name')->get();
         }
         
         // BranchManager can ONLY access their own branch for purchases
-        if ($user->isBranchManager()) {
+        if ($user->hasRole('BranchManager')) {
             return Branch::where('id', $user->branch_id)->where('is_active', true)->get();
         }
         
@@ -531,13 +536,13 @@ class Create extends Component
         $referenceNo = $this->generateUniqueReferenceNumber();
             
         // Start a transaction to ensure all related operations succeed or fail together
-        \DB::beginTransaction();
+        DB::beginTransaction();
             
         try {
             // Create the purchase record
             $branchId = (int)($this->form['branch_id'] ?? 0);
             if ($branchId <= 0) {
-                $branchId = auth()->user()->branch_id ?? (Branch::value('id') ?? 1);
+                $branchId = Auth::user()->branch_id ?? (Branch::value('id') ?? 1);
             }
             
             try {
@@ -548,7 +553,7 @@ class Create extends Component
             
             $purchase = new Purchase();
             $purchase->reference_no = $referenceNo;
-            $purchase->user_id = auth()->id();
+            $purchase->user_id = Auth::id();
             $purchase->branch_id = $branchId;
             $purchase->supplier_id = $this->form['supplier_id'];
             $purchase->warehouse_id = $warehouseId; // internal detail
@@ -595,7 +600,7 @@ class Create extends Component
             } catch (\Exception $e) {
                 $this->addError('general', 'Failed to save purchase record: ' . $e->getMessage());
                 $this->notify('❌ Failed to save purchase record.', 'error');
-                \DB::rollBack();
+                DB::rollBack();
                 return false;
             }
             
@@ -633,7 +638,7 @@ class Create extends Component
                 } catch (\Exception $e) {
                     $this->addError('items', "Failed to save purchase item {$index}: " . $e->getMessage());
                     $this->notify('❌ Failed to save purchase item.', 'error');
-                    \DB::rollBack();
+                    DB::rollBack();
                     return false;
                 }
                 
@@ -668,7 +673,7 @@ class Create extends Component
                         'credit_date' => $purchase->purchase_date,
                         'due_date' => now()->addDays(30),
                         'status' => 'active',
-                        'user_id' => auth()->id(),
+                        'user_id' => Auth::id(),
                         'branch_id' => $branchId,
                         'warehouse_id' => $purchase->warehouse_id,
                     ]);
@@ -689,21 +694,21 @@ class Create extends Component
                             'credit_date' => $purchase->purchase_date,
                             'due_date' => now()->addDays(30),
                             'status' => 'partial',
-                            'user_id' => auth()->id(),
+                            'user_id' => Auth::id(),
                             'branch_id' => $branchId,
                             'warehouse_id' => $purchase->warehouse_id,
                         ]);
                     }
                 }
             }
-            \DB::commit();
+            DB::commit();
             
             // Redirect to purchases index
             return redirect()->route('admin.purchases.index')
                 ->with('success', 'Purchase created successfully!');
             
         } catch (\Exception $e) {
-            \DB::rollBack();
+            DB::rollBack();
             
             $this->addError('general', 'An unexpected error occurred while saving the purchase. Please try again.');
             $this->notify('❌ Error: ' . $e->getMessage(), 'error');
@@ -735,7 +740,7 @@ class Create extends Component
             'totalAmount' => $this->totalAmount,
             'subtotal' => $this->subtotal,
             'taxAmount' => $this->taxAmount,
-        ])->title('Create New Purchase');
+        ]);
     }
 
     public function selectSupplier($supplierId)
@@ -802,11 +807,11 @@ class Create extends Component
             
             $supplierModel = \App\Models\Supplier::find($this->form['supplier_id']);
             if ($supplierModel) {
-                $this->selectedSupplier = [
-                    'id' => $supplierModel->id,
-                    'name' => $supplierModel->name,
-                    'phone' => $supplierModel->phone
-                ];
+                    $this->selectedSupplier = [
+                        'id' => $supplierModel->id,
+                        'name' => $supplierModel->name,
+                        'phone' => $supplierModel->phone
+                    ];
             }
             
             $supplierName = $supplierModel ? $supplierModel->name : 'unknown';
@@ -899,9 +904,9 @@ class Create extends Component
         }
         
         // Log the notification
-        \Log::info('Purchase notification: ' . $message, [
+        Log::info('Purchase notification: ' . $message, [
             'type' => $type,
-            'user_id' => auth()->id()
+            'user_id' => Auth::id()
         ]);
         
         // Dispatch the notification event to the frontend
@@ -1013,7 +1018,7 @@ class Create extends Component
                     'piece_count' => 0,
                     'total_units' => 0,
                     'current_piece_units' => $unitCapacity,
-                    'created_by' => auth()->id()
+                    'created_by' => Auth::id()
                 ]
             );
             
@@ -1025,7 +1030,7 @@ class Create extends Component
             $stock->piece_count = $originalPieces + $addedPieces;
             $stock->quantity = $stock->piece_count;
             $stock->total_units = $originalUnits + ($addedPieces * $unitCapacity);
-            $stock->updated_by = auth()->id();
+            $stock->updated_by = Auth::id();
             
             if ($stock->current_piece_units === null) {
                 $stock->current_piece_units = $unitCapacity;
@@ -1045,7 +1050,7 @@ class Create extends Component
                 'reference_type' => 'purchase',
                 'reference_id' => $purchaseId,
                 'description' => 'Stock added from purchase: ' . ($this->form['reference_no'] ?? 'N/A'),
-                'user_id' => auth()->id(),
+                'user_id' => Auth::id(),
             ]);
             
             return true;
@@ -1098,7 +1103,7 @@ class Create extends Component
             // Generate a more unique identifier using multiple sources
             $microtime = str_replace('.', '', microtime(true));
             $randomBytes = bin2hex(random_bytes(6)); // Increased from 4 to 6 bytes
-            $userId = auth()->id() ?? 0;
+            $userId = Auth::id() ?? 0;
             $randomNumber = mt_rand(1000, 9999);
             
             // Combine all sources for maximum uniqueness
