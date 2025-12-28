@@ -20,7 +20,7 @@ class FormValidationService
         $isWalkingCustomer = !empty($form['is_walking_customer']) && $form['is_walking_customer'] !== '0' && $form['is_walking_customer'] !== 'false';
         
         $rules = [
-            'form.sale_date' => 'required|date',
+            'form.sale_date' => 'required|date|before_or_equal:today',
             'form.customer_id' => $isWalkingCustomer ? 'nullable' : 'required|exists:customers,id',
             'form.payment_method' => ['required', \Illuminate\Validation\Rule::enum(PaymentMethod::class)],
             'form.tax' => 'nullable|numeric|min:0|max:100',
@@ -38,6 +38,7 @@ class FormValidationService
     public function getMessages(): array
     {
         return [
+            'form.sale_date.before_or_equal' => 'Sale date cannot be in the future. Only current or past dates are allowed.',
             'form.customer_id.required' => 'Please select a customer or check walking customer.',
             'form.branch_id.required_without' => 'Please select either a branch or warehouse.',
             'form.warehouse_id.required_without' => 'Please select either a branch or warehouse.',

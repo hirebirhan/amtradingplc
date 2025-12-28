@@ -11,6 +11,7 @@
                 wire:model.live="form.sale_date" 
                 id="sale_date" 
                 class="form-control @error('form.sale_date') is-invalid @enderror" 
+                max="{{ date('Y-m-d') }}"
             >
             @error('form.sale_date') 
                 <div class="invalid-feedback">{{ $message }}</div> 
