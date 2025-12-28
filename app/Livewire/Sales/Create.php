@@ -1,7 +1,5 @@
 <?php
 
-declare(strict_types=1);
-
 namespace App\Livewire\Sales;
 
 use App\Models\Customer;
@@ -76,8 +74,9 @@ class Create extends Component
     public $newItem = [
         'item_id' => '',
         'quantity' => 1,
-        'sale_method' => 'piece', // 'piece' or 'unit' - mutually exclusive
-        'unit_price' => 0, // Price per unit (e.g., per kg)
+        'sale_method' => 'piece', // 'piece' or specific unit like 'kg', 'g', etc.
+        'sale_unit' => 'each', // The specific unit being sold (each, kg, g, 500g, etc.)
+        'unit_price' => 0, // Price per sale unit
         'price' => 0, // Calculated price per piece
         'notes' => '',
     ];
@@ -86,6 +85,9 @@ class Create extends Component
     public $customerSearch = '';
     public $selectedCustomer = null;
     public $itemSearch = '';
+    public $selectedItem = null;
+    public $availableStock = 0;
+    public $editingItemIndex = null;
     
     // UI state
     public $showConfirmModal = false;
@@ -130,7 +132,7 @@ class Create extends Component
         }
 
         // Payment method specific validations
-        if ($this->form['payment_method'] === 'telebirr') {
+        if (in_array($this->form['payment_method'], ['telebirr', 'bank_transfer'])) {
             $rules['form.transaction_number'] = [
                 'required',
                 'string',
@@ -142,21 +144,9 @@ class Create extends Component
                     }
                 },
             ];
-            $rules['form.receiver_account_holder'] = 'required|string|max:255';
         }
 
         if ($this->form['payment_method'] === 'bank_transfer') {
-            $rules['form.transaction_number'] = [
-                'required',
-                'string',
-                'min:5',
-                'max:255',
-                function ($attribute, $value, $fail) {
-                    if ($this->transactionNumberExists((string) $value)) {
-                        $fail('This transaction number has already been used.');
-                    }
-                },
-            ];
             $rules['form.bank_account_id'] = 'required|exists:bank_accounts,id';
         }
 
@@ -173,9 +163,8 @@ class Create extends Component
         'form.warehouse_id.required_without' => 'Please select either a branch or warehouse.',
         'items.required' => 'Please add at least one item to the sale.',
         'items.min' => 'Please add at least one item to the sale.',
-        'form.transaction_number.required' => 'Transaction number is required for Telebirr or bank transfer payments.',
+        'form.transaction_number.required' => 'Transaction number is required for this payment method.',
         'form.transaction_number.min' => 'Transaction number must be at least 5 characters.',
-        'form.receiver_account_holder.required' => 'Account holder name is required.',
         'form.bank_account_id.required' => 'Please select a bank account.',
         'form.bank_account_id.exists' => 'Selected bank account is invalid.',
         'form.advance_amount.required' => 'Please enter an advance amount.',
@@ -203,6 +192,17 @@ class Create extends Component
             'receiver_account_holder' => '',
             'receiver_account_number' => '',
             'advance_amount' => 0,
+            'notes' => '',
+        ];
+
+        // Initialize newItem with sale_unit
+        $this->newItem = [
+            'item_id' => '',
+            'quantity' => 1,
+            'sale_method' => 'piece',
+            'sale_unit' => 'each',
+            'unit_price' => 0,
+            'price' => 0,
             'notes' => '',
         ];
 
@@ -345,7 +345,7 @@ class Create extends Component
         $this->loadCustomers();
     }
 
-    public function updatedFormIsWalkingCustomer(bool $value): void
+    public function updatedFormIsWalkingCustomer($value): void
     {
         if ($value) {
             // Clear customer selection when walking customer is checked
@@ -361,7 +361,7 @@ class Create extends Component
         }
     }
 
-    public function updatedFormBranchId(?string $value): void
+    public function updatedFormBranchId($value): void
     {
         if ($value) {
             $this->form['warehouse_id'] = ''; // Clear warehouse when branch is selected
@@ -369,7 +369,7 @@ class Create extends Component
         }
     }
 
-    public function updatedFormWarehouseId(?string $value): void
+    public function updatedFormWarehouseId($value): void
     {
         if ($value) {
             $this->form['branch_id'] = ''; // Clear branch when warehouse is selected
@@ -441,16 +441,15 @@ class Create extends Component
                 }
             }
             
-            // Set unit price and price based on current sale method
-            if ($this->newItem['sale_method'] === 'piece') {
-                $this->newItem['unit_price'] = $item->selling_price ?? 0;
-                $this->newItem['price'] = $this->newItem['unit_price'];
-                $this->availableStock = $stockValue;
-            } else {
-                $this->newItem['unit_price'] = $item->selling_price_per_unit ?? 0;
-                $this->newItem['price'] = $this->newItem['unit_price'];
-                $this->availableStock = $stock->total_units ?? 0;
-            }
+            // Default to each method
+            $this->newItem['sale_method'] = 'piece';
+            $this->newItem['sale_unit'] = 'each';
+            
+            // Set pricing and stock
+            $this->newItem['unit_price'] = $item->selling_price ?? 0;
+            $this->newItem['price'] = $this->newItem['unit_price'];
+            $this->availableStock = $stockValue;
+            $this->newItem['quantity'] = 1;
             
             $this->itemSearch = '';
             
@@ -462,7 +461,6 @@ class Create extends Component
                     'price' => $this->newItem['price'],
                     'stock' => $this->availableStock
                 ];
-                // Don't clear selectedItem - let user proceed with warning
                 return;
             }
         }
@@ -474,6 +472,7 @@ class Create extends Component
             'item_id' => '',
             'quantity' => 1,
             'sale_method' => 'piece',
+            'sale_unit' => 'each',
             'unit_price' => 0,
             'price' => 0,
             'notes' => '',
@@ -572,6 +571,7 @@ class Create extends Component
             'sku' => $item->sku,
             'unit' => $item->unit ?? '',
             'unit_quantity' => $item->unit_quantity ?? 1,
+            'item_unit' => $item->item_unit ?? 'piece',
             'quantity' => $quantity,
             'sale_method' => $this->newItem['sale_method'],
             'price' => $price,
@@ -722,7 +722,22 @@ class Create extends Component
         $this->updateTotals();
     }
 
-    public function updatedFormPaymentMethod(string $value): void
+    public function updatedFormTransactionNumber(): void
+    {
+        $this->resetErrorBag('form.transaction_number');
+    }
+
+    public function updatedFormBankAccountId(): void
+    {
+        $this->resetErrorBag('form.bank_account_id');
+    }
+
+    public function updatedFormCustomerId(): void
+    {
+        $this->resetErrorBag('form.customer_id');
+    }
+
+    public function updatedFormPaymentMethod($value): void
     {
         // Reset payment-specific fields
         $this->form['transaction_number'] = '';
@@ -730,6 +745,13 @@ class Create extends Component
         $this->form['receiver_account_holder'] = '';
         $this->form['receipt_url'] = '';
         $this->form['advance_amount'] = 0;
+
+        // Clear validation errors for payment-specific fields
+        $this->resetErrorBag([
+            'form.transaction_number',
+            'form.bank_account_id',
+            'form.advance_amount'
+        ]);
 
         $this->updatePaymentStatus();
         $this->updateTotals();
@@ -1001,14 +1023,11 @@ class Create extends Component
         switch ($this->form['payment_method']) {
             case 'telebirr':
                 return !empty($this->form['transaction_number']) && 
-                       strlen((string) $this->form['transaction_number']) >= 5 &&
-                       !empty($this->form['receiver_account_holder']);
+                       strlen((string) $this->form['transaction_number']) >= 5;
             case 'bank_transfer':
                 return !empty($this->form['transaction_number']) && 
                        strlen((string) $this->form['transaction_number']) >= 5 &&
-                       !empty($this->form['receiver_bank_name']) && 
-                       !empty($this->form['receiver_account_holder']) && 
-                       !empty($this->form['receiver_account_number']);
+                       !empty($this->form['bank_account_id']);
             case 'credit_advance':
                 return $this->form['advance_amount'] > 0 && 
                        $this->form['advance_amount'] < $this->totalAmount;
@@ -1022,80 +1041,20 @@ class Create extends Component
      */
     public function validateAndShowModal(): bool
     {
-        // Clear any previous validation errors
-        $this->resetErrorBag();
-        
-        // Basic validation first - collect errors instead of throwing exceptions
-        $validationErrors = [];
-        
-        if (empty($this->items) || count($this->items) === 0) {
-            $validationErrors['items'] = 'No items found for this sale. Please add at least one item.';
-        }
-
-        if (!$this->form['is_walking_customer'] && empty($this->form['customer_id'])) {
-            $validationErrors['form.customer_id'] = 'Please select a customer or check walking customer.';
-        }
-
-        if (empty($this->form['warehouse_id']) && empty($this->form['branch_id'])) {
-            $validationErrors['form.warehouse_id'] = 'Please select either a warehouse or branch.';
-        }
-
-        // Check payment method specific validations
-        if ($this->form['payment_method'] === 'telebirr') {
-            if (empty($this->form['transaction_number'])) {
-                $validationErrors['form.transaction_number'] = 'Transaction number is required for Telebirr payments.';
-            } elseif (strlen((string) $this->form['transaction_number']) < 5) {
-                $validationErrors['form.transaction_number'] = 'Transaction number must be at least 5 characters.';
+        try {
+            $this->validate();
+            $this->dispatch('showConfirmationModal');
+            return true;
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            // Manually add validation errors to the error bag
+            foreach ($e->validator->errors()->getMessages() as $field => $messages) {
+                foreach ($messages as $message) {
+                    $this->addError($field, $message);
+                }
             }
-            if (empty($this->form['receiver_account_holder'])) {
-                $validationErrors['form.receiver_account_holder'] = 'Account holder name is required for Telebirr payments.';
-            }
-        }
-
-        if ($this->form['payment_method'] === 'bank_transfer') {
-            if (empty($this->form['transaction_number'])) {
-                $validationErrors['form.transaction_number'] = 'Transaction number is required for bank transfer payments.';
-            } elseif (strlen((string) $this->form['transaction_number']) < 5) {
-                $validationErrors['form.transaction_number'] = 'Transaction number must be at least 5 characters.';
-            }
-            if (empty($this->form['receiver_bank_name'])) {
-                $validationErrors['form.receiver_bank_name'] = 'Please choose a bank for bank transfer payments.';
-            }
-            if (empty($this->form['receiver_account_holder'])) {
-                $validationErrors['form.receiver_account_holder'] = 'Account holder name is required for bank transfer payments.';
-            }
-            if (empty($this->form['receiver_account_number'])) {
-                $validationErrors['form.receiver_account_number'] = 'Account number is required for bank transfer payments.';
-            }
-        }
-
-
-        if ($this->form['payment_method'] === 'credit_advance') {
-            if (empty($this->form['advance_amount']) || $this->form['advance_amount'] <= 0) {
-                $validationErrors['form.advance_amount'] = 'Advance amount is required and must be greater than zero.';
-            } elseif ($this->form['advance_amount'] > $this->totalAmount) {
-                $validationErrors['form.advance_amount'] = 'Advance amount cannot exceed the total amount.';
-            }
-        }
-
-        // If there are validation errors, add them and return
-        if (!empty($validationErrors)) {
-            foreach ($validationErrors as $field => $message) {
-                $this->addError($field, $message);
-            }
-            
-            $this->notify('❌ Please fix the validation errors before proceeding.', 'error');
-            
-            // Scroll to the first error
             $this->dispatch('scrollToFirstError');
-            
             return false;
         }
-
-        // If validation passes, show the modal
-        $this->dispatch('showConfirmationModal');
-        
-        return true;
     }
 
     /**
@@ -1181,9 +1140,9 @@ class Create extends Component
         }
     }
 
-    public function updatedNewItemSaleMethod(string $value): void
+    public function updatedNewItemSaleMethod($value): void
     {
-        $this->newItem['quantity'] = 1;
+        $this->newItem['quantity'] = $value === 'unit' ? 0.01 : 1;
         
         if ($this->selectedItem && $this->form['warehouse_id']) {
             $stock = Stock::where('warehouse_id', $this->form['warehouse_id'])
@@ -1192,24 +1151,46 @@ class Create extends Component
                 
             if ($stock) {
                 if ($value === 'piece') {
+                    // Selling by Each - use piece price
                     $this->newItem['unit_price'] = $this->selectedItem['selling_price'] ?? 0;
                     $this->newItem['price'] = $this->newItem['unit_price'];
                     $this->availableStock = $stock->piece_count ?? $stock->quantity ?? 0;
                 } else {
+                    // Selling by unit (kg, liter, etc.) - use unit price
                     $this->newItem['unit_price'] = $this->selectedItem['selling_price_per_unit'] ?? 0;
                     $this->newItem['price'] = $this->newItem['unit_price'];
-                    $this->availableStock = $stock->total_units;
+                    // Calculate available units: total pieces * unit_quantity
+                    $totalPieces = $stock->piece_count ?? $stock->quantity ?? 0;
+                    $unitQuantity = $this->selectedItem['unit_quantity'] ?? 1;
+                    $this->availableStock = $totalPieces * $unitQuantity;
                 }
             }
         }
     }
     
-    public function updatedNewItemUnitPrice(float $value): void
+    public function updatedNewItemUnitPrice($value): void
     {
         $this->newItem['price'] = (float)$value;
     }
     
-    public function getAvailableStockForMethod(): float
+    public function updatedNewItemQuantity($value): void
+    {
+        // Recalculate total when quantity changes
+        $quantity = (float)($value ?? 0);
+        $unitPrice = (float)($this->newItem['unit_price'] ?? 0);
+        $this->newItem['price'] = $unitPrice; // Keep unit price, not total
+    }
+    
+    public function updatedNewItemPrice($value): void
+    {
+        // Update unit price when total price changes
+        $this->newItem['unit_price'] = (float)$value;
+    }
+    
+    /**
+     * Get available stock for a specific unit
+     */
+    public function getAvailableStockForUnit($saleUnit): float
     {
         if (!$this->selectedItem || !$this->form['warehouse_id']) {
             return 0.0;
@@ -1223,10 +1204,196 @@ class Create extends Component
             return 0.0;
         }
         
-        if ($this->newItem['sale_method'] === 'piece') {
-            return (float)max($stock->piece_count ?? 0, $stock->quantity ?? 0);
+        $totalPieces = (float)max($stock->piece_count ?? 0, $stock->quantity ?? 0);
+        
+        if ($saleUnit === 'each') {
+            return $totalPieces;
+        }
+        
+        $unitQuantity = $this->selectedItem['unit_quantity'] ?? 1;
+        $baseUnit = $this->selectedItem['item_unit'] ?? 'each';
+        $totalBaseUnits = $totalPieces * $unitQuantity;
+        
+        // Only allow conversions within the same measurement type
+        $weightUnits = ['kg', 'g', 'ton', 'lb', 'oz'];
+        $volumeUnits = ['liter', 'ml', 'gallon', 'cup'];
+        $lengthUnits = ['meter', 'cm', 'mm', 'inch', 'ft'];
+        $areaUnits = ['sqm', 'sqft', 'acre'];
+        $packagingUnits = ['pack', 'box', 'case', 'dozen', 'pair', 'set', 'roll', 'sheet', 'bottle', 'can', 'bag', 'sack'];
+        
+        // Weight conversions - only if base unit is weight
+        if (in_array($baseUnit, $weightUnits) && in_array($saleUnit, $weightUnits)) {
+            return match($saleUnit) {
+                'kg' => $baseUnit === 'kg' ? $totalBaseUnits : ($baseUnit === 'g' ? $totalBaseUnits / 1000 : ($baseUnit === 'ton' ? $totalBaseUnits * 1000 : ($baseUnit === 'lb' ? $totalBaseUnits / 2.20462 : $totalBaseUnits / 35.274))),
+                'g' => $baseUnit === 'g' ? $totalBaseUnits : ($baseUnit === 'kg' ? $totalBaseUnits * 1000 : ($baseUnit === 'ton' ? $totalBaseUnits * 1000000 : ($baseUnit === 'lb' ? $totalBaseUnits * 453.592 : $totalBaseUnits * 28.3495))),
+                'ton' => $baseUnit === 'ton' ? $totalBaseUnits : ($baseUnit === 'kg' ? $totalBaseUnits / 1000 : ($baseUnit === 'g' ? $totalBaseUnits / 1000000 : ($baseUnit === 'lb' ? $totalBaseUnits / 2204.62 : $totalBaseUnits / 35274))),
+                'lb' => $baseUnit === 'lb' ? $totalBaseUnits : ($baseUnit === 'kg' ? $totalBaseUnits * 2.20462 : ($baseUnit === 'g' ? $totalBaseUnits / 453.592 : ($baseUnit === 'ton' ? $totalBaseUnits * 2204.62 : $totalBaseUnits / 16))),
+                'oz' => $baseUnit === 'oz' ? $totalBaseUnits : ($baseUnit === 'kg' ? $totalBaseUnits * 35.274 : ($baseUnit === 'g' ? $totalBaseUnits / 28.3495 : ($baseUnit === 'ton' ? $totalBaseUnits * 35274 : $totalBaseUnits * 16))),
+                default => $totalPieces
+            };
+        }
+        
+        // Volume conversions - only if base unit is volume
+        if (in_array($baseUnit, $volumeUnits) && in_array($saleUnit, $volumeUnits)) {
+            return match($saleUnit) {
+                'liter' => $baseUnit === 'liter' ? $totalBaseUnits : ($baseUnit === 'ml' ? $totalBaseUnits / 1000 : ($baseUnit === 'gallon' ? $totalBaseUnits * 3.78541 : $totalBaseUnits / 4.22675)),
+                'ml' => $baseUnit === 'ml' ? $totalBaseUnits : ($baseUnit === 'liter' ? $totalBaseUnits * 1000 : ($baseUnit === 'gallon' ? $totalBaseUnits * 3785.41 : $totalBaseUnits * 236.588)),
+                'gallon' => $baseUnit === 'gallon' ? $totalBaseUnits : ($baseUnit === 'liter' ? $totalBaseUnits / 3.78541 : ($baseUnit === 'ml' ? $totalBaseUnits / 3785.41 : $totalBaseUnits / 16)),
+                'cup' => $baseUnit === 'cup' ? $totalBaseUnits : ($baseUnit === 'liter' ? $totalBaseUnits * 4.22675 : ($baseUnit === 'ml' ? $totalBaseUnits / 236.588 : $totalBaseUnits * 16)),
+                default => $totalPieces
+            };
+        }
+        
+        // Length conversions - only if base unit is length
+        if (in_array($baseUnit, $lengthUnits) && in_array($saleUnit, $lengthUnits)) {
+            return match($saleUnit) {
+                'meter' => $baseUnit === 'meter' ? $totalBaseUnits : ($baseUnit === 'cm' ? $totalBaseUnits / 100 : ($baseUnit === 'mm' ? $totalBaseUnits / 1000 : ($baseUnit === 'inch' ? $totalBaseUnits / 39.3701 : $totalBaseUnits / 3.28084))),
+                'cm' => $baseUnit === 'cm' ? $totalBaseUnits : ($baseUnit === 'meter' ? $totalBaseUnits * 100 : ($baseUnit === 'mm' ? $totalBaseUnits / 10 : ($baseUnit === 'inch' ? $totalBaseUnits * 2.54 : $totalBaseUnits * 30.48))),
+                'mm' => $baseUnit === 'mm' ? $totalBaseUnits : ($baseUnit === 'meter' ? $totalBaseUnits * 1000 : ($baseUnit === 'cm' ? $totalBaseUnits * 10 : ($baseUnit === 'inch' ? $totalBaseUnits * 25.4 : $totalBaseUnits * 304.8))),
+                'inch' => $baseUnit === 'inch' ? $totalBaseUnits : ($baseUnit === 'meter' ? $totalBaseUnits * 39.3701 : ($baseUnit === 'cm' ? $totalBaseUnits / 2.54 : ($baseUnit === 'mm' ? $totalBaseUnits / 25.4 : $totalBaseUnits * 12))),
+                'ft' => $baseUnit === 'ft' ? $totalBaseUnits : ($baseUnit === 'meter' ? $totalBaseUnits * 3.28084 : ($baseUnit === 'cm' ? $totalBaseUnits / 30.48 : ($baseUnit === 'mm' ? $totalBaseUnits / 304.8 : $totalBaseUnits / 12))),
+                default => $totalPieces
+            };
+        }
+        
+        // Area conversions - only if base unit is area
+        if (in_array($baseUnit, $areaUnits) && in_array($saleUnit, $areaUnits)) {
+            return match($saleUnit) {
+                'sqm' => $baseUnit === 'sqm' ? $totalBaseUnits : ($baseUnit === 'sqft' ? $totalBaseUnits / 10.7639 : $totalBaseUnits * 4046.86),
+                'sqft' => $baseUnit === 'sqft' ? $totalBaseUnits : ($baseUnit === 'sqm' ? $totalBaseUnits * 10.7639 : $totalBaseUnits * 43560),
+                'acre' => $baseUnit === 'acre' ? $totalBaseUnits : ($baseUnit === 'sqm' ? $totalBaseUnits / 4046.86 : $totalBaseUnits / 43560),
+                default => $totalPieces
+            };
+        }
+        
+        // Packaging units - always 1:1 with pieces
+        if (in_array($saleUnit, $packagingUnits)) {
+            return $totalPieces;
+        }
+        
+        // Default fallback for incompatible conversions
+        return $totalPieces;
+    }
+
+    /**
+     * Update pricing when sale unit changes
+     */
+    public function updatedNewItemSaleUnit($saleUnit): void
+    {
+        if (!$this->selectedItem) {
+            return;
+        }
+
+        if ($saleUnit === 'each') {
+            $this->newItem['unit_price'] = $this->selectedItem['selling_price'] ?? 0;
+            $this->newItem['quantity'] = 1;
         } else {
-            return (float)($stock->total_units ?? 0.0);
+            $basePrice = $this->selectedItem['selling_price'] ?? 0;
+            $unitQuantity = $this->selectedItem['unit_quantity'] ?? 1;
+            $baseUnit = $this->selectedItem['item_unit'] ?? 'each';
+            $basePricePerUnit = $basePrice / $unitQuantity;
+            
+            // Define measurement type groups
+            $weightUnits = ['kg', 'g', 'ton', 'lb', 'oz'];
+            $volumeUnits = ['liter', 'ml', 'gallon', 'cup'];
+            $lengthUnits = ['meter', 'cm', 'mm', 'inch', 'ft'];
+            $areaUnits = ['sqm', 'sqft', 'acre'];
+            $packagingUnits = ['pack', 'box', 'case', 'dozen', 'pair', 'set', 'roll', 'sheet', 'bottle', 'can', 'bag', 'sack'];
+            
+            // Only allow conversions within the same measurement type
+            if (in_array($baseUnit, $weightUnits) && in_array($saleUnit, $weightUnits)) {
+                $this->newItem['unit_price'] = match($saleUnit) {
+                    'kg' => $baseUnit === 'kg' ? $basePricePerUnit : ($baseUnit === 'g' ? $basePricePerUnit * 1000 : ($baseUnit === 'ton' ? $basePricePerUnit / 1000 : ($baseUnit === 'lb' ? $basePricePerUnit * 2.20462 : $basePricePerUnit * 35.274))),
+                    'g' => $baseUnit === 'g' ? $basePricePerUnit : ($baseUnit === 'kg' ? $basePricePerUnit / 1000 : ($baseUnit === 'ton' ? $basePricePerUnit / 1000000 : ($baseUnit === 'lb' ? $basePricePerUnit / 453.592 : $basePricePerUnit / 28.3495))),
+                    'ton' => $baseUnit === 'ton' ? $basePricePerUnit : ($baseUnit === 'kg' ? $basePricePerUnit * 1000 : ($baseUnit === 'g' ? $basePricePerUnit * 1000000 : ($baseUnit === 'lb' ? $basePricePerUnit * 2204.62 : $basePricePerUnit * 35274))),
+                    'lb' => $baseUnit === 'lb' ? $basePricePerUnit : ($baseUnit === 'kg' ? $basePricePerUnit / 2.20462 : ($baseUnit === 'g' ? $basePricePerUnit * 453.592 : ($baseUnit === 'ton' ? $basePricePerUnit / 2204.62 : $basePricePerUnit * 16))),
+                    'oz' => $baseUnit === 'oz' ? $basePricePerUnit : ($baseUnit === 'kg' ? $basePricePerUnit / 35.274 : ($baseUnit === 'g' ? $basePricePerUnit * 28.3495 : ($baseUnit === 'ton' ? $basePricePerUnit / 35274 : $basePricePerUnit / 16))),
+                    default => $basePrice
+                };
+            }
+            elseif (in_array($baseUnit, $volumeUnits) && in_array($saleUnit, $volumeUnits)) {
+                $this->newItem['unit_price'] = match($saleUnit) {
+                    'liter' => $baseUnit === 'liter' ? $basePricePerUnit : ($baseUnit === 'ml' ? $basePricePerUnit * 1000 : ($baseUnit === 'gallon' ? $basePricePerUnit / 3.78541 : $basePricePerUnit * 4.22675)),
+                    'ml' => $baseUnit === 'ml' ? $basePricePerUnit : ($baseUnit === 'liter' ? $basePricePerUnit / 1000 : ($baseUnit === 'gallon' ? $basePricePerUnit / 3785.41 : $basePricePerUnit / 236.588)),
+                    'gallon' => $baseUnit === 'gallon' ? $basePricePerUnit : ($baseUnit === 'liter' ? $basePricePerUnit * 3.78541 : ($baseUnit === 'ml' ? $basePricePerUnit * 3785.41 : $basePricePerUnit * 16)),
+                    'cup' => $baseUnit === 'cup' ? $basePricePerUnit : ($baseUnit === 'liter' ? $basePricePerUnit / 4.22675 : ($baseUnit === 'ml' ? $basePricePerUnit * 236.588 : $basePricePerUnit / 16)),
+                    default => $basePrice
+                };
+            }
+            elseif (in_array($baseUnit, $lengthUnits) && in_array($saleUnit, $lengthUnits)) {
+                $this->newItem['unit_price'] = match($saleUnit) {
+                    'meter' => $baseUnit === 'meter' ? $basePricePerUnit : ($baseUnit === 'cm' ? $basePricePerUnit * 100 : ($baseUnit === 'mm' ? $basePricePerUnit * 1000 : ($baseUnit === 'inch' ? $basePricePerUnit * 39.3701 : $basePricePerUnit * 3.28084))),
+                    'cm' => $baseUnit === 'cm' ? $basePricePerUnit : ($baseUnit === 'meter' ? $basePricePerUnit / 100 : ($baseUnit === 'mm' ? $basePricePerUnit * 10 : ($baseUnit === 'inch' ? $basePricePerUnit / 2.54 : $basePricePerUnit / 30.48))),
+                    'mm' => $baseUnit === 'mm' ? $basePricePerUnit : ($baseUnit === 'meter' ? $basePricePerUnit / 1000 : ($baseUnit === 'cm' ? $basePricePerUnit / 10 : ($baseUnit === 'inch' ? $basePricePerUnit / 25.4 : $basePricePerUnit / 304.8))),
+                    'inch' => $baseUnit === 'inch' ? $basePricePerUnit : ($baseUnit === 'meter' ? $basePricePerUnit / 39.3701 : ($baseUnit === 'cm' ? $basePricePerUnit * 2.54 : ($baseUnit === 'mm' ? $basePricePerUnit * 25.4 : $basePricePerUnit / 12))),
+                    'ft' => $baseUnit === 'ft' ? $basePricePerUnit : ($baseUnit === 'meter' ? $basePricePerUnit / 3.28084 : ($baseUnit === 'cm' ? $basePricePerUnit * 30.48 : ($baseUnit === 'mm' ? $basePricePerUnit * 304.8 : $basePricePerUnit * 12))),
+                    default => $basePrice
+                };
+            }
+            elseif (in_array($baseUnit, $areaUnits) && in_array($saleUnit, $areaUnits)) {
+                $this->newItem['unit_price'] = match($saleUnit) {
+                    'sqm' => $baseUnit === 'sqm' ? $basePricePerUnit : ($baseUnit === 'sqft' ? $basePricePerUnit * 10.7639 : $basePricePerUnit / 4046.86),
+                    'sqft' => $baseUnit === 'sqft' ? $basePricePerUnit : ($baseUnit === 'sqm' ? $basePricePerUnit / 10.7639 : $basePricePerUnit / 43560),
+                    'acre' => $baseUnit === 'acre' ? $basePricePerUnit : ($baseUnit === 'sqm' ? $basePricePerUnit * 4046.86 : $basePricePerUnit * 43560),
+                    default => $basePrice
+                };
+            }
+            elseif (in_array($saleUnit, $packagingUnits)) {
+                // Packaging units use base price (1:1 with pieces)
+                $this->newItem['unit_price'] = $basePrice;
+            }
+            else {
+                // Incompatible conversion - use base price
+                $this->newItem['unit_price'] = $basePrice;
+            }
+            
+            // Set appropriate default quantity
+            $this->newItem['quantity'] = match($saleUnit) {
+                'g', 'ml', 'mm', 'cm' => 100,
+                'oz', 'cup', 'inch' => 10,
+                'ton', 'gallon', 'acre' => 0.1,
+                default => 1
+            };
+        }
+        
+        $this->newItem['price'] = $this->newItem['unit_price'];
+    }
+
+    /**
+     * Check if the selected item can be sold by unit
+     */
+    public function canSellByUnit(): bool
+    {
+        if (!$this->selectedItem) {
+            return false;
+        }
+
+        $hasValidUnit = !empty($this->selectedItem['item_unit']) && 
+                       in_array($this->selectedItem['item_unit'], ['kg', 'liter', 'gram', 'ml']);
+        $hasUnitQuantity = ($this->selectedItem['unit_quantity'] ?? 1) > 1;
+
+        return $hasValidUnit && $hasUnitQuantity;
+    }
+
+    /**
+     * Get available sale units for the selected item
+     */
+    public function getAvailableSaleUnits(): array
+    {
+        if (!$this->selectedItem || !$this->canSellByUnit()) {
+            return ['each' => 'Each'];
+        }
+
+        $baseUnit = $this->selectedItem['item_unit'] ?? 'piece';
+        
+        try {
+            $availableUnits = \App\Services\UnitConversionService::getAvailableSaleUnits($baseUnit);
+            
+            // Always include "Each" option
+            return array_merge(['each' => 'Each'], $availableUnits);
+        } catch (\Exception $e) {
+            // Fallback to just "Each" if there's an error
+            return ['each' => 'Each'];
         }
     }
 

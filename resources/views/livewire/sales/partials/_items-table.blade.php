@@ -25,18 +25,18 @@
                         <td class="text-center py-3 px-3">
                             @if(($item['sale_method'] ?? 'piece') === 'piece')
                                 <span class="badge bg-primary-subtle text-primary-emphasis">
-                                    <i class="bi bi-box me-1"></i>Piece
+                                    <i class="bi bi-box me-1"></i>Each
                                 </span>
                             @else
                                 <span class="badge bg-success-subtle text-success-emphasis">
-                                    <i class="bi bi-rulers me-1"></i>Unit
+                                    <i class="bi bi-rulers me-1"></i>{{ $item['item_unit'] ?? 'Unit' }}
                                 </span>
                             @endif
                         </td>
                         <td class="text-center py-3 px-3">
-                            {{ $item['quantity'] }} 
+                            {{ number_format($item['quantity'], ($item['sale_method'] ?? 'piece') === 'unit' ? 2 : 0) }} 
                             @if(($item['sale_method'] ?? 'piece') === 'piece')
-                                pcs
+                                Each
                             @else
                                 {{ $item['item_unit'] ?? 'units' }}
                             @endif

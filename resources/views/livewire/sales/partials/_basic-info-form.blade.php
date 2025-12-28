@@ -165,45 +165,6 @@
             @enderror
         </div>
 
-        {{-- Payment Method Specific Fields --}}
-        @if(in_array($form['payment_method'], ['telebirr', 'bank_transfer']))
-            <div class="col-12 col-md-4">
-                <label for="transaction_number" class="form-label fw-medium">
-                    Transaction Number <span class="text-primary">*</span>
-                </label>
-                <input 
-                    type="text" 
-                    wire:model.live="form.transaction_number" 
-                    id="transaction_number" 
-                    class="form-control @error('form.transaction_number') is-invalid @enderror" 
-                    placeholder="Enter transaction number" 
-                    required
-                >
-                @error('form.transaction_number') 
-                    <div class="invalid-feedback">{{ $message }}</div> 
-                @enderror
-            </div>
-        @endif
-
-        @if($form['payment_method'] === 'telebirr')
-            <div class="col-12 col-md-4">
-                <label for="receiver_account_holder" class="form-label fw-medium">
-                    Account Holder Name <span class="text-primary">*</span>
-                </label>
-                <input 
-                    type="text" 
-                    wire:model="form.receiver_account_holder" 
-                    id="receiver_account_holder" 
-                    class="form-control @error('form.receiver_account_holder') is-invalid @enderror" 
-                    placeholder="Enter account holder name" 
-                    required
-                >
-                @error('form.receiver_account_holder') 
-                    <div class="invalid-feedback">{{ $message }}</div> 
-                @enderror
-            </div>
-        @endif
-
         {{-- Bank Transfer Details --}}
         @if($form['payment_method'] === 'bank_transfer')
             <div class="col-12 col-md-4">
@@ -226,6 +187,26 @@
                     @endif
                 </select>
                 @error('form.bank_account_id') 
+                    <div class="invalid-feedback">{{ $message }}</div> 
+                @enderror
+            </div>
+        @endif
+
+        {{-- Payment Method Specific Fields --}}
+        @if(in_array($form['payment_method'], ['telebirr', 'bank_transfer']))
+            <div class="col-12 col-md-4">
+                <label for="transaction_number" class="form-label fw-medium">
+                    Transaction Number <span class="text-primary">*</span>
+                </label>
+                <input 
+                    type="text" 
+                    wire:model.live="form.transaction_number" 
+                    id="transaction_number" 
+                    class="form-control @error('form.transaction_number') is-invalid @enderror" 
+                    placeholder="Enter transaction number" 
+                    required
+                >
+                @error('form.transaction_number') 
                     <div class="invalid-feedback">{{ $message }}</div> 
                 @enderror
             </div>

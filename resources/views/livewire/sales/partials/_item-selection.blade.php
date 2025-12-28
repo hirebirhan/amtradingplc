@@ -29,6 +29,25 @@
         </div>
     </div>
 
+    {{-- Item Selection Error Alert --}}
+    @if($errors->hasAny(['newItem.item_id', 'newItem.quantity', 'newItem.price', 'newItem.unit_price']))
+        <div class="alert alert-danger alert-dismissible fade show mb-3" role="alert">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                <div class="flex-grow-1">
+                    <strong>Item Selection Error:</strong>
+                    <ul class="mb-0 mt-1 small">
+                        @error('newItem.item_id')<li>{{ $message }}</li>@enderror
+                        @error('newItem.quantity')<li>{{ $message }}</li>@enderror
+                        @error('newItem.price')<li>{{ $message }}</li>@enderror
+                        @error('newItem.unit_price')<li>{{ $message }}</li>@enderror
+                    </ul>
+                </div>
+            </div>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    @endif
+
     {{-- Add Item Form --}}
     <div class="border rounded p-3">
         <div class="row g-3">
@@ -141,45 +160,108 @@
             </div>
 
             @if($selectedItem && !$stockWarningType)
-                {{-- Sale Method Toggle --}}
+                {{-- Sale Unit Selection --}}
                 <div class="col-12 col-lg-2">
-                    <label class="form-label fw-medium">Sale Method</label>
-                    <div class="btn-group w-100 d-flex" role="group">
-                        <input type="radio" class="btn-check" wire:model.live="newItem.sale_method" value="piece" id="method_piece" name="sale_method">
-                        <label class="btn btn-outline-primary btn-lg flex-fill text-center px-1" for="method_piece">
-                            <i class="bi bi-box d-block d-xl-inline me-xl-1"></i>
-                            <span class="d-block d-xl-inline">Piece</span>
-                        </label>
-                        <input type="radio" class="btn-check" wire:model.live="newItem.sale_method" value="unit" id="method_unit" name="sale_method">
-                        <label class="btn btn-outline-primary btn-lg flex-fill text-center px-1" for="method_unit">
-                            <i class="bi bi-rulers d-block d-xl-inline me-xl-1"></i>
-                            <span class="d-block d-xl-inline">{{ $selectedItem['item_unit'] ?? 'Unit' }}</span>
-                        </label>
-                    </div>
+                    <label class="form-label fw-medium">Sale Unit</label>
+                    <select wire:model.live="newItem.sale_unit" class="form-select form-select-lg">
+                        <option value="each">Each</option>
+                        @php
+                            $baseUnit = $selectedItem['item_unit'] ?? 'each';
+                            $compatibleUnits = [];
+                            
+                            // Weight units - only show if item is weight-based
+                            if (in_array($baseUnit, ['kg', 'g', 'ton', 'lb', 'oz'])) {
+                                $compatibleUnits = [
+                                    'kg' => 'Kilogram (kg)',
+                                    'g' => 'Gram (g)', 
+                                    'ton' => 'Ton',
+                                    'lb' => 'Pound (lb)',
+                                    'oz' => 'Ounce (oz)'
+                                ];
+                            }
+                            // Volume units - only show if item is volume-based
+                            elseif (in_array($baseUnit, ['liter', 'ml', 'gallon', 'cup'])) {
+                                $compatibleUnits = [
+                                    'liter' => 'Liter (L)',
+                                    'ml' => 'Milliliter (ml)',
+                                    'gallon' => 'Gallon',
+                                    'cup' => 'Cup'
+                                ];
+                            }
+                            // Length units - only show if item is length-based
+                            elseif (in_array($baseUnit, ['meter', 'cm', 'mm', 'inch', 'ft'])) {
+                                $compatibleUnits = [
+                                    'meter' => 'Meter (m)',
+                                    'cm' => 'Centimeter (cm)',
+                                    'mm' => 'Millimeter (mm)',
+                                    'inch' => 'Inch',
+                                    'ft' => 'Foot (ft)'
+                                ];
+                            }
+                            // Area units - only show if item is area-based
+                            elseif (in_array($baseUnit, ['sqm', 'sqft', 'acre'])) {
+                                $compatibleUnits = [
+                                    'sqm' => 'Square Meter (m²)',
+                                    'sqft' => 'Square Foot (ft²)',
+                                    'acre' => 'Acre'
+                                ];
+                            }
+                            // Count/packaging units - always available
+                            $packagingUnits = [
+                                'pack' => 'Pack',
+                                'box' => 'Box', 
+                                'case' => 'Case',
+                                'dozen' => 'Dozen',
+                                'pair' => 'Pair',
+                                'set' => 'Set',
+                                'roll' => 'Roll',
+                                'sheet' => 'Sheet',
+                                'bottle' => 'Bottle',
+                                'can' => 'Can',
+                                'bag' => 'Bag',
+                                'sack' => 'Sack'
+                            ];
+                            $allUnits = array_merge($compatibleUnits, $packagingUnits);
+                        @endphp
+                        @foreach($allUnits as $unit => $label)
+                            <option value="{{ $unit }}">{{ $label }}</option>
+                        @endforeach
+                    </select>
+                    <small class="text-info d-block mt-1">
+                        <i class="bi bi-info-circle me-1"></i>Compatible units for {{ $baseUnit }}
+                    </small>
                 </div>
 
                 {{-- Quantity --}}
                 <div class="col-6 col-lg-2">
                     <label class="form-label fw-medium">Quantity</label>
                     <div class="input-group">
-                        <input type="number" wire:model.live="newItem.quantity" class="form-control form-control-lg" min="1" step="{{ $newItem['sale_method'] === 'unit' ? '0.01' : '1' }}" placeholder="0">
-                        <span class="input-group-text">
-                            @if($newItem['sale_method'] === 'piece')
-                                pcs
-                            @else
-                                {{ $selectedItem['item_unit'] ?? 'units' }}
-                            @endif
-                        </span>
+                        @php
+                            $isEach = ($newItem['sale_unit'] ?? 'each') === 'each';
+                            $saleUnit = $newItem['sale_unit'] ?? 'each';
+                            $step = in_array($saleUnit, ['g', 'ml']) ? '0.01' : '1';
+                            $unitLabel = $isEach ? 'Each' : ucfirst($saleUnit);
+                        @endphp
+                        <input type="number" wire:model.live="newItem.quantity" class="form-control form-control-lg" min="0.01" step="{{ $step }}" placeholder="0">
+                        <span class="input-group-text bg-light">{{ $unitLabel }}</span>
                     </div>
                     @php
-                        $availableStock = $this->getAvailableStockForMethod();
+                        $saleUnit = $newItem['sale_unit'] ?? 'each';
+                        $availableStock = 0;
+                        try {
+                            $availableStock = $this->getAvailableStockForUnit($saleUnit);
+                        } catch (\Exception $e) {
+                            $availableStock = 0;
+                        }
                         $requestedQty = floatval($newItem['quantity'] ?? 0);
-                        $willBeNegative = $requestedQty > $availableStock;
+                        $willExceed = $requestedQty > $availableStock;
+                        $step = in_array($saleUnit, ['g', 'ml']) ? '0.01' : '1';
+                        $unitLabel = $saleUnit === 'each' ? 'Each' : ucfirst($saleUnit);
                     @endphp
-                    <small class="d-block mt-1 {{ $willBeNegative ? 'text-warning' : 'text-muted' }} text-truncate">
-                        Available: {{ number_format($availableStock, 2) }}
-                        @if($willBeNegative && $requestedQty > 0)
-                            <br><i class="bi bi-exclamation-triangle"></i> Negative
+                    <small class="d-block mt-1 {{ $willExceed ? 'text-warning' : 'text-muted' }} text-truncate">
+                        Available: {{ number_format($availableStock, $step === '0.01' ? 2 : 0) }} {{ $unitLabel }}
+                        @if($willExceed && $requestedQty > 0)
+                            <br><i class="bi bi-exclamation-triangle"></i> Exceeds stock
                         @endif
                     </small>
                 </div>
@@ -187,19 +269,36 @@
                 {{-- Unit Price --}}
                 <div class="col-6 col-lg-2">
                     <label class="form-label fw-medium">
-                        @if($newItem['sale_method'] === 'piece')
-                            Price/pc
+                        @if(($newItem['sale_unit'] ?? 'each') === 'each')
+                            Price/Each
                         @else
-                            Price/{{ $selectedItem['item_unit'] ?? 'unit' }}
+                            Price/{{ ucfirst($newItem['sale_unit'] ?? 'unit') }}
                         @endif
                     </label>
-                    <input type="number" wire:model.live="newItem.unit_price" class="form-control form-control-lg" min="0" step="0.01" placeholder="0.00">
+                    <div class="input-group">
+                        <input type="number" wire:model.live="newItem.unit_price" class="form-control form-control-lg" min="0" step="0.01" placeholder="0.00">
+                    </div>
+                    @if($newItem['sale_method'] === 'unit' && ($selectedItem['unit_quantity'] ?? 1) > 1)
+                        <small class="text-muted d-block mt-1">
+                            = {{ number_format((floatval($newItem['unit_price'] ?? 0)) * ($selectedItem['unit_quantity'] ?? 1), 2) }} ETB/Each
+                        </small>
+                    @endif
                 </div>
 
                 {{-- Total Price --}}
-                <div class="col-6 col-lg">
-                    <label class="form-label fw-medium">Total</label>
-                    <input type="text" class="form-control form-control-lg" value="{{ number_format((floatval($newItem['quantity'] ?? 0)) * (floatval($newItem['price'] ?? 0)), 2) }}" readonly>
+                <div class="col-6 col-lg-2">
+                    <label class="form-label fw-medium">Total Amount</label>
+                    <div class="input-group">
+                        <input type="text" class="form-control form-control-lg fw-bold" value="{{ number_format((floatval($newItem['quantity'] ?? 0)) * (floatval($newItem['unit_price'] ?? 0)), 2) }}" readonly>
+                    </div>
+                    @if($newItem['sale_method'] === 'unit' && ($selectedItem['unit_quantity'] ?? 1) > 1)
+                        @php
+                            $totalEach = (floatval($newItem['quantity'] ?? 0)) / ($selectedItem['unit_quantity'] ?? 1);
+                        @endphp
+                        <small class="text-muted d-block mt-1">
+                            {{ number_format($totalEach, 2) }} Each × {{ number_format((floatval($newItem['price'] ?? 0)) * ($selectedItem['unit_quantity'] ?? 1), 2) }} ETB
+                        </small>
+                    @endif
                 </div>
 
                 {{-- Add Button --}}

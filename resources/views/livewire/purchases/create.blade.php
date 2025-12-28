@@ -31,35 +31,6 @@
 
         <!-- Card Body -->
         <div class="card-body p-0">
-            <!-- Form Validation & Error Alerts -->
-            <div class="p-4 pb-0">
-
-
-                <!-- General Error Alert -->
-                @if($errors->has('general'))
-                    <div class="alert alert-danger alert-dismissible fade show mb-3" role="alert">
-                        <div class="d-flex align-items-center">
-                            <i class="bi bi-exclamation-triangle me-2"></i>
-                            <div class="flex-grow-1">
-                                <strong>Error:</strong> {{ $errors->first('general') }}
-                            </div>
-                        </div>
-                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                    </div>
-                @endif
-
-                <!-- Success Alert -->
-                @if(session('success'))
-                    <div class="alert alert-success alert-dismissible fade show mb-3" role="alert">
-                        <div class="d-flex align-items-center">
-                            <i class="bi bi-check-circle me-2"></i>
-                            <div>{{ session('success') }}</div>
-                        </div>
-                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                    </div>
-                @endif
-            </div>
-
             <!-- Form Content -->
             <form id="purchaseForm" class="p-4 pt-0">
                 <!-- Basic Purchase Information -->
@@ -139,7 +110,7 @@
                                 <div class="invalid-feedback">{{ $message }}</div> 
                             @enderror
                         </div>
-                        <!-- Payment Method -->
+                        {{-- Payment Method --}}
                         <div class="col-12 col-md-4">
                             <label for="payment_method" class="form-label fw-medium">
                                 Payment Method <span class="text-primary">*</span>
@@ -178,79 +149,8 @@
                                 <div class="invalid-feedback">{{ $message }}</div> 
                             @enderror
                         </div>
-                        <!-- Payment Method Specific Fields (show only if needed) -->
-                        @if(in_array($form['payment_method'], ['telebirr', 'bank_transfer']))
-                            <div class="col-12 col-md-4">
-                                <label for="transaction_number" class="form-label fw-medium">
-                                    Transaction Number <span class="text-primary">*</span>
-                                </label>
-                                <input 
-                                    type="text" 
-                                    wire:model.live="form.transaction_number" 
-                                    id="transaction_number" 
-                                    class="form-control @error('form.transaction_number') is-invalid @enderror" 
-                                    placeholder="Enter transaction number" 
-                                    required
-                                >
-                                @error('form.transaction_number') 
-                                    <div class="invalid-feedback">{{ $message }}</div> 
-                                @enderror
-                            </div>
-                        @endif
-                        @if($form['payment_method'] === 'telebirr')
-                            <div class="col-12 col-md-4">
-                                <label for="receiver_account_holder" class="form-label fw-medium">
-                                    Account Holder Name <span class="text-primary">*</span>
-                                </label>
-                                <input 
-                                    type="text" 
-                                    wire:model="form.receiver_account_holder" 
-                                    id="receiver_account_holder" 
-                                    class="form-control @error('form.receiver_account_holder') is-invalid @enderror" 
-                                    placeholder="Enter account holder name" 
-                                    required
-                                >
-                                @error('form.receiver_account_holder') 
-                                    <div class="invalid-feedback">{{ $message }}</div> 
-                                @enderror
-                            </div>
-                        @endif
-                        <!-- Tax Rate -->
-                        <div class="col-12 col-md-4">
-                            <label for="tax" class="form-label fw-medium">
-                                Tax Rate (%)
-                            </label>
-                            <input 
-                                type="number" 
-                                wire:model.live="form.tax" 
-                                id="tax" 
-                                class="form-control @error('form.tax') is-invalid @enderror" 
-                                placeholder="0" 
-                                step="0.01"
-                                min="0" 
-                                max="100" 
-                            >
-                            @error('form.tax') 
-                                <div class="invalid-feedback">{{ $message }}</div> 
-                            @enderror
-                        </div>
-                        <!-- Notes -->
-                        <div class="col-12 col-md-4">
-                            <label for="notes" class="form-label fw-medium">
-                                Notes
-                            </label>
-                            <input 
-                                type="text" 
-                                wire:model="form.notes" 
-                                id="notes" 
-                                class="form-control @error('form.notes') is-invalid @enderror" 
-                                placeholder="Additional notes about this purchase..."
-                            >
-                            @error('form.notes') 
-                                <div class="invalid-feedback">{{ $message }}</div> 
-                            @enderror
-                        </div>
-                        <!-- Bank Transfer Details -->
+
+                        {{-- Bank Transfer Details --}}
                         @if($form['payment_method'] === 'bank_transfer')
                             <div class="col-12 col-md-4">
                                 <label for="bank_account_id" class="form-label fw-medium">
@@ -276,7 +176,44 @@
                                 @enderror
                             </div>
                         @endif
-                        <!-- Advance Amount (if credit_advance) -->
+
+                        {{-- Payment Method Specific Fields --}}
+                        @if(in_array($form['payment_method'], ['telebirr', 'bank_transfer']))
+                            <div class="col-12 col-md-4">
+                                <label for="transaction_number" class="form-label fw-medium">
+                                    Transaction Number <span class="text-primary">*</span>
+                                </label>
+                                <input 
+                                    type="text" 
+                                    wire:model.live="form.transaction_number" 
+                                    id="transaction_number" 
+                                    class="form-control @error('form.transaction_number') is-invalid @enderror" 
+                                    placeholder="Enter transaction number" 
+                                    required
+                                >
+                                @error('form.transaction_number') 
+                                    <div class="invalid-feedback">{{ $message }}</div> 
+                                @enderror
+                            </div>
+                        @endif
+                        {{-- Notes --}}
+                        <div class="col-12 col-md-4">
+                            <label for="notes" class="form-label fw-medium">
+                                Notes
+                            </label>
+                            <input 
+                                type="text" 
+                                wire:model="form.notes" 
+                                id="notes" 
+                                class="form-control @error('form.notes') is-invalid @enderror" 
+                                placeholder="Additional notes about this purchase..."
+                            >
+                            @error('form.notes') 
+                                <div class="invalid-feedback">{{ $message }}</div> 
+                            @enderror
+                        </div>
+
+                        {{-- Advance Amount (if credit_advance) --}}
                         @if($form['payment_method'] === 'credit_advance')
                             <div class="col-12 col-md-4">
                                 <label for="advance_amount" class="form-label fw-medium">
@@ -522,19 +459,6 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <!-- Modal Error Alert -->
-                    @if($errors->any())
-                        <div class="alert alert-danger mb-3">
-                            <i class="bi bi-exclamation-triangle me-2"></i>
-                            <strong>Please fix the following errors:</strong>
-                            <ul class="mb-0 mt-1 small">
-                                @foreach($errors->all() as $error)
-                                    <li>{{ $error }}</li>
-                                @endforeach
-                            </ul>
-                        </div>
-                    @endif
-
                     <!-- Key Information -->
                     <div class="row mb-3">
                         <div class="col-md-6">

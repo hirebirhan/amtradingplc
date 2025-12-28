@@ -276,7 +276,17 @@ class Create extends Component
         
         // Add conditional validation rules based on payment method
         if ($this->payment_method === 'bank_transfer') {
-            $rules['transaction_number'] = 'required|string|max:255';
+            $rules['transaction_number'] = [
+                'required',
+                'string',
+                'min:5',
+                'max:255',
+                function ($attribute, $value, $fail) {
+                    if ($this->transactionNumberExists((string) $value)) {
+                        $fail('This transaction number has already been used.');
+                    }
+                },
+            ];
             $rules['receiver_bank_name'] = 'required|string|max:255';
         } elseif ($this->payment_method === 'telebirr') {
             $rules['transaction_number'] = [
@@ -290,7 +300,6 @@ class Create extends Component
                     }
                 },
             ];
-            $rules['receiver_account_holder'] = 'required|string|max:255';
         } elseif ($this->payment_method === 'check') {
             $rules['reference_no'] = 'required|string|max:255';
         }
@@ -719,8 +728,6 @@ class Create extends Component
             'transaction_number.max' => 'Transaction number cannot exceed 255 characters.',
             'receiver_bank_name.required' => 'Receiver bank name is required.',
             'receiver_bank_name.max' => 'Receiver bank name cannot exceed 255 characters.',
-            'receiver_account_holder.required' => 'Receiver account holder name is required.',
-            'receiver_account_holder.max' => 'Receiver account holder name cannot exceed 255 characters.',
             'receiver_account_number.required' => 'Receiver account number is required.',
             'receiver_account_number.max' => 'Receiver account number cannot exceed 255 characters.',
             'attachment.file' => 'Please upload a valid file.',
