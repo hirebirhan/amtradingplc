@@ -622,26 +622,24 @@
                         @php
                             $totalClosingCost = 0;
                             if($credit->reference_type === 'purchase' && $credit->purchase) {
-                                foreach($credit->purchase->items as $item) {
-                                    if(isset($closingPrices[$item->item_id]) && 
-                                       $closingPrices[$item->item_id] !== '' && 
-                                       is_numeric($closingPrices[$item->item_id])) {
-                                        // User enters total price for this item, not unit price
-                                        $totalClosingCost += (float) $closingPrices[$item->item_id];
+                                $uniqueItems = $credit->purchase->items->groupBy('item_id');
+                                foreach($uniqueItems as $itemId => $itemGroup) {
+                                    if(isset($closingPrices[$itemId]) && 
+                                       $closingPrices[$itemId] !== '' && 
+                                       is_numeric($closingPrices[$itemId])) {
+                                        $totalClosingCost += (float) $closingPrices[$itemId];
                                     }
                                 }
                             } elseif($credit->reference_type === 'sale' && $credit->sale) {
-                                foreach($credit->sale->items as $item) {
-                                    if(isset($closingPrices[$item->item_id]) && 
-                                       $closingPrices[$item->item_id] !== '' && 
-                                       is_numeric($closingPrices[$item->item_id])) {
-                                        // User enters total price for this item, not unit price
-                                        $totalClosingCost += (float) $closingPrices[$item->item_id];
+                                $uniqueItems = $credit->sale->items->groupBy('item_id');
+                                foreach($uniqueItems as $itemId => $itemGroup) {
+                                    if(isset($closingPrices[$itemId]) && 
+                                       $closingPrices[$itemId] !== '' && 
+                                       is_numeric($closingPrices[$itemId])) {
+                                        $totalClosingCost += (float) $closingPrices[$itemId];
                                     }
                                 }
                             }
-                            $displayClosingCost = $totalClosingCost;
-                            $remainingToPay = $displayClosingCost;
                         @endphp
                         
                         <div class="alert alert-info mb-3">
@@ -651,24 +649,24 @@
                                     <strong>Already Paid:</strong> {{ number_format($credit->paid_amount, 2) }} ETB
                                 </div>
                                 <div class="col-md-6">
+                                    <strong class="text-primary">Payment Amount:</strong> {{ number_format($credit->balance, 2) }} ETB<br>
                                     @if($totalClosingCost > 0)
-                                        <strong>Total Closing Cost:</strong> 
-                                        {{ number_format($displayClosingCost, 2) }} ETB
-                                        <br><strong class="text-primary">Payment Amount:</strong> {{ number_format($remainingToPay, 2) }} ETB
-                                        @if($remainingToPay != $credit->balance)
-                                            <br><span class="text-warning"><i class="fas fa-exclamation-triangle me-1"></i>Amount must equal credit balance: {{ number_format($credit->balance, 2) }} ETB</span>
-                                        @endif
-                                    @else
-                                        <strong class="text-muted">Enter item prices to see payment amount</strong>
+                                        <strong>Total Closing Cost:</strong> {{ number_format($totalClosingCost, 2) }} ETB
                                     @endif
                                 </div>
                             </div>
                         </div>
                         
                         @if($totalClosingCost > 0 && $totalClosingCost != $credit->balance)
-                            <div class="alert alert-danger mb-3">
+                            <div class="alert alert-warning">
                                 <i class="fas fa-exclamation-triangle me-2"></i>
-                                <strong>Warning:</strong> The total closing cost ({{ number_format($totalClosingCost, 2) }} ETB) must equal the credit balance ({{ number_format($credit->balance, 2) }} ETB).
+                                <strong>Warning:</strong> 
+                                @if($totalClosingCost > $credit->balance)
+                                    Total closing cost ({{ number_format($totalClosingCost, 2) }} ETB) exceeds credit balance ({{ number_format($credit->balance, 2) }} ETB).
+                                @else
+                                    Total closing cost ({{ number_format($totalClosingCost, 2) }} ETB) is less than credit balance ({{ number_format($credit->balance, 2) }} ETB).
+                                @endif
+                                Please adjust prices to exactly {{ number_format($credit->balance, 2) }} ETB.
                             </div>
                         @endif
                         
@@ -694,36 +692,50 @@
                                 </thead>
                                 <tbody>
                                     @if($credit->reference_type === 'purchase' && $credit->purchase)
-                                        @foreach($credit->purchase->items as $item)
+                                        @php
+                                            $uniqueItems = $credit->purchase->items->groupBy('item_id');
+                                        @endphp
+                                        @foreach($uniqueItems as $itemId => $itemGroup)
+                                            @php
+                                                $firstItem = $itemGroup->first();
+                                                $totalQuantity = $itemGroup->sum('quantity');
+                                            @endphp
                                             <tr>
-                                                <td class="fw-medium">{{ $item->item->name }}</td>
+                                                <td class="fw-medium">{{ $firstItem->item->name }}</td>
                                                 <td class="text-center">
                                                     <input type="number" 
-                                                        wire:model.live="closingPrices.{{ $item->item_id }}" 
-                                                        class="form-control form-control-sm text-center @error('closingPrices.'.$item->item_id) is-invalid @enderror" 
+                                                        wire:model.live="closingPrices.{{ $itemId }}" 
+                                                        class="form-control form-control-sm text-center @error('closingPrices.'.$itemId) is-invalid @enderror" 
                                                         step="0.01" 
                                                         min="0" 
                                                         placeholder="Enter total closing price"
                                                         style="width: 200px; margin: 0 auto;">
-                                                    @error('closingPrices.'.$item->item_id)
+                                                    @error('closingPrices.'.$itemId)
                                                         <div class="invalid-feedback">{{ $message }}</div>
                                                     @enderror
                                                 </td>
                                             </tr>
                                         @endforeach
                                     @elseif($credit->reference_type === 'sale' && $credit->sale)
-                                        @foreach($credit->sale->items as $item)
+                                        @php
+                                            $uniqueItems = $credit->sale->items->groupBy('item_id');
+                                        @endphp
+                                        @foreach($uniqueItems as $itemId => $itemGroup)
+                                            @php
+                                                $firstItem = $itemGroup->first();
+                                                $totalQuantity = $itemGroup->sum('quantity');
+                                            @endphp
                                             <tr>
-                                                <td class="fw-medium">{{ $item->item->name }}</td>
+                                                <td class="fw-medium">{{ $firstItem->item->name }}</td>
                                                 <td class="text-center">
                                                     <input type="number" 
-                                                        wire:model.live="closingPrices.{{ $item->item_id }}" 
-                                                        class="form-control form-control-sm text-center @error('closingPrices.'.$item->item_id) is-invalid @enderror" 
+                                                        wire:model.live="closingPrices.{{ $itemId }}" 
+                                                        class="form-control form-control-sm text-center @error('closingPrices.'.$itemId) is-invalid @enderror" 
                                                         step="0.01" 
                                                         min="0" 
                                                         placeholder="Enter total closing price"
                                                         style="width: 200px; margin: 0 auto;">
-                                                    @error('closingPrices.'.$item->item_id)
+                                                    @error('closingPrices.'.$itemId)
                                                         <div class="invalid-feedback">{{ $message }}</div>
                                                     @enderror
                                                 </td>
@@ -737,7 +749,6 @@
                                             </td>
                                         </tr>
                                     @endif
-
                                 </tbody>
                             </table>
                         </div>

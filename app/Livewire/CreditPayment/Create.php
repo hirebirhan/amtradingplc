@@ -346,17 +346,21 @@ class Create extends Component
         if ($this->credit->reference_type === 'purchase' && $this->credit->reference_id) {
             $purchase = $this->credit->purchase;
             if ($purchase) {
-                foreach ($purchase->items as $item) {
+                // Group items by item_id to avoid duplicates
+                $uniqueItems = $purchase->items->groupBy('item_id');
+                foreach ($uniqueItems as $itemId => $itemGroup) {
                     // Initialize as empty - user must enter values
-                    $this->closingPrices[$item->item_id] = '';
+                    $this->closingPrices[$itemId] = '';
                 }
             }
         } elseif ($this->credit->reference_type === 'sale' && $this->credit->reference_id) {
             $sale = $this->credit->sale;
             if ($sale) {
-                foreach ($sale->items as $item) {
+                // Group items by item_id to avoid duplicates
+                $uniqueItems = $sale->items->groupBy('item_id');
+                foreach ($uniqueItems as $itemId => $itemGroup) {
                     // Initialize as empty - user must enter values
-                    $this->closingPrices[$item->item_id] = '';
+                    $this->closingPrices[$itemId] = '';
                 }
             }
         }
@@ -370,45 +374,10 @@ class Create extends Component
     
     public function calculateClosingPaymentAmount()
     {
-        // Only calculate for closing payments with negotiated prices
-        if ($this->paymentType !== 'closing_payment' || !$this->credit->reference_id) {
-            return;
+        // For closing payments, always set amount to credit balance
+        if ($this->paymentType === 'closing_payment') {
+            $this->amount = $this->credit->balance;
         }
-        
-        $totalClosingCost = 0;
-        
-        if ($this->credit->reference_type === 'purchase') {
-            $purchase = $this->credit->purchase;
-            if (!$purchase) {
-                return;
-            }
-            
-            foreach ($purchase->items as $item) {
-                if (isset($this->closingPrices[$item->item_id]) && 
-                    $this->closingPrices[$item->item_id] !== '' && 
-                    is_numeric($this->closingPrices[$item->item_id])) {
-                    // User enters total price for this item, not unit price
-                    $totalClosingCost += (float) $this->closingPrices[$item->item_id];
-                }
-            }
-        } elseif ($this->credit->reference_type === 'sale') {
-            $sale = $this->credit->sale;
-            if (!$sale) {
-                return;
-            }
-            
-            foreach ($sale->items as $item) {
-                if (isset($this->closingPrices[$item->item_id]) && 
-                    $this->closingPrices[$item->item_id] !== '' && 
-                    is_numeric($this->closingPrices[$item->item_id])) {
-                    // User enters total price for this item, not unit price
-                    $totalClosingCost += (float) $this->closingPrices[$item->item_id];
-                }
-            }
-        }
-        
-        // Set payment amount to the calculated closing cost
-        $this->amount = $totalClosingCost;
     }
     
     public function processClosingPayment()
@@ -418,36 +387,35 @@ class Create extends Component
             'closingPrices.*' => 'required|numeric|min:0',
         ]);
         
-        // Calculate total closing cost
+        // Calculate total closing cost and validate against credit balance
         $totalClosingCost = 0;
-        
         if ($this->credit->reference_type === 'purchase' && $this->credit->purchase) {
-            foreach ($this->credit->purchase->items as $item) {
-                if (isset($this->closingPrices[$item->item_id]) && 
-                    $this->closingPrices[$item->item_id] !== '' && 
-                    is_numeric($this->closingPrices[$item->item_id])) {
-                    // User enters total price for this item, not unit price
-                    $totalClosingCost += (float) $this->closingPrices[$item->item_id];
+            $uniqueItems = $this->credit->purchase->items->groupBy('item_id');
+            foreach ($uniqueItems as $itemId => $itemGroup) {
+                if (isset($this->closingPrices[$itemId]) && is_numeric($this->closingPrices[$itemId])) {
+                    $totalClosingCost += (float) $this->closingPrices[$itemId];
                 }
             }
         } elseif ($this->credit->reference_type === 'sale' && $this->credit->sale) {
-            foreach ($this->credit->sale->items as $item) {
-                if (isset($this->closingPrices[$item->item_id]) && 
-                    $this->closingPrices[$item->item_id] !== '' && 
-                    is_numeric($this->closingPrices[$item->item_id])) {
-                    // User enters total price for this item, not unit price
-                    $totalClosingCost += (float) $this->closingPrices[$item->item_id];
+            $uniqueItems = $this->credit->sale->items->groupBy('item_id');
+            foreach ($uniqueItems as $itemId => $itemGroup) {
+                if (isset($this->closingPrices[$itemId]) && is_numeric($this->closingPrices[$itemId])) {
+                    $totalClosingCost += (float) $this->closingPrices[$itemId];
                 }
             }
         }
         
-        // For closing payments, amount must equal credit balance
+        // Validate total closing cost doesn't exceed credit balance
         if ($totalClosingCost != $this->credit->balance) {
-            $this->addError('closingPrices', 'The total closing cost (' . number_format($totalClosingCost, 2) . ' ETB) must equal the credit balance (' . number_format($this->credit->balance, 2) . ' ETB).');
+            if ($totalClosingCost > $this->credit->balance) {
+                $this->addError('closingPrices', 'Total closing cost (' . number_format($totalClosingCost, 2) . ' ETB) cannot exceed credit balance (' . number_format($this->credit->balance, 2) . ' ETB).');
+            } else {
+                $this->addError('closingPrices', 'Total closing cost (' . number_format($totalClosingCost, 2) . ' ETB) must equal credit balance (' . number_format($this->credit->balance, 2) . ' ETB) for closing payment.');
+            }
             return;
         }
         
-        $this->calculateClosingPaymentAmount();
+        $this->amount = $this->credit->balance;
         $this->showClosingPricesModal = false;
         
         // Process as regular payment with closing price tracking
@@ -492,25 +460,45 @@ class Create extends Component
             
             // Update items with closing prices for tracking
             if ($this->credit->reference_type === 'purchase' && $this->credit->purchase) {
-                foreach ($this->credit->purchase->items as $item) {
-                    if (isset($this->closingPrices[$item->item_id])) {
-                        $closingPrice = (float) $this->closingPrices[$item->item_id];
-                        $item->update([
-                            'closing_unit_price' => $closingPrice,
-                            'total_closing_cost' => $closingPrice * $item->quantity,
-                            'profit_loss_per_item' => ($item->unit_cost - $closingPrice) * $item->quantity
-                        ]);
+                $uniqueItems = $this->credit->purchase->items->groupBy('item_id');
+                foreach ($uniqueItems as $itemId => $itemGroup) {
+                    if (isset($this->closingPrices[$itemId])) {
+                        $closingPrice = (float) $this->closingPrices[$itemId];
+                        $totalQuantity = $itemGroup->sum('quantity');
+                        $unitClosingPrice = $totalQuantity > 0 ? $closingPrice / $totalQuantity : 0;
+                        
+                        // Update all items in this group
+                        foreach ($itemGroup as $item) {
+                            $originalTotalCost = $item->unit_cost * $item->quantity;
+                            $itemClosingCost = $unitClosingPrice * $item->quantity;
+                            
+                            $item->update([
+                                'closing_unit_price' => $unitClosingPrice,
+                                'total_closing_cost' => $itemClosingCost,
+                                'profit_loss_per_item' => $originalTotalCost - $itemClosingCost
+                            ]);
+                        }
                     }
                 }
             } elseif ($this->credit->reference_type === 'sale' && $this->credit->sale) {
-                foreach ($this->credit->sale->items as $item) {
-                    if (isset($this->closingPrices[$item->item_id])) {
-                        $closingPrice = (float) $this->closingPrices[$item->item_id];
-                        $item->update([
-                            'closing_unit_price' => $closingPrice,
-                            'total_closing_cost' => $closingPrice * $item->quantity,
-                            'profit_loss_per_item' => ($item->unit_price - $closingPrice) * $item->quantity
-                        ]);
+                $uniqueItems = $this->credit->sale->items->groupBy('item_id');
+                foreach ($uniqueItems as $itemId => $itemGroup) {
+                    if (isset($this->closingPrices[$itemId])) {
+                        $closingPrice = (float) $this->closingPrices[$itemId];
+                        $totalQuantity = $itemGroup->sum('quantity');
+                        $unitClosingPrice = $totalQuantity > 0 ? $closingPrice / $totalQuantity : 0;
+                        
+                        // Update all items in this group
+                        foreach ($itemGroup as $item) {
+                            $originalTotalCost = $item->unit_price * $item->quantity;
+                            $itemClosingCost = $unitClosingPrice * $item->quantity;
+                            
+                            $item->update([
+                                'closing_unit_price' => $unitClosingPrice,
+                                'total_closing_cost' => $itemClosingCost,
+                                'profit_loss_per_item' => $originalTotalCost - $itemClosingCost
+                            ]);
+                        }
                     }
                 }
             }
