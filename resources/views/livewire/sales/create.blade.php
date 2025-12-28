@@ -85,6 +85,8 @@
 
     {{-- Initialize Livewire Events --}}
     <script>
+        let priceCheckTimeout;
+        
         document.addEventListener('livewire:init', () => {
             const confirmationModal = document.getElementById('confirmationModal');
             if (confirmationModal) {
@@ -98,6 +100,14 @@
                     modal.hide();
                 });
             }
+            
+            // Debounced price checking
+            Livewire.on('checkBelowCostPrice', (data) => {
+                clearTimeout(priceCheckTimeout);
+                priceCheckTimeout = setTimeout(() => {
+                    Livewire.dispatch('checkBelowCostPrice', data);
+                }, 800); // 800ms delay
+            });
         });
     </script>
 </div>
