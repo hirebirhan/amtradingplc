@@ -92,9 +92,17 @@ class Sale extends Model
                 $sale->saveQuietly();
             }
             
+            // Ensure payment status matches payment method logic
+            $correctStatus = $sale->calculateCorrectPaymentStatus();
+            if ($sale->payment_status !== $correctStatus) {
+                $sale->payment_status = $correctStatus;
+                $sale->saveQuietly(); // Avoid infinite loop
+            }
+            
             // Ensure due_amount is calculated correctly
-            if ($sale->payment_status === 'due' && $sale->due_amount <= 0) {
-                $sale->due_amount = $sale->total_amount - ($sale->paid_amount ?? 0);
+            $correctDueAmount = $sale->total_amount - ($sale->paid_amount ?? 0);
+            if ($sale->due_amount != $correctDueAmount) {
+                $sale->due_amount = $correctDueAmount;
                 $sale->saveQuietly(); // Avoid infinite loop
             }
             
@@ -482,6 +490,32 @@ class Sale extends Model
     {
         $this->due_amount = $this->total_amount - $this->paid_amount;
         $this->save();
+    }
+
+    /**
+     * Calculate the correct payment status based on payment method and amounts.
+     */
+    public function calculateCorrectPaymentStatus(): string
+    {
+        switch ($this->payment_method) {
+            case 'cash':
+            case 'bank_transfer':
+            case 'telebirr':
+                return PaymentStatus::PAID->value;
+            case 'credit_advance':
+                return PaymentStatus::PARTIAL->value;
+            case 'full_credit':
+                return PaymentStatus::DUE->value;
+            default:
+                // Fallback to amount-based calculation
+                if ($this->due_amount <= 0) {
+                    return PaymentStatus::PAID->value;
+                } elseif ($this->paid_amount > 0) {
+                    return PaymentStatus::PARTIAL->value;
+                } else {
+                    return PaymentStatus::DUE->value;
+                }
+        }
     }
 
     /**

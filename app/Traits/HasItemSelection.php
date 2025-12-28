@@ -48,8 +48,8 @@ trait HasItemSelection
         return $stock ? max($stock->quantity ?? 0, $stock->piece_count ?? 0) : 0;
     }
 
-    /**
-     * Load items for the current location (to be implemented by using class)
-     */
-    abstract protected function loadItemsForLocation();
+    protected function loadItemsForLocation()
+    {
+        // Items are loaded dynamically via computed property
+    }
 }
