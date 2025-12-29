@@ -52,6 +52,22 @@ trait HandlesItems
         ]);
     }
 
+    public function updatedNewItemUnitCost($value)
+    {
+        if ($this->selectedItem && !empty($value)) {
+            $unitQuantity = $this->selectedItem['unit_quantity'] ?? 1;
+            $this->newItem['cost'] = round(floatval($value) * $unitQuantity, 2);
+        }
+    }
+
+    public function updatedNewItemCost($value)
+    {
+        if ($this->selectedItem && !empty($value)) {
+            $unitQuantity = $this->selectedItem['unit_quantity'] ?? 1;
+            $this->newItem['unit_cost'] = round(floatval($value) / $unitQuantity, 2);
+        }
+    }
+
     public function updatedNewItemItemId($value)
     {
         if (!empty($value)) {
@@ -229,6 +245,94 @@ trait HandlesItems
         $this->newItem['item_id'] = $item->id;
         $this->updatedNewItemItemId($item->id);
         $this->itemSearch = '';
+    }
+
+    public function clearSelectedItem()
+    {
+        $this->selectedItem = null;
+        $this->newItem['item_id'] = '';
+        $this->newItem['unit'] = '';
+        $this->newItem['unit_cost'] = 0;
+        $this->newItem['cost'] = 0;
+        $this->current_stock = 0;
+        $this->itemSearch = '';
+    }
+
+    public function handleItemCreated($itemData)
+    {
+        $this->loadItems();
+        
+        if (isset($itemData['id'])) {
+            $this->newItem['item_id'] = $itemData['id'];
+            $this->updatedNewItemItemId($itemData['id']);
+            $this->notify('✓ Item created and selected successfully!', 'success');
+        }
+    }
+
+    public function editItem($index)
+    {
+        if (!isset($this->items[$index])) {
+            $this->notify('❌ Item not found', 'error');
+            return;
+        }
+
+        $item = $this->items[$index];
+        
+        $this->newItem = [
+            'item_id' => $item['item_id'],
+            'quantity' => $item['quantity'],
+            'unit_cost' => $item['unit_cost'],
+            'cost' => $item['cost'],
+            'notes' => $item['notes'] ?? '',
+            'unit' => $item['unit'],
+        ];
+        
+        $this->selectedItem = [
+            'id' => $item['item_id'],
+            'name' => $item['name'],
+            'sku' => $item['sku'],
+            'unit' => $item['unit'],
+            'unit_quantity' => $item['unit_quantity'],
+            'item_unit' => $item['item_unit'],
+        ];
+        
+        $this->editingItemIndex = $index;
+    }
+
+    public function updateExistingItem()
+    {
+        if ($this->editingItemIndex === null) {
+            return;
+        }
+
+        try {
+            $this->validate([
+                'newItem.quantity' => 'required|numeric|min:0.01',
+                'newItem.cost' => 'required|numeric|min:0.01',
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            foreach ($e->validator->errors()->all() as $error) {
+                $this->notify('❌ ' . $error, 'error');
+            }
+            return;
+        }
+
+        $this->items[$this->editingItemIndex]['quantity'] = floatval($this->newItem['quantity']);
+        $this->items[$this->editingItemIndex]['cost'] = round(floatval($this->newItem['cost']), 2);
+        $this->items[$this->editingItemIndex]['unit_cost'] = $this->newItem['unit_cost'];
+        $this->items[$this->editingItemIndex]['subtotal'] = $this->items[$this->editingItemIndex]['quantity'] * $this->items[$this->editingItemIndex]['cost'];
+        $this->items[$this->editingItemIndex]['notes'] = $this->newItem['notes'];
+
+        $this->updateTotals();
+        $this->cancelEdit();
+        
+        $this->notify('✓ Item updated successfully', 'success');
+    }
+
+    public function cancelEdit()
+    {
+        $this->editingItemIndex = null;
+        $this->resetItemFields();
     }
 
     public function getFilteredItemOptionsProperty()

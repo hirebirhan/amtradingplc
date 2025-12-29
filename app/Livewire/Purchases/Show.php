@@ -3,9 +3,8 @@
 namespace App\Livewire\Purchases;
 
 use App\Models\Purchase;
-use Illuminate\Support\Facades\Auth;
-use Livewire\Component;
-use Livewire\Attributes\Layout;
+use Illuminate\Support\Facades\{Auth, Log};
+use Livewire\{Component, Attributes\Layout};
 use Illuminate\Support\Facades\DB;
 
 #[Layout('layouts.app')]
@@ -32,8 +31,14 @@ class Show extends Component
         ]);
 
         // Check if user has permission to view this purchase
-        if (!Auth::user()->can('view', $purchase)) {
-            abort(403);
+        if (!$purchase->user_id || $purchase->user_id !== Auth::id()) {
+            $user = Auth::user();
+            $adminRoles = $user->roles->pluck('name')->toArray();
+            $allowedRoles = ['SuperAdmin', 'GeneralManager', 'BranchManager'];
+            
+            if (empty(array_intersect($adminRoles, $allowedRoles))) {
+                abort(403);
+            }
         }
 
         $this->purchaseItems = $this->purchase->items;
@@ -42,7 +47,7 @@ class Show extends Component
 
     public function markAsPaid()
     {
-        if (!Auth::user()->can('update', $this->purchase)) {
+        if (!$this->canUpdatePurchase()) {
             return $this->dispatchBrowserEvent('notify', [
                 'type' => 'error',
                 'message' => 'You do not have permission to update this purchase'
@@ -60,7 +65,7 @@ class Show extends Component
 
     public function markAsPartial()
     {
-        if (!Auth::user()->can('update', $this->purchase)) {
+        if (!$this->canUpdatePurchase()) {
             return $this->dispatchBrowserEvent('notify', [
                 'type' => 'error',
                 'message' => 'You do not have permission to update this purchase'
@@ -78,7 +83,7 @@ class Show extends Component
 
     public function markAsPending()
     {
-        if (!Auth::user()->can('update', $this->purchase)) {
+        if (!$this->canUpdatePurchase()) {
             return $this->dispatchBrowserEvent('notify', [
                 'type' => 'error',
                 'message' => 'You do not have permission to update this purchase'
@@ -106,7 +111,7 @@ class Show extends Component
 
     public function updateStock()
     {
-        if (!Auth::user()->can('update', $this->purchase)) {
+        if (!$this->canUpdatePurchase()) {
             return $this->dispatchBrowserEvent('notify', [
                 'type' => 'error',
                 'message' => 'You do not have permission to update stock'
@@ -148,7 +153,7 @@ class Show extends Component
             ]);
             
             // Log the error for debugging
-            \Log::error('Error processing purchase: ' . $e->getMessage(), [
+            Log::error('Error processing purchase: ' . $e->getMessage(), [
                 'purchase_id' => $this->purchase->id,
                 'exception' => $e
             ]);
@@ -173,6 +178,15 @@ class Show extends Component
         return view('livewire.purchases.show', [
             'purchase' => $this->purchase,
             'purchaseItems' => $this->purchaseItems,
-        ])->title('View Purchase: ' . $this->purchase->reference_no);
+        ]);
+    }
+
+    private function canUpdatePurchase(): bool
+    {
+        $user = Auth::user();
+        $adminRoles = $user->roles->pluck('name')->toArray();
+        $allowedRoles = ['SuperAdmin', 'GeneralManager', 'BranchManager'];
+        
+        return !empty(array_intersect($adminRoles, $allowedRoles)) || $this->purchase->user_id === Auth::id();
     }
 }
