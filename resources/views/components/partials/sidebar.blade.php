@@ -107,20 +107,20 @@
         @endif
 
         <!-- Sales Section -->
-        @if(auth()->check() && (auth()->user()->can('customers.view') || auth()->user()->can('sales.view') || auth()->user()->can('sales.create') || auth()->user()->can('proformas.view')))
+        @if(auth()->check() && (auth()->user()->can('customers.view') || auth()->user()->can('sales.view') || auth()->user()->can('sales.create')))
         <div>
-            <button class="nav-link d-flex align-items-center justify-content-between w-100 px-3 py-2 rounded border-0 text-start {{ request()->routeIs('admin.sales') || request()->routeIs('admin.proformas') ? 'bg-primary bg-opacity-10 text-primary' : 'text-body-secondary' }}"
+            <button class="nav-link d-flex align-items-center justify-content-between w-100 px-3 py-2 rounded border-0 text-start {{ request()->routeIs('admin.sales') ? 'bg-primary bg-opacity-10 text-primary' : 'text-body-secondary' }}"
                     type="button"
                     data-bs-toggle="collapse"
                     data-bs-target="#salesMenu"
-                    aria-expanded="{{ request()->routeIs('admin.customers.*') || request()->routeIs('admin.sales.*') || request()->routeIs('admin.proformas.*') ? 'true' : 'false' }}">
+                    aria-expanded="{{ request()->routeIs('admin.customers.*') || request()->routeIs('admin.sales.*') ? 'true' : 'false' }}">
                 <span class="d-flex align-items-center gap-3">
                     <i class="bi bi-graph-up fs-5"></i>
                     <span class="fw-medium">Sales</span>
                 </span>
                 <i class="bi bi-chevron-down"></i>
             </button>
-            <div class="collapse {{ request()->routeIs('admin.customers.*') || request()->routeIs('admin.sales.*') || request()->routeIs('admin.proformas.*') ? 'show' : '' }}" id="salesMenu">
+            <div class="collapse {{ request()->routeIs('admin.customers.*') || request()->routeIs('admin.sales.*') ? 'show' : '' }}" id="salesMenu">
                 <div class="d-flex flex-column gap-1 ms-4 mt-1">
                     @can('sales.create')
                     <a href="{{ route('admin.sales.create') }}"
@@ -141,13 +141,6 @@
                        class="nav-link d-flex align-items-center gap-3 px-3 py-2 rounded text-decoration-none {{ request()->routeIs('admin.sales.index') ? 'bg-primary bg-opacity-10 text-primary' : 'text-body-secondary' }}">
                         <i class="bi bi-receipt fs-6"></i>
                         <span>Sales Orders</span>
-                    </a>
-                    @endcan
-                    @can('proformas.view')
-                    <a href="{{ route('admin.proformas.index') }}"
-                       class="nav-link d-flex align-items-center gap-3 px-3 py-2 rounded text-decoration-none {{ request()->routeIs('admin.proformas.*') ? 'bg-primary bg-opacity-10 text-primary' : 'text-body-secondary' }}">
-                        <i class="bi bi-file-earmark-check fs-6"></i>
-                        <span>Proformas</span>
                     </a>
                     @endcan
                 </div>
