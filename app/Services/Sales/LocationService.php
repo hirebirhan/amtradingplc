@@ -17,14 +17,14 @@ class LocationService
         if ($user->hasRole('SuperAdmin') || $user->hasRole('GeneralManager')) {
             return [
                 'branches' => Branch::orderBy('name')->get(),
-                'warehouses' => Warehouse::orderBy('name')->get()
+                'warehouses' => Warehouse::with('branches')->orderBy('name')->get()
             ];
         }
         // Branch Manager sees warehouses in their branch
         elseif ($user->hasRole('BranchManager') && $user->branch_id) {
             return [
                 'branches' => Branch::where('id', $user->branch_id)->get(),
-                'warehouses' => Warehouse::whereHas('branches', function($q) use ($user) {
+                'warehouses' => Warehouse::with('branches')->whereHas('branches', function($q) use ($user) {
                     $q->where('branches.id', $user->branch_id);
                 })->orderBy('name')->get()
             ];
@@ -33,7 +33,7 @@ class LocationService
         elseif (!$user->branch_id && !$user->warehouse_id) {
             return [
                 'branches' => Branch::orderBy('name')->get(),
-                'warehouses' => Warehouse::orderBy('name')->get()
+                'warehouses' => Warehouse::with('branches')->orderBy('name')->get()
             ];
         }
 

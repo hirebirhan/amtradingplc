@@ -253,8 +253,7 @@ Route::prefix('admin')->middleware(['auth', 'active'])->group(function () {
         Route::get('/{sale}/edit', function(App\Models\Sale $sale) {
             return view('sales-edit', ['sale' => $sale]);
         })->middleware('permission:sales.edit')->name('edit');
-            
-        Route::get('/{sale}/print', [App\Http\Controllers\SaleController::class, 'print'])
+    Route::get('/{sale}/print', [App\Http\Controllers\SaleController::class, 'print'])
             ->middleware('permission:sales.view')->name('print');
     });
 

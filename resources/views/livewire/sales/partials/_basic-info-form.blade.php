@@ -92,13 +92,13 @@
                     required 
                 >
                     <option value="">Select selling location...</option>
-                    @foreach($warehouses as $warehouse)
+                    @foreach($this->warehouseOptions as $warehouse)
                         @php
                             $stockCount = \App\Models\Stock::where('warehouse_id', $warehouse->id)->where('quantity', '>', 0)->count();
                         @endphp
                         <option value="{{ $warehouse->id }}">
-                            @if($warehouse->branch)
-                                {{ $warehouse->branch->name }} - {{ $warehouse->name }}
+                            @if(isset($warehouse->branches) && count($warehouse->branches) > 0)
+                                {{ $warehouse->branches[0]->name }} - {{ $warehouse->name }}
                             @else
                                 {{ $warehouse->name }}
                             @endif
