@@ -54,10 +54,24 @@ class Index extends Component
      */
     public function getThisMonthCountProperty()
     {
-        return Transfer::forUser(auth()->user())
-            ->whereYear('date_initiated', now()->year)
-            ->whereMonth('date_initiated', now()->month)
-            ->count();
+        $user = auth()->user();
+        $query = Transfer::whereYear('date_initiated', now()->year)
+            ->whereMonth('date_initiated', now()->month);
+            
+        // Apply branch filtering for non-admin users
+        if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
+            if ($user->branch_id) {
+                $query->where(function ($q) use ($user) {
+                    $q->where(function ($sq) use ($user) {
+                        $sq->where('source_type', 'branch')->where('source_id', $user->branch_id);
+                    })->orWhere(function ($sq) use ($user) {
+                        $sq->where('destination_type', 'branch')->where('destination_id', $user->branch_id);
+                    });
+                });
+            }
+        }
+        
+        return $query->count();
     }
 
     /**
@@ -66,8 +80,15 @@ class Index extends Component
     public function getOutgoingTransfersCountProperty()
     {
         $user = auth()->user();
-        return Transfer::forUser($user)
-            ->where(function($query) use ($user) {
+        $query = Transfer::query();
+        
+        // Apply branch filtering for non-admin users
+        if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
+            if ($user->branch_id) {
+                $query->where('source_type', 'branch')->where('source_id', $user->branch_id);
+            }
+        } else {
+            $query->where(function($query) use ($user) {
                 $query->where(function($q) use ($user) {
                     $q->where('source_type', 'warehouse')
                       ->where('source_id', $user->warehouse_id);
@@ -75,8 +96,10 @@ class Index extends Component
                     $q->where('source_type', 'branch')
                       ->where('source_id', $user->branch_id);
                 });
-            })
-            ->count();
+            });
+        }
+        
+        return $query->count();
     }
 
     /**
@@ -85,8 +108,15 @@ class Index extends Component
     public function getIncomingTransfersCountProperty()
     {
         $user = auth()->user();
-        return Transfer::forUser($user)
-            ->where(function($query) use ($user) {
+        $query = Transfer::query();
+        
+        // Apply branch filtering for non-admin users
+        if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
+            if ($user->branch_id) {
+                $query->where('destination_type', 'branch')->where('destination_id', $user->branch_id);
+            }
+        } else {
+            $query->where(function($query) use ($user) {
                 $query->where(function($q) use ($user) {
                     $q->where('destination_type', 'warehouse')
                       ->where('destination_id', $user->warehouse_id);
@@ -94,8 +124,10 @@ class Index extends Component
                     $q->where('destination_type', 'branch')
                       ->where('destination_id', $user->branch_id);
                 });
-            })
-            ->count();
+            });
+        }
+        
+        return $query->count();
     }
 
     public function sortBy($field)
@@ -113,10 +145,24 @@ class Index extends Component
      */
     protected function getTransfersQuery()
     {
-        return Transfer::query()
-            ->whereIn('status', ['completed', 'rejected'])
-            ->forUser(auth()->user())
-            ->when($this->search, function($query) {
+        $user = auth()->user();
+        $query = Transfer::query()
+            ->whereIn('status', ['completed', 'rejected']);
+            
+        // Apply branch filtering for non-admin users
+        if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
+            if ($user->branch_id) {
+                $query->where(function ($q) use ($user) {
+                    $q->where(function ($sq) use ($user) {
+                        $sq->where('source_type', 'branch')->where('source_id', $user->branch_id);
+                    })->orWhere(function ($sq) use ($user) {
+                        $sq->where('destination_type', 'branch')->where('destination_id', $user->branch_id);
+                    });
+                });
+            }
+        }
+        
+        return $query->when($this->search, function($query) {
                 $query->where(function($q) {
                     $q->where('reference_code', 'like', '%' . $this->search . '%')
                       ->orWhereHas('sourceWarehouse', function($subQ) {

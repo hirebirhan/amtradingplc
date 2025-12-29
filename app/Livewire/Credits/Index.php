@@ -350,10 +350,10 @@ class Index extends Component
         }
         
         // Apply branch filter for non-admin users
-        if (!Auth::user()->hasRole('admin')) {
-            $userBranchId = Auth::user()->branch_id;
-            if ($userBranchId !== null) {
-                $query->where('branch_id', $userBranchId);
+        $user = auth()->user();
+        if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
+            if ($user->branch_id) {
+                $query->forBranch($user->branch_id);
             }
         }
 
@@ -582,10 +582,10 @@ class Index extends Component
         }
         
         // Apply branch filter for non-admin users
-        if (!Auth::user()->hasRole('admin')) {
-            $userBranchId = Auth::user()->branch_id;
-            if ($userBranchId !== null) {
-                $query->where('branch_id', $userBranchId);
+        $user = auth()->user();
+        if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
+            if ($user->branch_id) {
+                $query->forBranch($user->branch_id);
             }
         }
 

@@ -4,7 +4,6 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
@@ -19,15 +18,13 @@ use App\Models\Stock;
 use App\Models\StockHistory;
 use App\Models\PurchaseItem;
 
+use App\Traits\HasBranch;
+use App\Services\BranchItemService;
+
 class Item extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, HasBranch;
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var array<int, string>
-     */
     protected $fillable = [
         'name',
         'sku',
@@ -48,7 +45,6 @@ class Item extends Model
         'is_active',
         'created_by',
         'updated_by',
-        'deleted_by',
     ];
 
     /**
@@ -68,48 +64,26 @@ class Item extends Model
     ];
 
     /**
+     * Boot the model.
+     */
+    protected static function boot()
+    {
+        parent::boot();
+        
+        static::creating(function ($item) {
+            if (!$item->sku && $item->branch_id) {
+                $service = new BranchItemService();
+                $item->sku = $service->generateBranchSku($item->branch_id);
+            }
+        });
+    }
+
+    /**
      * Get the category that owns the item.
      */
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class);
-    }
-
-    /**
-     * Get the branch that owns the item.
-     */
-    public function branch(): BelongsTo
-    {
-        return $this->belongsTo(Branch::class);
-    }
-
-    /**
-     * Scope items for the current user based on their branch.
-     */
-    public function scopeForUser($query, User $user = null)
-    {
-        if (!$user) {
-            $user = auth()->user();
-        }
-
-        if (!$user) {
-            return $query;
-        }
-
-        // SuperAdmin and GeneralManager see all items
-        if ($user->isSuperAdmin() || $user->isGeneralManager()) {
-            return $query;
-        }
-
-        // Branch managers and other users see only their branch items + global items (null branch_id)
-        if ($user->branch_id) {
-            return $query->where(function($q) use ($user) {
-                $q->where('branch_id', $user->branch_id)
-                  ->orWhereNull('branch_id');
-            });
-        }
-
-        return $query;
     }
 
     /**
@@ -618,7 +592,7 @@ class Item extends Model
     public function isPriceBelowCost(float $sellingPrice): bool
     {
         $costPrice = $this->cost_price_per_unit ?: ($this->cost_price / max($this->unit_quantity, 1));
-        return $sellingPrice < $costPrice;
+        return $costPrice > 0 && $sellingPrice < $costPrice;
     }
 
     /**

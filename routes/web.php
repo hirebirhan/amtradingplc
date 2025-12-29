@@ -70,6 +70,9 @@ Route::prefix('admin')->middleware(['auth', 'active'])->group(function () {
             return view('categories');
         })->middleware('permission:categories.view')->name('index');
 
+        Route::get('/manage', App\Livewire\Categories\CategoryManager::class)
+            ->middleware('permission:categories.view')->name('manage');
+
         Route::get('/create', function() {
             return view('categories-create');
         })->middleware('permission:categories.create')->name('create');

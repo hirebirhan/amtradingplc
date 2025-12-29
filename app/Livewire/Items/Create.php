@@ -12,7 +12,7 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
+
 
 #[Layout('components.layouts.app')]
 class Create extends Component
@@ -91,9 +91,16 @@ class Create extends Component
      */
     protected function performCategorySearch($searchTerm)
     {
-        return Category::where('name', 'like', '%' . $searchTerm . '%')
-            ->where('is_active', true)
-            ->orderBy('name')
+        $user = auth()->user();
+        $query = Category::where('name', 'like', '%' . $searchTerm . '%')
+            ->where('is_active', true);
+            
+        // Apply branch filtering for non-admin users
+        if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
+            $query->forBranch($user->branch_id);
+        }
+        
+        return $query->orderBy('name')
             ->limit(15)
             ->get()
             ->map(function ($category) {
@@ -264,9 +271,6 @@ class Create extends Component
             ->where('branch_id', $branchId)
             ->exists();
     }
-
-
-
     public function save()
     {
         // Check permissions
@@ -277,11 +281,7 @@ class Create extends Component
 
         $this->isSubmitting = true;
         
-        // Debug: Log the form data
-        Log::info('Item creation attempt', [
-            'form_data' => $this->form,
-            'user_id' => Auth::id(),
-        ]);
+
 
         try {
             $validated = $this->validate([
@@ -316,7 +316,7 @@ class Create extends Component
                 'form.description.max' => 'Description cannot exceed 1000 characters.',
             ]);
 
-            Log::info('Validation passed', ['validated' => $validated]);
+
 
             DB::beginTransaction();
 
@@ -324,7 +324,7 @@ class Create extends Component
             $sku = $this->generateUniqueSku();
             $barcode = $this->generateUniqueBarcode();
 
-            Log::info('Generated identifiers', ['sku' => $sku, 'barcode' => $barcode]);
+
 
             // Set default pricing values
             $costPrice = 0;
@@ -342,12 +342,12 @@ class Create extends Component
                 'branch_id' => Auth::user()->isSuperAdmin() ? null : Auth::user()->branch_id,
             ]);
 
-            Log::info('Item data prepared', ['itemData' => $itemData]);
+
 
             // Create the item
             $item = Item::create($itemData);
 
-            Log::info('Item created successfully', ['item_id' => $item->id]);
+
 
             DB::commit();
 
@@ -362,7 +362,7 @@ class Create extends Component
 
         } catch (\Illuminate\Validation\ValidationException $e) {
             $this->isSubmitting = false;
-            Log::error('Validation failed', ['errors' => $e->errors()]);
+
             
             // Check for duplicate name error and provide helpful message
             if (isset($e->errors()['form.name']) && str_contains($e->errors()['form.name'][0], 'already been taken')) {
@@ -376,12 +376,7 @@ class Create extends Component
             
             session()->flash('message', 'An error occurred while creating the item. Please try again.');
 
-            // Log the error for troubleshooting
-            Log::error('Item creation failed: ' . $e->getMessage(), [
-                'user_id' => Auth::id(),
-                'form_data' => $this->form,
-                'trace' => $e->getTraceAsString(),
-            ]);
+
         }
     }
 
@@ -412,14 +407,12 @@ class Create extends Component
         
         return $this->redirect(route('admin.items.index'));
     }
-    
-
-
     public function render()
     {
         // The full categories list is only used for the initial load
         // and when no search is performed
         $categories = $this->getHierarchicalCategories();
+        
         $itemUnits = collect(ItemUnit::cases())->mapWithKeys(function ($unit) {
             return [$unit->value => $unit->label()];
         });
@@ -436,11 +429,18 @@ class Create extends Component
      */
     private function getHierarchicalCategories()
     {
+        $user = auth()->user();
         $categories = collect();
-        $rootCategories = Category::where('parent_id', null)
-            ->where('is_active', true)
-            ->orderBy('name')
-            ->get();
+        
+        $query = Category::where('parent_id', null)
+            ->where('is_active', true);
+            
+        // Apply branch filtering for non-admin users
+        if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
+            $query->forBranch($user->branch_id);
+        }
+        
+        $rootCategories = $query->orderBy('name')->get();
 
         foreach ($rootCategories as $category) {
             $this->addCategoryWithChildren($categories, $category, 0);
@@ -457,10 +457,16 @@ class Create extends Component
         $category->display_name = str_repeat('— ', $level) . $category->name;
         $collection->push($category);
 
-        $children = Category::where('parent_id', $category->id)
-            ->where('is_active', true)
-            ->orderBy('name')
-            ->get();
+        $user = auth()->user();
+        $query = Category::where('parent_id', $category->id)
+            ->where('is_active', true);
+            
+        // Apply branch filtering for non-admin users
+        if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
+            $query->forBranch($user->branch_id);
+        }
+        
+        $children = $query->orderBy('name')->get();
 
         foreach ($children as $child) {
             $this->addCategoryWithChildren($collection, $child, $level + 1);

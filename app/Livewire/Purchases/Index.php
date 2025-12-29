@@ -101,26 +101,9 @@ class Index extends Component
             return $query;
         }
         
-        // Branch Manager sees only their branch's purchases (both direct branch purchases and warehouse purchases)
-        if ($user->isBranchManager() && $user->branch_id) {
-            return $query->where(function($q) use ($user) {
-                $q->where('branch_id', $user->branch_id)
-                  ->orWhereHas('warehouse', function($warehouseQuery) use ($user) {
-                      $warehouseQuery->whereHas('branches', function($branchQuery) use ($user) {
-                          $branchQuery->where('branches.id', $user->branch_id);
-                      });
-                  });
-            });
-        }
-        
-        // Warehouse-specific users see only their warehouse's purchases
-        if ($user->warehouse_id) {
-            return $query->where('warehouse_id', $user->warehouse_id);
-        }
-        
-        // Other branch users see only their branch's direct purchases
+        // Other users see only their branch's purchases
         if ($user->branch_id) {
-            return $query->where('branch_id', $user->branch_id);
+            return $query->forBranch($user->branch_id);
         }
         
         return $query;

@@ -37,7 +37,14 @@ class ItemForm extends Component
     {
         $this->item = $item ?? new Item();
         $this->isEdit = $item ? true : false;
-        $this->categories = Category::orderBy('name')->get();
+        
+        // Load categories with branch filtering
+        $user = auth()->user();
+        if ($user->isSuperAdmin() || $user->isGeneralManager()) {
+            $this->categories = Category::orderBy('name')->get();
+        } else {
+            $this->categories = Category::forBranch($user->branch_id)->orderBy('name')->get();
+        }
 
         if (!$this->isEdit) {
             $this->item->is_active = true;

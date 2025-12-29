@@ -101,14 +101,23 @@ class Index extends Component
     }
 
     /**
-     * Get filtered customers query
+     * Get filtered customers query with branch isolation
      */
     private function getFilteredCustomers($paginate = true)
     {
+        $user = auth()->user();
         $query = Customer::query()
             ->withCount(['sales'])
-            ->where('is_active', true)
-            ->when($this->search, function (Builder $query) {
+            ->where('is_active', true);
+            
+        // Apply branch filtering for non-admin users
+        if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
+            if ($user->branch_id) {
+                $query->forBranch($user->branch_id);
+            }
+        }
+        
+        $query->when($this->search, function (Builder $query) {
                 $query->where(function($q) {
                     $q->where('name', 'like', '%' . $this->search . '%')
                       ->orWhere('email', 'like', '%' . $this->search . '%')
@@ -131,14 +140,32 @@ class Index extends Component
     public function render()
     {
         $customers = $this->getFilteredCustomers();
+        $user = auth()->user();
         
-        // Calculate total customers count (all active)
-        $totalCustomersCount = Customer::where('is_active', true)->count();
-        $creditCustomersCount = Customer::where('credit_limit', '>', 0)->count();
+        // Calculate total customers count with branch filtering
+        $totalQuery = Customer::where('is_active', true);
+        if (!$user->isSuperAdmin() && !$user->isGeneralManager() && $user->branch_id) {
+            $totalQuery->forBranch($user->branch_id);
+        }
+        $totalCustomersCount = $totalQuery->count();
+        
+        // Calculate credit customers count with branch filtering
+        $creditQuery = Customer::where('credit_limit', '>', 0);
+        if (!$user->isSuperAdmin() && !$user->isGeneralManager() && $user->branch_id) {
+            $creditQuery->forBranch($user->branch_id);
+        }
+        $creditCustomersCount = $creditQuery->count();
+        
+        // Get branches for filter dropdown based on user role
+        if ($user->isSuperAdmin() || $user->isGeneralManager()) {
+            $branches = Branch::orderBy('name')->get();
+        } else {
+            $branches = collect([]);
+        }
         
         return view('livewire.customers.index', [
             'customers' => $customers,
-            'branches' => Branch::orderBy('name')->get(),
+            'branches' => $branches,
             'creditCustomersCount' => $creditCustomersCount
         ])->layout('layouts.app');
     }

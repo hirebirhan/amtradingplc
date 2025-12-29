@@ -111,7 +111,7 @@ class User extends Authenticatable
      */
     public function isWarehouseUser(): bool
     {
-        return $this->hasRole(UserRole::WAREHOUSE_MANAGER->value);
+        return $this->hasRole(UserRole::WAREHOUSE_USER->value) || $this->hasRole(UserRole::WAREHOUSE_MANAGER->value);
     }
 
     /**
@@ -174,26 +174,33 @@ class User extends Authenticatable
     }
 
     /**
+     * Check if user can access a specific branch for management operations.
+     */
+    public function canAccessBranch(?int $branchId): bool
+    {
+        if (!$branchId) {
+            return true; // Global items accessible to all
+        }
+        
+        return $this->hasAccessToBranch($branchId);
+    }
+
+    /**
      * Check if user has access to a specific branch
      */
-    public function hasAccessToBranch($branchId): bool
+    public function hasAccessToBranch(?int $branchId): bool
     {
+        if (!$branchId) {
+            return true;
+        }
+
         // Super admins and General Managers have access to all branches
         if ($this->isSuperAdmin() || $this->isGeneralManager()) {
             return true;
         }
 
-        // Users assigned to the branch
-        if ($this->branch_id == $branchId) {
-            return true;
-        }
-
-        // Users assigned to a warehouse within the branch
-        if ($this->warehouse && $this->warehouse->branches->contains('id', $branchId)) {
-            return true;
-        }
-
-        return false;
+        // Users can only access their assigned branch
+        return $this->branch_id === $branchId;
     }
 
     /**
@@ -212,7 +219,7 @@ class User extends Authenticatable
         }
 
         // Branch managers have access to warehouses in their branch
-        if ($this->hasRole(UserRole::BRANCH_MANAGER->value) && $this->branch) {
+        if ($this->isBranchManager() && $this->branch) {
             return $this->branch->warehouses->contains('id', $warehouseId);
         }
 

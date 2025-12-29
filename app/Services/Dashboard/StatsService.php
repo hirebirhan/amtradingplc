@@ -32,7 +32,18 @@ class StatsService implements StatsServiceInterface
     private function getSalesMetrics(User $user): array
     {
         $salesQuery = Sale::query();
-        $this->applySalesFiltering($salesQuery, $user);
+        
+        // Apply branch filtering for non-admin users
+        if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
+            if ($user->branch_id) {
+                $salesQuery->forBranch($user->branch_id);
+            }
+            
+            // Sales users see only their own sales
+            if ($user->hasRole('Sales')) {
+                $salesQuery->where('user_id', $user->id);
+            }
+        }
 
         $salesData = $salesQuery->selectRaw('
             COUNT(*) as total_sales,
@@ -59,7 +70,13 @@ class StatsService implements StatsServiceInterface
     private function getPurchaseMetrics(User $user): array
     {
         $purchasesQuery = Purchase::query();
-        $this->applyPurchasesFiltering($purchasesQuery, $user);
+        
+        // Apply branch filtering for non-admin users
+        if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
+            if ($user->branch_id) {
+                $purchasesQuery->forBranch($user->branch_id);
+            }
+        }
 
         $purchaseData = $purchasesQuery->selectRaw('
             COUNT(*) as total_purchases,
@@ -71,7 +88,7 @@ class StatsService implements StatsServiceInterface
                 AND YEAR(purchase_date) = YEAR(CURRENT_DATE()) THEN total_amount ELSE 0 END) as monthly_purchase_amount
         ')->first();
 
-        $canViewPurchases = $user->can('purchases.view'); // Allow users with purchase view permission
+        $canViewPurchases = $user->can('purchases.view');
 
         return [
             'total_purchases' => $canViewPurchases ? ($purchaseData->total_purchases ?? 0) : 0,
@@ -85,11 +102,24 @@ class StatsService implements StatsServiceInterface
 
     private function getBasicStats(User $user): array
     {
+        // Apply branch filtering to basic stats
+        $categoriesQuery = Category::where('is_active', true);
+        $itemsQuery = Item::where('is_active', true);
+        $customersQuery = Customer::where('is_active', true);
+        
+        if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
+            if ($user->branch_id) {
+                $categoriesQuery->forBranch($user->branch_id);
+                $itemsQuery->forBranch($user->branch_id);
+                $customersQuery->forBranch($user->branch_id);
+            }
+        }
+        
         return [
-            'categories_count' => Category::count(),
-            'items_count' => Item::count(),
+            'categories_count' => $categoriesQuery->count(),
+            'items_count' => $itemsQuery->count(),
             'warehouses_count' => $this->getWarehousesCount($user),
-            'customers_count' => $this->getCustomersCount($user),
+            'customers_count' => $customersQuery->count(),
         ];
     }
 
@@ -112,90 +142,5 @@ class StatsService implements StatsServiceInterface
         return 0;
     }
 
-    private function getCustomersCount(User $user): int
-    {
-        $customersQuery = Customer::query();
 
-        if ($user->isSuperAdmin()) {
-            return $customersQuery->count();
-        }
-
-        if ($user->hasRole(UserRole::BRANCH_MANAGER->value) && $user->branch_id) {
-            $customersQuery->where('branch_id', $user->branch_id);
-        } elseif ($user->hasRole(UserRole::WAREHOUSE_USER->value) && $user->warehouse_id) {
-            $customersQuery->whereExists(function($query) use ($user) {
-                $query->select(DB::raw(1))
-                      ->from('sales')
-                      ->where('warehouse_id', $user->warehouse_id)
-                      ->whereColumn('sales.customer_id', 'customers.id');
-            });
-        } elseif ($user->hasRole(UserRole::SALES->value)) {
-            $customersQuery->whereExists(function($query) use ($user) {
-                $query->select(DB::raw(1))
-                      ->from('sales')
-                      ->where('user_id', $user->id)
-                      ->whereColumn('sales.customer_id', 'customers.id');
-            });
-        } else {
-            return 0;
-        }
-
-        return $customersQuery->count();
-    }
-
-    private function applySalesFiltering($query, User $user): void
-    {
-        if ($user->isSuperAdmin()) {
-            return; // No filtering for admins
-        }
-
-        if ($user->hasRole(UserRole::BRANCH_MANAGER->value) && $user->branch_id) {
-            $query->whereExists(function($q) use ($user) {
-                $q->select(DB::raw(1))
-                  ->from('warehouses')
-                  ->join('branch_warehouse', 'warehouses.id', '=', 'branch_warehouse.warehouse_id')
-                  ->where('branch_warehouse.branch_id', $user->branch_id)
-                  ->whereColumn('warehouses.id', 'sales.warehouse_id');
-            });
-        } elseif ($user->hasRole(UserRole::WAREHOUSE_USER->value) && $user->warehouse_id) {
-            $query->where('warehouse_id', $user->warehouse_id);
-        } elseif ($user->hasRole(UserRole::SALES->value)) {
-            $query->where('user_id', $user->id);
-        } else {
-            $query->whereRaw('1 = 0'); // No access
-        }
-    }
-
-    private function applyPurchasesFiltering($query, User $user): void
-    {
-        if ($user->isSuperAdmin()) {
-            return; // No filtering for admins
-        }
-
-        if ($user->hasRole(UserRole::BRANCH_MANAGER->value) && $user->branch_id) {
-            $query->whereExists(function($q) use ($user) {
-                $q->select(DB::raw(1))
-                  ->from('warehouses')
-                  ->join('branch_warehouse', 'warehouses.id', '=', 'branch_warehouse.warehouse_id')
-                  ->where('branch_warehouse.branch_id', $user->branch_id)
-                  ->whereColumn('warehouses.id', 'purchases.warehouse_id');
-            });
-        } elseif ($user->hasRole(UserRole::WAREHOUSE_USER->value) && $user->warehouse_id) {
-            $query->where('warehouse_id', $user->warehouse_id);
-        } elseif ($user->hasRole(UserRole::SALES->value) && $user->branch_id) {
-            // Sales users can see purchases from their assigned branch
-            $query->where(function($q) use ($user) {
-                $q->where('branch_id', $user->branch_id)
-                  ->orWhereExists(function($warehouseQuery) use ($user) {
-                      $warehouseQuery->select(DB::raw(1))
-                        ->from('warehouses')
-                        ->join('branch_warehouse', 'warehouses.id', '=', 'branch_warehouse.warehouse_id')
-                        ->where('branch_warehouse.branch_id', $user->branch_id)
-                        ->whereColumn('warehouses.id', 'purchases.warehouse_id');
-                  });
-            });
-        } else {
-            $query->whereRaw('1 = 0'); // No access for users without proper assignments
-        }
-    }
 }
