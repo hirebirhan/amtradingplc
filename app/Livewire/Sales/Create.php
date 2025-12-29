@@ -289,9 +289,12 @@ class Create extends Component
     // Computed Properties
     public function getFilteredCustomersProperty()
     {
-        return collect($this->customers)->map(function($customer) {
-            return (object) $customer;
-        });
+        return json_decode(json_encode($this->customers));
+    }
+
+    public function getWarehouseOptionsProperty()
+    {
+        return json_decode(json_encode($this->warehouses));
     }
 
     public function getFilteredItemOptionsProperty(): array

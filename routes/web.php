@@ -253,34 +253,8 @@ Route::prefix('admin')->middleware(['auth', 'active'])->group(function () {
         Route::get('/{sale}/edit', function(App\Models\Sale $sale) {
             return view('sales-edit', ['sale' => $sale]);
         })->middleware('permission:sales.edit')->name('edit');
-            
-        Route::get('/{sale}/print', [App\Http\Controllers\SaleController::class, 'print'])
+    Route::get('/{sale}/print', [App\Http\Controllers\SaleController::class, 'print'])
             ->middleware('permission:sales.view')->name('print');
-    });
-
-    // Proforma Routes
-    Route::prefix('proformas')->name('admin.proformas.')->middleware('App\Http\Middleware\EnforceBranchAuthorization')->group(function () {
-        Route::get('/', function() {
-            return view('proformas');
-        })->middleware('permission:proformas.view')->name('index');
-
-        Route::get('/create', function() {
-            return view('proformas-create');
-        })->middleware('permission:proformas.create')->name('create');
-
-        Route::get('/{proforma}', function(App\Models\Proforma $proforma) {
-            return view('proformas-show', ['proforma' => $proforma]);
-        })->middleware('permission:proformas.view')->name('show');
-
-        Route::get('/{proforma}/edit', function(App\Models\Proforma $proforma) {
-            return view('proformas-edit', ['proforma' => $proforma]);
-        })->middleware('permission:proformas.edit')->name('edit');
-            
-        Route::get('/{proforma}/print', [App\Http\Controllers\ProformaController::class, 'print'])
-            ->middleware('permission:proformas.view')->name('print');
-            
-        Route::get('/{proforma}/pdf', [App\Http\Controllers\ProformaController::class, 'pdf'])
-            ->middleware('permission:proformas.view')->name('pdf');
     });
 
     // Transfer Routes
