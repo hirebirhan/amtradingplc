@@ -257,6 +257,8 @@ Route::prefix('admin')->middleware(['auth', 'active'])->group(function () {
             ->middleware('permission:sales.view')->name('print');
     });
 
+
+
     // Transfer Routes
     Route::prefix('transfers')->name('admin.transfers.')->middleware('App\Http\Middleware\EnforceBranchAuthorization')->group(function () {
         Route::get('/', App\Livewire\Transfers\Index::class)
