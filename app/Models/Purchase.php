@@ -17,11 +17,12 @@ use App\Models\Stock;
 use App\Models\StockHistory;
 use App\Enums\PaymentStatus;
 use App\Enums\PurchaseStatus;
+use App\Traits\HasBranch;
 use App\Traits\HasBranchAuthorization;
 
 class Purchase extends Model
 {
-    use HasFactory, SoftDeletes, HasBranchAuthorization;
+    use HasFactory, SoftDeletes, HasBranch, HasBranchAuthorization;
 
     protected $fillable = [
         'reference_no',

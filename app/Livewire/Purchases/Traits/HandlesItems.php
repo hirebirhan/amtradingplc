@@ -25,8 +25,17 @@ trait HandlesItems
 
     public function loadItems()
     {
-        $this->itemOptions = Item::where('is_active', true)
-            ->orderBy('name')
+        $user = auth()->user();
+        $query = Item::where('is_active', true);
+        
+        // Apply branch filtering for non-admin users
+        if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
+            if ($user->branch_id) {
+                $query->where('branch_id', $user->branch_id);
+            }
+        }
+        
+        $this->itemOptions = $query->orderBy('name')
             ->get()
             ->map(function ($item) {
                 return [
@@ -342,9 +351,17 @@ trait HandlesItems
         }
         
         $search = strtolower(trim($this->itemSearch));
+        $user = auth()->user();
+        $query = Item::where('is_active', true);
         
-        return Item::where('is_active', true)
-            ->where(function ($query) use ($search) {
+        // Apply branch filtering for non-admin users
+        if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
+            if ($user->branch_id) {
+                $query->where('branch_id', $user->branch_id);
+            }
+        }
+        
+        return $query->where(function ($query) use ($search) {
                 $query->whereRaw('LOWER(name) LIKE ?', ['%' . $search . '%'])
                       ->orWhereRaw('LOWER(sku) LIKE ?', ['%' . $search . '%'])
                       ->orWhereRaw('LOWER(barcode) LIKE ?', ['%' . $search . '%']);

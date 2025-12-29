@@ -14,14 +14,14 @@ class LocationService
         $user = Auth::user();
         
         // SuperAdmin and GeneralManager see all locations
-        if ($user->hasRole('SuperAdmin') || $user->hasRole('GeneralManager')) {
+        if ($user->isSuperAdmin() || $user->isGeneralManager()) {
             return [
                 'branches' => Branch::orderBy('name')->get(),
                 'warehouses' => Warehouse::with('branches')->orderBy('name')->get()
             ];
         }
         // Branch Manager sees warehouses in their branch
-        elseif ($user->hasRole('BranchManager') && $user->branch_id) {
+        elseif ($user->isBranchManager() && $user->branch_id) {
             return [
                 'branches' => Branch::where('id', $user->branch_id)->get(),
                 'warehouses' => Warehouse::with('branches')->whereHas('branches', function($q) use ($user) {
@@ -48,7 +48,7 @@ class LocationService
         if ($user->warehouse_id) {
             // Warehouse user - auto-select their warehouse
             $form['warehouse_id'] = $user->warehouse_id;
-        } elseif ($user->hasRole('BranchManager') && $user->branch_id) {
+        } elseif ($user->isBranchManager() && $user->branch_id) {
             // Branch manager - auto-select first warehouse in their branch
             $branchWarehouse = Warehouse::whereHas('branches', function($q) use ($user) {
                 $q->where('branches.id', $user->branch_id);

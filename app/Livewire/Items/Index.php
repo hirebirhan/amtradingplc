@@ -710,10 +710,17 @@ class Index extends Component
         }
         
         $query = Item::query()
-            ->forUser($user)
             ->with(['category', 'stocks.warehouse', 'purchaseItems', 'saleItems'])
-            ->where('is_active', true)
-            ->when($this->search, function ($query) {
+            ->where('is_active', true);
+            
+        // Apply branch filtering for non-admin users
+        if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
+            if ($user->branch_id) {
+                $query->where('branch_id', $user->branch_id);
+            }
+        }
+        
+        $query->when($this->search, function ($query) {
                 // Handle SKU search with and without prefix
                 $search = $this->search;
                 $prefix = config('app.sku_prefix', 'CODE-');
@@ -787,20 +794,34 @@ class Index extends Component
         }
         
         $items = $query->paginate($this->perPage);
-        $categories = Category::orderBy('name')->get();
+        
+        // Apply branch filtering to categories
+        if ($user->isSuperAdmin() || $user->isGeneralManager()) {
+            $categories = Category::orderBy('name')->get();
+        } else {
+            $categories = Category::forBranch($user->branch_id)->orderBy('name')->get();
+        }
+        
         $branches = Branch::orderBy('name')->get();
         $warehouses = Warehouse::orderBy('name')->get();
 
-        // Calculate low purchase and no purchase counts
-        $lowStockCount = Item::whereRaw('(SELECT SUM(quantity) FROM purchase_items WHERE item_id = items.id) <= items.reorder_level')
+        // Calculate statistics with branch filtering
+        $statsQuery = Item::query();
+        if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
+            if ($user->branch_id) {
+                $statsQuery->where('branch_id', $user->branch_id);
+            }
+        }
+        
+        $lowStockCount = (clone $statsQuery)->whereRaw('(SELECT SUM(quantity) FROM purchase_items WHERE item_id = items.id) <= items.reorder_level')
             ->whereRaw('(SELECT SUM(quantity) FROM purchase_items WHERE item_id = items.id) > 0')
             ->count();
             
-        $outOfStockCount = Item::whereRaw('(SELECT SUM(quantity) FROM purchase_items WHERE item_id = items.id) = 0 OR (SELECT SUM(quantity) FROM purchase_items WHERE item_id = items.id) IS NULL')
+        $outOfStockCount = (clone $statsQuery)->whereRaw('(SELECT SUM(quantity) FROM purchase_items WHERE item_id = items.id) = 0 OR (SELECT SUM(quantity) FROM purchase_items WHERE item_id = items.id) IS NULL')
             ->count();
 
-        $totalCount = Item::count();
-        $inStockCount = Item::whereRaw('(SELECT SUM(quantity) FROM purchase_items WHERE item_id = items.id) > 0')->count();
+        $totalCount = (clone $statsQuery)->count();
+        $inStockCount = (clone $statsQuery)->whereRaw('(SELECT SUM(quantity) FROM purchase_items WHERE item_id = items.id) > 0')->count();
 
         // Get duplicate names for highlighting
         $duplicateNames = [];

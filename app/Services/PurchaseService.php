@@ -20,22 +20,22 @@ class PurchaseService
         /** @var \App\Models\User $user */
         
         // SuperAdmin and GeneralManager can create purchases
-        if ($user->hasRole('SuperAdmin')) {
+        if ($user->isSuperAdmin() || $user->isGeneralManager()) {
             return true;
         }
         
         // Sales users can create purchases for their assigned branch
-        if ($user->hasRole('Sales') && $user->branch_id) {
+        if ($user->isSales() && $user->branch_id) {
             return true;
         }
         
         // BranchManager can create purchases
-        if ($user->hasRole('BranchManager')) {
+        if ($user->isBranchManager()) {
             return true;
         }
         
         // WarehouseUser can create purchases for their assigned warehouse
-        if ($user->hasRole('WarehouseUser') && $user->warehouse_id) {
+        if ($user->isWarehouseUser() && $user->warehouse_id) {
             return true;
         }
         

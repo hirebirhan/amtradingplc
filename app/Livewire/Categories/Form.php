@@ -28,15 +28,26 @@ class Form extends Component
 
     protected function rules()
     {
-        $nameUniqueRule = $this->isEdit
-            ? 'unique:categories,name,' . $this->category->id
-            : 'unique:categories,name';
-
-        return [
-            'name' => ['required', 'string', 'min:3', 'max:255', 'regex:/^[a-zA-Z0-9\s\-_]+$/', $nameUniqueRule],
+        $branchId = auth()->user()->branch_id;
+        
+        $rules = [
+            'name' => ['required', 'string', 'min:3', 'max:255', 'regex:/^[a-zA-Z0-9\s\-_]+$/'],
             'description' => 'nullable|string|max:1000',
-            'parent_id' => 'nullable|exists:categories,id',
+            'parent_id' => ['nullable', 'exists:categories,id', function ($attribute, $value, $fail) {
+                if ($value && $this->isEdit && $value == $this->category->id) {
+                    $fail('A category cannot be its own parent.');
+                }
+            }],
         ];
+
+        // Add unique validation for name within branch
+        if ($this->isEdit) {
+            $rules['name'][] = "unique:categories,name,{$this->category->id},id,branch_id,{$branchId}";
+        } else {
+            $rules['name'][] = "unique:categories,name,NULL,id,branch_id,{$branchId}";
+        }
+
+        return $rules;
     }
 
     protected $validationAttributes = [
@@ -78,15 +89,20 @@ class Form extends Component
     private function loadParentCategories(): void
     {
         try {
-            // Get all available parent categories (excluding the current category and its children if editing)
+            $branchId = auth()->user()->branch_id;
+            
             if ($this->isEdit) {
                 $excludedIds = $this->getCategoryAndChildrenIds($this->category);
-                $this->parentCategories = Category::whereNotIn('id', $excludedIds)
+                $this->parentCategories = Category::where('branch_id', $branchId)
+                    ->whereNotIn('id', $excludedIds)
                     ->orderBy('name')
                     ->get()
                     ->toArray();
             } else {
-                $this->parentCategories = Category::orderBy('name')->get()->toArray();
+                $this->parentCategories = Category::where('branch_id', $branchId)
+                    ->orderBy('name')
+                    ->get()
+                    ->toArray();
             }
         } catch (\Exception $e) {
             Log::error('Failed to load parent categories', [
@@ -117,7 +133,19 @@ class Form extends Component
         try {
             $this->isSubmitting = true;
             
+            // Debug logging
+            Log::info('Category save attempt started', [
+                'name' => $this->name,
+                'description' => $this->description,
+                'parent_id' => $this->parent_id,
+                'is_edit' => $this->isEdit,
+                'user_id' => auth()->id(),
+                'branch_id' => auth()->user()->branch_id
+            ]);
+            
             $validated = $this->validate();
+            
+            Log::info('Category validation passed', ['validated_data' => $validated]);
 
             // Generate a unique code from the name
             $baseCode = 'CAT-' . strtoupper(Str::substr(Str::slug($validated['name']), 0, 8));
@@ -129,7 +157,13 @@ class Form extends Component
                 $code = $this->category->code;
             } else {
                 // Otherwise generate a unique code
-                while (Category::where('code', $code)->exists()) {
+                $branchId = auth()->user()->branch_id;
+                while (Category::where('code', $code)
+                    ->where('branch_id', $branchId)
+                    ->when($this->isEdit, function($query) {
+                        return $query->where('id', '!=', $this->category->id);
+                    })
+                    ->exists()) {
                     $suffix = '-' . $counter;
                     // Ensure we don't exceed 15 characters
                     if (strlen($baseCode . $suffix) <= 15) {
@@ -155,13 +189,34 @@ class Form extends Component
             }
 
             // Prepare data for saving
-            $this->category->fill([
+            $categoryData = [
                 'name' => trim($validated['name']),
                 'code' => $code,
                 'description' => $validated['description'] ? trim($validated['description']) : null,
                 'parent_id' => $validated['parent_id'],
+                'branch_id' => auth()->user()->branch_id,
                 'is_active' => $this->is_active,
-            ]);
+            ];
+            
+            // Generate slug if not editing or if name changed
+            if (!$this->isEdit || $this->category->name !== $categoryData['name']) {
+                $categoryData['slug'] = Str::slug($categoryData['name']);
+                
+                // Ensure slug is unique within branch
+                $baseSlug = $categoryData['slug'];
+                $counter = 1;
+                while (Category::where('slug', $categoryData['slug'])
+                    ->where('branch_id', $categoryData['branch_id'])
+                    ->when($this->isEdit, function($query) {
+                        return $query->where('id', '!=', $this->category->id);
+                    })
+                    ->exists()) {
+                    $categoryData['slug'] = $baseSlug . '-' . $counter;
+                    $counter++;
+                }
+            }
+            
+            $this->category->fill($categoryData);
             
             $this->category->save();
 
@@ -178,6 +233,8 @@ class Form extends Component
 
             if (!$this->isEdit) {
                 $this->reset(['name', 'description', 'parent_id']);
+                $this->is_active = true;
+                $this->loadParentCategories(); // Reload parent categories
                 $this->flashCrudSuccess('category', 'created');
             } else {
                 $this->flashCrudSuccess('category', 'updated');
@@ -199,7 +256,7 @@ class Form extends Component
                 ]
             ]);
             
-            // Removed error flash - validation errors are sufficient
+            $this->addError('name', 'Failed to save category. Please try again.');
         } finally {
             $this->isSubmitting = false;
         }

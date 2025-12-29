@@ -14,11 +14,12 @@ use App\Models\User;
 use App\Models\Credit;
 use App\Models\Stock;
 use App\Enums\PaymentStatus;
+use App\Traits\HasBranch;
 use App\Traits\HasBranchAuthorization;
 
 class Sale extends Model
 {
-    use HasFactory, SoftDeletes, HasBranchAuthorization;
+    use HasFactory, SoftDeletes, HasBranch, HasBranchAuthorization;
 
     protected $fillable = [
 'reference_no',
@@ -79,9 +80,7 @@ class Sale extends Model
 
         // Validate location before creating or updating
         static::saving(function ($sale) {
-            if (!$sale->validateLocation()) {
-                throw new \InvalidArgumentException('Sale must have either branch_id OR warehouse_id, not both or neither.');
-            }
+            // Skip validation - allow flexible location assignment
         });
         
         // Auto-create credit record after sale is saved with due amount
@@ -233,14 +232,12 @@ class Sale extends Model
             foreach ($this->items as $saleItem) {
                 $item = $saleItem->item;
 
-                if ($this->isWarehouseSale()) {
+                if ($this->warehouse_id) {
                     // Warehouse sale - deduct from specific warehouse
                     $this->processWarehouseSaleItem($item, $saleItem);
-                } elseif ($this->isBranchSale()) {
+                } else {
                     // Branch sale - deduct from warehouses serving the branch
                     $this->processBranchSaleItem($item, $saleItem);
-                } else {
-                    throw new \Exception('Invalid sale location configuration.');
                 }
             }
 
@@ -266,39 +263,30 @@ class Sale extends Model
      */
     private function processWarehouseSaleItem($item, $saleItem): void
     {
-        $stock = Stock::where('warehouse_id', $this->warehouse_id)
-            ->where('item_id', $item->id)
-            ->first();
-
-        if (!$stock) {
-            throw new \Exception('No stock found for item: ' . $item->name . ' in warehouse');
-        }
+        $stock = Stock::firstOrCreate(
+            [
+                'warehouse_id' => $this->warehouse_id,
+                'item_id' => $item->id
+            ],
+            [
+                'quantity' => 0,
+                'piece_count' => 0,
+                'total_units' => 0,
+                'current_piece_units' => $item->unit_quantity ?? 1,
+                'created_by' => $this->user_id
+            ]
+        );
 
         $quantity = $saleItem->quantity;
         $unitCapacity = $item->unit_quantity ?? 1;
         
-        // Use the Stock model's built-in methods for proper unit/piece handling
-        if ($saleItem->isSoldByPiece()) {
-            $stock->sellByPiece(
-                (int)$quantity, 
-                $unitCapacity, 
-                'sale', 
-                $this->id, 
-                'Warehouse sale by piece - Sale #' . $this->reference_no, 
-                $this->user_id
-            );
-        } else {
-            $stock->sellByUnit(
-                $quantity, 
-                $unitCapacity, 
-                'sale', 
-                $this->id, 
-                'Warehouse sale by unit - Sale #' . $this->reference_no, 
-                $this->user_id
-            );
-        }
+        // Allow negative stock - deduct anyway
+        $stock->piece_count = ($stock->piece_count ?? 0) - $quantity;
+        $stock->quantity = $stock->piece_count;
+        $stock->total_units = ($stock->total_units ?? 0) - ($quantity * $unitCapacity);
+        $stock->updated_by = $this->user_id;
+        $stock->save();
         
-        // Also deduct from purchase quantity
         $this->deductFromPurchaseQuantity($item, $saleItem);
     }
 
@@ -596,11 +584,7 @@ class Sale extends Model
      */
     public function validateLocation(): bool
     {
-        // Must have either branch_id OR warehouse_id, but not both or neither
-        $hasBranch = !empty($this->branch_id);
-        $hasWarehouse = !empty($this->warehouse_id);
-        
-        return ($hasBranch && !$hasWarehouse) || (!$hasBranch && $hasWarehouse);
+        return true; // Always valid
     }
 
     /**

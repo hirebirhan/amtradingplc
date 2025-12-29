@@ -95,12 +95,21 @@ class Index extends Component
 
 
     /**
-     * Get suppliers query with filters
+     * Get suppliers query with filters and branch isolation
      */
     protected function getSuppliersQuery()
     {
-        return Supplier::query()
-            ->when($this->search, function ($query) {
+        $user = auth()->user();
+        $query = Supplier::query();
+        
+        // Apply branch filtering for non-admin users
+        if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
+            if ($user->branch_id) {
+                $query->forBranch($user->branch_id);
+            }
+        }
+        
+        return $query->when($this->search, function ($query) {
                 $searchTerm = '%' . strtolower(trim($this->search)) . '%';
                 $query->where(function ($q) use ($searchTerm) {
                     $q->whereRaw('LOWER(name) LIKE ?', [$searchTerm])
@@ -120,9 +129,14 @@ class Index extends Component
     public function render()
     {
         $suppliers = $this->getSuppliersQuery()->paginate($this->perPage);
+        $user = auth()->user();
         
-        // Get all branches - let users see all options
-        $branches = Branch::orderBy('name')->get();
+        // Get branches for filter dropdown based on user role
+        if ($user->isSuperAdmin() || $user->isGeneralManager()) {
+            $branches = Branch::orderBy('name')->get();
+        } else {
+            $branches = collect([]);
+        }
 
         return view('livewire.suppliers.index', [
             'suppliers' => $suppliers,

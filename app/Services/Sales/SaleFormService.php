@@ -81,7 +81,7 @@ class SaleFormService
         
         if (!empty($form['warehouse_id'])) {
             $sale->warehouse_id = $form['warehouse_id'];
-            $sale->branch_id = null;
+            $sale->branch_id = $branchId; // Keep branch for tracking
         } else {
             $sale->branch_id = $branchId;
             $sale->warehouse_id = null;

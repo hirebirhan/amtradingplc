@@ -68,9 +68,24 @@ class Pending extends Component
      */
     protected function getPendingTransfersQuery()
     {
-        return Transfer::query()
-            ->where('status', 'pending')
-            ->forUser(auth()->user())
+        $user = auth()->user();
+        $query = Transfer::query()
+            ->where('status', 'pending');
+            
+        // Apply branch filtering for non-admin users
+        if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
+            if ($user->branch_id) {
+                $query->where(function ($q) use ($user) {
+                    $q->where(function ($sq) use ($user) {
+                        $sq->where('source_type', 'branch')->where('source_id', $user->branch_id);
+                    })->orWhere(function ($sq) use ($user) {
+                        $sq->where('destination_type', 'branch')->where('destination_id', $user->branch_id);
+                    });
+                });
+            }
+        }
+        
+        return $query
             ->when($this->search, function($query) {
                 $query->where(function($q) {
                     $q->where('reference_code', 'like', '%' . $this->search . '%')

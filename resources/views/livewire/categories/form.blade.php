@@ -86,17 +86,24 @@
                 <button type="button" class="btn btn-outline-secondary" wire:click="cancel" {{ $isSubmitting ? 'disabled' : '' }}>
                     <i class="bi bi-x-lg me-1"></i>Cancel
                 </button>
-                <button type="submit" 
-                        class="btn btn-primary"
-                        {{ $isSubmitting ? 'disabled' : '' }}
-                        form="categoryForm">
-                    @if($isSubmitting)
-                        <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
-                        {{ $isEdit ? 'Updating...' : 'Creating...' }}
-                    @else
-                        <i class="bi bi-check-lg me-1"></i>{{ $isEdit ? 'Update' : 'Create' }} Category
-                    @endif
-                </button>
+                        <button type="submit" 
+                                class="btn btn-primary"
+                                {{ $isSubmitting ? 'disabled' : '' }}
+                                wire:loading.attr="disabled"
+                                wire:target="save">
+                            <span wire:loading.remove wire:target="save">
+                                @if($isSubmitting)
+                                    <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                                    {{ $isEdit ? 'Updating...' : 'Creating...' }}
+                                @else
+                                    <i class="bi bi-check-lg me-1"></i>{{ $isEdit ? 'Update' : 'Create' }} Category
+                                @endif
+                            </span>
+                            <span wire:loading wire:target="save">
+                                <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                                {{ $isEdit ? 'Updating...' : 'Creating...' }}
+                            </span>
+                        </button>
             </div>
         </div>
     </form>
@@ -143,6 +150,12 @@
                 };
                 
                 modal.show();
+            });
+            
+            // Handle form submission feedback
+            Livewire.on('category-saved', () => {
+                // Optional: Show a toast notification or other feedback
+                console.log('Category saved successfully');
             });
         });
     </script>

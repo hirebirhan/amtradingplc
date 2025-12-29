@@ -12,7 +12,7 @@ use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use App\Exports\CategoriesExport;
 use Maatwebsite\Excel\Facades\Excel;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
+
 
 #[Layout('components.layouts.app')]
 class Index extends Component
@@ -111,18 +111,14 @@ class Index extends Component
         }
 
         try {
-            Log::info('Starting category deletion', ['category_id' => $categoryId, 'user_id' => auth()->id()]);
+
             
             $category = Category::withCount(['items', 'children'])->findOrFail($categoryId);
             $categoryName = $category->name;
             $itemsCount = $category->items_count;
             $childrenCount = $category->children_count;
             
-            Log::info('Category found for deletion', [
-                'category_name' => $categoryName,
-                'items_count' => $itemsCount,
-                'children_count' => $childrenCount
-            ]);
+
 
             DB::beginTransaction();
             
@@ -132,7 +128,7 @@ class Index extends Component
             // Delete the category (cascade will handle items)
             $deleted = $category->delete();
             
-            Log::info('Category deletion result', ['deleted' => $deleted]);
+
             
             DB::commit();
             
@@ -154,11 +150,7 @@ class Index extends Component
             
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Category deletion failed', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-                'category_id' => $categoryId
-            ]);
+
             $this->dispatch('notify', ['type' => 'error', 'message' => "Error deleting category: {$e->getMessage()}"]);
         }
     }
@@ -238,8 +230,15 @@ class Index extends Component
     {
         $query = Category::query()
             ->withCount(['items', 'children'])
-            ->with('parent')
-            ->when($this->search, function (Builder $query) {
+            ->with('parent');
+            
+        // Apply branch filtering for non-admin users
+        $user = auth()->user();
+        if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
+            $query->forBranch($user->branch_id);
+        }
+        
+        $query->when($this->search, function (Builder $query) {
                 $query->where('name', 'like', '%' . $this->search . '%')
                     ->orWhere('description', 'like', '%' . $this->search . '%');
             })
@@ -264,14 +263,22 @@ class Index extends Component
 
     public function render()
     {
+        $user = auth()->user();
+        
+        // Apply branch filtering for statistics
+        $categoryQuery = Category::query();
+        if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
+            $categoryQuery->forBranch($user->branch_id);
+        }
+        
         // Get total category count
-        $totalCategories = Category::count();
+        $totalCategories = $categoryQuery->count();
         
         // Get total category count (all active)
-        $totalCategoriesCount = Category::where('is_active', true)->count();
+        $totalCategoriesCount = $categoryQuery->where('is_active', true)->count();
         
-        // Get total items in all categories
-        $totalItems = Category::withCount('items')->get()->sum('items_count');
+        // Get total items in categories (branch-filtered)
+        $totalItems = $categoryQuery->withCount('items')->get()->sum('items_count');
         
         return view('livewire.categories.index', [
             'categories' => $this->getFilteredCategories(),

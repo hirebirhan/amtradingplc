@@ -63,8 +63,16 @@ class Edit extends Component
 
     public function save()
     {
+        $user = auth()->user();
+        $branchId = $user->isSuperAdmin() ? null : $user->branch_id;
+        
         $validated = $this->validate([
-            'form.name' => 'required|string|max:255|unique:items,name,' . $this->item->id,
+            'form.name' => [
+                'required',
+                'string', 
+                'max:255',
+                "unique:items,name,{$this->item->id},id,branch_id,{$branchId}"
+            ],
             'form.category_id' => 'required|exists:categories,id',
             'form.description' => 'nullable|string',
             'form.cost_price_per_unit' => 'required|numeric|min:0|max:999999.99',
@@ -76,7 +84,7 @@ class Edit extends Component
         ], [
             'form.name.required' => 'Item name is required.',
             'form.name.max' => 'Item name cannot exceed 255 characters.',
-            'form.name.unique' => 'This item name already exists. Please choose a different name.',
+            'form.name.unique' => 'This item name already exists in your branch. Please choose a different name.',
             'form.category_id.required' => 'Please select a category.',
             'form.category_id.exists' => 'Selected category is invalid.',
             'form.cost_price_per_unit.required' => 'Cost price per unit is required.',
@@ -119,17 +127,23 @@ class Edit extends Component
     {
         return $this->redirect(route('admin.items.index'));
     }
-
-
-
     public function render()
     {
+        $user = auth()->user();
+        
+        // Apply branch filtering to categories
+        if ($user->isSuperAdmin() || $user->isGeneralManager()) {
+            $categories = Category::where('is_active', true)->orderBy('name')->get();
+        } else {
+            $categories = Category::forBranch($user->branch_id)->where('is_active', true)->orderBy('name')->get();
+        }
+        
         $itemUnits = collect(ItemUnit::cases())->mapWithKeys(function ($unit) {
             return [$unit->value => $unit->label()];
         });
         
         return view('livewire.items.edit', [
-            'categories' => Category::where('is_active', true)->orderBy('name')->get(),
+            'categories' => $categories,
             'itemUnits' => $itemUnits,
         ])->title('Edit Item - ' . $this->item->name);
     }

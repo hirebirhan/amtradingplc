@@ -243,7 +243,14 @@ class ReportsController extends Controller
         $warehouses = empty($userFilter['warehouse_ids']) ? 
             Warehouse::all() : 
             Warehouse::whereIn('id', $userFilter['warehouse_ids'])->get();
-        $categories = \App\Models\Category::all();
+            
+        // Apply branch filtering to categories
+        $user = auth()->user();
+        if ($user->isSuperAdmin() || $user->isGeneralManager()) {
+            $categories = \App\Models\Category::all();
+        } else {
+            $categories = \App\Models\Category::forBranch($user->branch_id)->get();
+        }
 
         return view('reports.inventory', compact(
             'inventory_items',

@@ -19,7 +19,13 @@ class ImportItems extends Component
 
     public function mount()
     {
-        $this->categories = Category::orderBy('name')->get(['id', 'name']);
+        // Load categories with branch filtering
+        $user = auth()->user();
+        if ($user->isSuperAdmin() || $user->isGeneralManager()) {
+            $this->categories = Category::orderBy('name')->get(['id', 'name']);
+        } else {
+            $this->categories = Category::forBranch($user->branch_id)->orderBy('name')->get(['id', 'name']);
+        }
     }
 
     public function previewUpload()

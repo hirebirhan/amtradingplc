@@ -72,14 +72,25 @@ class Index extends Component
 
     public function getActivitiesProperty()
     {
+        $user = auth()->user();
         $query = StockHistory::query()
             ->with(['item:id,name,sku', 'warehouse:id,name', 'user:id,name']);
 
-        // Filter by user for Sales role - they can only see their own activities
-        $userHelper = new UserHelper();
-        
-        if ($userHelper->isSales() && !$userHelper->isAdminOrManager()) {
-            $query->where('user_id', auth()->id());
+        // Apply branch filtering for non-admin users
+        if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
+            if ($user->branch_id) {
+                // Filter by warehouses in user's branch
+                $query->whereHas('warehouse', function($q) use ($user) {
+                    $q->whereHas('branches', function($branchQuery) use ($user) {
+                        $branchQuery->where('branches.id', $user->branch_id);
+                    });
+                });
+            }
+            
+            // Sales users see only their own activities
+            if ($user->hasRole('Sales')) {
+                $query->where('user_id', $user->id);
+            }
         }
 
         $query = $query
@@ -114,7 +125,24 @@ class Index extends Component
 
     public function getWarehousesProperty()
     {
-        return Warehouse::select('id', 'name')->orderBy('name')->get();
+        $user = auth()->user();
+        
+        // SuperAdmin and GeneralManager see all warehouses
+        if ($user->isSuperAdmin() || $user->isGeneralManager()) {
+            return Warehouse::select('id', 'name')->orderBy('name')->get();
+        }
+        
+        // Branch users see only warehouses in their branch
+        if ($user->branch_id) {
+            return Warehouse::select('id', 'name')
+                ->whereHas('branches', function($q) use ($user) {
+                    $q->where('branches.id', $user->branch_id);
+                })
+                ->orderBy('name')
+                ->get();
+        }
+        
+        return collect([]);
     }
 
     public function getActivityTypeDisplayName($referenceType)

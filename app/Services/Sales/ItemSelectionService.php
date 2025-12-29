@@ -17,9 +17,17 @@ class ItemSelectionService
         }
         
         try {
-            return Item::forUser(Auth::user())
-                ->where('is_active', true)
-                ->where(function ($query) use ($searchTerm) {
+            $user = Auth::user();
+            $query = Item::where('is_active', true);
+            
+            // Apply branch filtering for non-admin users
+            if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
+                if ($user->branch_id) {
+                    $query->where('branch_id', $user->branch_id);
+                }
+            }
+            
+            return $query->where(function ($query) use ($searchTerm) {
                     $query->whereRaw('LOWER(name) LIKE ?', ['%' . strtolower($searchTerm) . '%'])
                           ->orWhereRaw('LOWER(sku) LIKE ?', ['%' . strtolower($searchTerm) . '%'])
                           ->orWhereRaw('LOWER(barcode) LIKE ?', ['%' . strtolower($searchTerm) . '%']);
