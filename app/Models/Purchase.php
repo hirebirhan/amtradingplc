@@ -24,7 +24,7 @@ class Purchase extends Model
     use HasFactory, SoftDeletes, HasBranchAuthorization;
 
     protected $fillable = [
-'reference_no',
+        'reference_no',
         'supplier_id',
         'branch_id',
         'warehouse_id',
@@ -35,7 +35,6 @@ class Purchase extends Model
         'bank_account_id',
         'transaction_number',
         'receiver_bank_name',
-        'receiver_account_holder',
         'receiver_account_number',
         'advance_amount',
         'total_amount',

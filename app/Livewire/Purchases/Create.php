@@ -3,7 +3,7 @@
 namespace App\Livewire\Purchases;
 
 use App\Models\{BankAccount, Supplier, Branch, Item, Purchase, Sale, SalePayment, CreditPayment, User};
-use App\Enums\{PaymentMethod, PaymentStatus};
+use App\Enums\{PaymentMethod, PaymentStatus, UserRole};
 use App\Services\{PurchaseService, PurchaseValidationService};
 use App\Livewire\Purchases\Traits\{HandlesItems, HandlesPayments, HandlesSuppliers};
 use Livewire\{Component, Attributes\Layout};
@@ -148,7 +148,10 @@ class Create extends Component
     {
         $user = Auth::user();
         
-        if ($user->hasAnyRole(['SuperAdmin', 'GeneralManager'])) {
+        $userRoles = $user->roles->pluck('name')->toArray();
+        $adminRoles = [UserRole::SUPER_ADMIN->value, UserRole::GENERAL_MANAGER->value];
+        
+        if (!empty(array_intersect($userRoles, $adminRoles))) {
             return Branch::active()->ordered()->get();
         }
         

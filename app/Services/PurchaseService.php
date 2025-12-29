@@ -258,10 +258,6 @@ class PurchaseService
             $purchase->transaction_number = $formData['transaction_number'] ?? null;
         }
 
-        if ($formData['payment_method'] === PaymentMethod::TELEBIRR->value) {
-            $purchase->receiver_account_holder = $formData['receiver_account_holder'] ?? null;
-        }
-
         if ($formData['payment_method'] === PaymentMethod::BANK_TRANSFER->value) {
             $purchase->bank_account_id = $formData['bank_account_id'] ?? null;
         }
