@@ -253,7 +253,8 @@ class Create extends Component
     {
         $this->warningAcknowledged = true;
         $this->clearStockWarning();
-        // Don't add item here - let user click Add button again
+        // Automatically add item after acknowledging warning
+        $this->processAddItem();
     }
     
     public function cancelStockWarning(): void
@@ -447,21 +448,35 @@ class Create extends Component
     {
         $quantity = floatval($this->newItem['quantity']);
         $price = floatval($this->newItem['unit_price']);
+        $saleUnit = $this->newItem['sale_unit'] ?? 'each';
         
-        // Priority 1: Check for below-cost pricing (most critical)
-        if ($this->selectedItem && $price > 0) {
+        // Priority 1: Check for below-cost pricing (most critical) - skip if already acknowledged
+        if ($this->selectedItem && $price > 0 && !$this->warningAcknowledged) {
             $item = Item::find($this->selectedItem['id']);
-            if ($item && $item->isPriceBelowCost($price)) {
-                $minPrice = $item->getMinimumSellingPrice();
-                $this->stockWarningType = 'below_cost_warning';
-                $this->stockWarningItem = [
-                    'name' => $item->name,
-                    'selling_price' => $price,
-                    'cost_price' => $minPrice,
-                    'loss_amount' => $minPrice - $price,
-                    'loss_percentage' => $minPrice > 0 ? (($minPrice - $price) / $minPrice) * 100 : 0
-                ];
-                return; // Stop here, handle pricing first
+            if ($item) {
+                // Determine cost price based on sale unit type
+                if ($saleUnit === 'each') {
+                    // Selling by piece - compare against cost_price per piece
+                    $costPrice = floatval($item->cost_price);
+                } else {
+                    // Selling by unit (kg, meter, etc.) - compare against cost_price_per_unit
+                    $costPrice = floatval($item->cost_price_per_unit ?: ($item->cost_price / max($item->unit_quantity, 1)));
+                }
+                
+                if ($costPrice > 0 && $price < $costPrice) {
+                    $lossAmount = $costPrice - $price;
+                    $lossPercentage = ($lossAmount / $costPrice) * 100;
+                    
+                    $this->stockWarningType = 'below_cost_warning';
+                    $this->stockWarningItem = [
+                        'name' => $item->name,
+                        'selling_price' => $price,
+                        'cost_price' => $costPrice,
+                        'loss_amount' => $lossAmount,
+                        'loss_percentage' => $lossPercentage
+                    ];
+                    return; // Stop here, handle pricing first
+                }
             }
         }
         
@@ -531,18 +546,52 @@ class Create extends Component
             }
         }
         
+        // Determine sale_method based on sale_unit
+        $saleUnit = $this->newItem['sale_unit'] ?? 'each';
+        $saleMethod = ($saleUnit === 'each') ? 'piece' : 'unit';
+        
         return [
             'item_id' => $this->newItem['item_id'] ?? '',
             'name' => $this->selectedItem['name'] ?? 'Unknown Item',
             'sku' => $this->selectedItem['sku'] ?? '',
             'quantity' => floatval($this->newItem['quantity'] ?? 0),
-            'sale_method' => $this->newItem['sale_method'] ?? 'piece',
+            'sale_method' => $saleMethod,
+            'sale_unit' => $saleUnit,
             'price' => floatval($this->newItem['unit_price'] ?? 0),
             'subtotal' => floatval($this->newItem['quantity'] ?? 0) * floatval($this->newItem['unit_price'] ?? 0),
             'unit_quantity' => $this->selectedItem['unit_quantity'] ?? 1,
             'item_unit' => $this->selectedItem['item_unit'] ?? 'piece',
             'notes' => $this->newItem['notes'] ?? null,
         ];
+    }
+    
+    /**
+     * Get available stock for selected sale unit.
+     * Returns pieces for 'each' or total units for other unit types.
+     */
+    public function getAvailableStockForUnit(string $saleUnit): float
+    {
+        if (!$this->selectedItem) {
+            return 0;
+        }
+        
+        $warehouseId = (int)($this->form['warehouse_id'] ?? 0);
+        if (!$warehouseId) {
+            return 0;
+        }
+        
+        $item = Item::find($this->selectedItem['id']);
+        if (!$item) {
+            return 0;
+        }
+        
+        // If selling by piece (each), return piece count
+        if ($saleUnit === 'each') {
+            return $item->getPiecesInWarehouse($warehouseId);
+        }
+        
+        // If selling by unit (kg, meter, etc.), return total units
+        return $item->getUnitsInWarehouse($warehouseId);
     }
 
     private function setItemForEdit(int $index): void

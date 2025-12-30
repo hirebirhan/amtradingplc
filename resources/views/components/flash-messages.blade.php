@@ -54,9 +54,21 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Listen for Livewire flash messages
 document.addEventListener('livewire:initialized', () => {
-    Livewire.on('flash-message', (event) => {
-        const { type, message } = event;
-        showFlashMessage(type, message);
+    Livewire.on('flash-message', (data) => {
+        // Handle both array format (Livewire 3) and object format
+        let type, message;
+        if (Array.isArray(data)) {
+            type = data[0]?.type || 'info';
+            message = data[0]?.message || '';
+        } else if (data && typeof data === 'object') {
+            type = data.type || 'info';
+            message = data.message || '';
+        }
+        
+        // Only show if message is not empty/undefined
+        if (message && typeof showFlashMessage === 'function') {
+            showFlashMessage(type, message);
+        }
     });
 });
 
