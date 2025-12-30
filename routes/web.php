@@ -100,6 +100,10 @@ Route::prefix('admin')->middleware(['auth', 'active'])->group(function () {
         Route::get('/import', App\Livewire\Admin\Items\ImportItems::class)
             ->middleware('permission:items.create')->name('import');
 
+        // Download import template
+        Route::get('/import-template/download', [App\Http\Controllers\ItemImportController::class, 'downloadTemplate'])
+            ->middleware('permission:items.create')->name('import-template.download');
+
         // Import handlers - These are now handled by the Livewire component
         // Route::post('/import/preview', [App\Http\Controllers\ItemImportController::class, 'preview'])
         //     ->middleware('permission:items.create')
