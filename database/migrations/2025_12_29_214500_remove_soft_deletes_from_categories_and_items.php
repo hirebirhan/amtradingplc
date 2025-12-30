@@ -10,14 +10,32 @@ return new class extends Migration
     {
         // Remove foreign keys and soft delete columns from categories table
         Schema::table('categories', function (Blueprint $table) {
-            $table->dropForeign(['deleted_by']);
-            $table->dropColumn(['deleted_at', 'deleted_by']);
+            if (Schema::hasColumn('categories', 'deleted_by')) {
+                try {
+                    $table->dropForeign(['deleted_by']);
+                } catch (\Exception $e) {
+                    // Ignore if foreign key doesn't exist or is already dropped
+                }
+                $table->dropColumn('deleted_by');
+            }
+            if (Schema::hasColumn('categories', 'deleted_at')) {
+                $table->dropColumn('deleted_at');
+            }
         });
 
         // Remove foreign keys and soft delete columns from items table  
         Schema::table('items', function (Blueprint $table) {
-            $table->dropForeign(['deleted_by']);
-            $table->dropColumn(['deleted_at', 'deleted_by']);
+            if (Schema::hasColumn('items', 'deleted_by')) {
+                try {
+                    $table->dropForeign(['deleted_by']);
+                } catch (\Exception $e) {
+                    // Ignore
+                }
+                $table->dropColumn('deleted_by');
+            }
+            if (Schema::hasColumn('items', 'deleted_at')) {
+                $table->dropColumn('deleted_at');
+            }
         });
     }
 
