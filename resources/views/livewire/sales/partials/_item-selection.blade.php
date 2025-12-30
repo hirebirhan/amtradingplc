@@ -163,73 +163,38 @@
                 {{-- Sale Unit Selection --}}
                 <div class="col-12 col-lg-2">
                     <label class="form-label fw-medium">Sale Unit</label>
+                    @php
+                        $itemUnit = $selectedItem['item_unit'] ?? 'each';
+                        $unitQuantity = $selectedItem['unit_quantity'] ?? 1;
+                        $unitLabels = [
+                            'kg' => 'Kilogram',
+                            'g' => 'Gram',
+                            'ton' => 'Ton',
+                            'lb' => 'Pound',
+                            'oz' => 'Ounce',
+                            'liter' => 'Liter',
+                            'ml' => 'Milliliter',
+                            'gallon' => 'Gallon',
+                            'meter' => 'Meter',
+                            'cm' => 'Centimeter',
+                            'mm' => 'Millimeter',
+                            'inch' => 'Inch',
+                            'ft' => 'Foot',
+                            'sqm' => 'Sq. Meter',
+                            'sqft' => 'Sq. Foot',
+                        ];
+                    @endphp
                     <select wire:model.live="newItem.sale_unit" class="form-select form-select-lg">
-                        <option value="each">Each</option>
-                        @php
-                            $baseUnit = $selectedItem['item_unit'] ?? 'each';
-                            $compatibleUnits = [];
-                            
-                            // Weight units - only show if item is weight-based
-                            if (in_array($baseUnit, ['kg', 'g', 'ton', 'lb', 'oz'])) {
-                                $compatibleUnits = [
-                                    'kg' => 'Kilogram (kg)',
-                                    'g' => 'Gram (g)', 
-                                    'ton' => 'Ton',
-                                    'lb' => 'Pound (lb)',
-                                    'oz' => 'Ounce (oz)'
-                                ];
-                            }
-                            // Volume units - only show if item is volume-based
-                            elseif (in_array($baseUnit, ['liter', 'ml', 'gallon', 'cup'])) {
-                                $compatibleUnits = [
-                                    'liter' => 'Liter (L)',
-                                    'ml' => 'Milliliter (ml)',
-                                    'gallon' => 'Gallon',
-                                    'cup' => 'Cup'
-                                ];
-                            }
-                            // Length units - only show if item is length-based
-                            elseif (in_array($baseUnit, ['meter', 'cm', 'mm', 'inch', 'ft'])) {
-                                $compatibleUnits = [
-                                    'meter' => 'Meter (m)',
-                                    'cm' => 'Centimeter (cm)',
-                                    'mm' => 'Millimeter (mm)',
-                                    'inch' => 'Inch',
-                                    'ft' => 'Foot (ft)'
-                                ];
-                            }
-                            // Area units - only show if item is area-based
-                            elseif (in_array($baseUnit, ['sqm', 'sqft', 'acre'])) {
-                                $compatibleUnits = [
-                                    'sqm' => 'Square Meter (m²)',
-                                    'sqft' => 'Square Foot (ft²)',
-                                    'acre' => 'Acre'
-                                ];
-                            }
-                            // Count/packaging units - always available
-                            $packagingUnits = [
-                                'pack' => 'Pack',
-                                'box' => 'Box', 
-                                'case' => 'Case',
-                                'dozen' => 'Dozen',
-                                'pair' => 'Pair',
-                                'set' => 'Set',
-                                'roll' => 'Roll',
-                                'sheet' => 'Sheet',
-                                'bottle' => 'Bottle',
-                                'can' => 'Can',
-                                'bag' => 'Bag',
-                                'sack' => 'Sack'
-                            ];
-                            $allUnits = array_merge($compatibleUnits, $packagingUnits);
-                        @endphp
-                        @foreach($allUnits as $unit => $label)
-                            <option value="{{ $unit }}">{{ $label }}</option>
-                        @endforeach
+                        <option value="each">Each (Piece)</option>
+                        @if($unitQuantity > 1 && $itemUnit !== 'each' && $itemUnit !== 'piece')
+                            <option value="{{ $itemUnit }}">{{ $unitLabels[$itemUnit] ?? ucfirst($itemUnit) }}</option>
+                        @endif
                     </select>
-                    <small class="text-info d-block mt-1">
-                        <i class="bi bi-info-circle me-1"></i>Compatible units for {{ $baseUnit }}
-                    </small>
+                    @if($unitQuantity > 1 && $itemUnit !== 'each' && $itemUnit !== 'piece')
+                        <small class="text-muted d-block mt-1">
+                            <i class="bi bi-info-circle me-1"></i>1 Each = {{ $unitQuantity }} {{ $unitLabels[$itemUnit] ?? ucfirst($itemUnit) }}
+                        </small>
+                    @endif
                 </div>
 
                 {{-- Quantity --}}
@@ -302,8 +267,7 @@
                 </div>
 
                 {{-- Add Button --}}
-                <div class="col-6 col-lg-auto">
-                    <label class="form-label d-block">&nbsp;</label>
+                <div class="col-6 col-lg-2 d-flex align-items-end pb-1">
                     @if($editingItemIndex !== null)
                         <div class="btn-group w-100">
                             <button type="button" class="btn btn-success btn-lg" wire:click="addItem">

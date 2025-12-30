@@ -172,7 +172,7 @@
                             <th class="px-3 py-3 text-center fw-semibold text-dark">Unit Qty</th>
                             <th class="px-3 py-3 text-start cursor-pointer fw-semibold text-dark" wire:click="sortBy('cost_price')">
                                 <div class="d-flex align-items-center gap-2">
-                                    <span>Cost (ETB)</span>
+                                    <span>Cost Per Pcs (ETB)</span>
                                     <i class="bi bi-arrow-down-up text-secondary"></i>
                                 </div>
                             </th>
