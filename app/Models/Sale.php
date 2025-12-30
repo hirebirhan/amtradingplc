@@ -1,5 +1,7 @@
 <?php
 
+
+
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -266,7 +268,8 @@ class Sale extends Model
         $stock = Stock::firstOrCreate(
             [
                 'warehouse_id' => $this->warehouse_id,
-                'item_id' => $item->id
+                'item_id' => $item->id,
+                'branch_id' => null,
             ],
             [
                 'quantity' => 0,
@@ -280,12 +283,25 @@ class Sale extends Model
         $quantity = $saleItem->quantity;
         $unitCapacity = $item->unit_quantity ?? 1;
         
-        // Allow negative stock - deduct anyway
-        $stock->piece_count = ($stock->piece_count ?? 0) - $quantity;
-        $stock->quantity = $stock->piece_count;
-        $stock->total_units = ($stock->total_units ?? 0) - ($quantity * $unitCapacity);
-        $stock->updated_by = $this->user_id;
-        $stock->save();
+        if ($saleItem->isSoldByPiece()) {
+            $stock->sellByPiece(
+                (int)$quantity, 
+                $unitCapacity, 
+                'sale', 
+                $this->id, 
+                'Warehouse sale by piece - Sale #' . $this->reference_no, 
+                $this->user_id
+            );
+        } else {
+            $stock->sellByUnit(
+                $quantity, 
+                $unitCapacity, 
+                'sale', 
+                $this->id, 
+                'Warehouse sale by unit - Sale #' . $this->reference_no, 
+                $this->user_id
+            );
+        }
         
         $this->deductFromPurchaseQuantity($item, $saleItem);
     }
@@ -408,14 +424,23 @@ class Sale extends Model
      */
     private function deductFromPurchaseQuantity($item, $saleItem): void
     {
+        $quantity = $saleItem->quantity;
+        $unitCapacity = $item->unit_quantity ?? 1;
+
+        // If sold by unit, convert units to pieces for purchase tracking
+        // (e.g. 1000kg sold / 100kg capacity = 10 pieces)
+        if ($saleItem->isSoldByUnit()) {
+            $quantity = $quantity / $unitCapacity;
+        }
+
         // Create a negative purchase item to deduct from total purchase quantity
         PurchaseItem::create([
             'purchase_id' => null, // No specific purchase (system adjustment)
             'item_id' => $item->id,
-            'quantity' => -$saleItem->quantity, // Negative quantity
+            'quantity' => -$quantity, // Negative quantity (always in pieces for consistency)
             'unit_cost' => 0, // No cost for sale deduction
             'subtotal' => 0, // No cost for sale deduction
-            'notes' => 'Sale deduction - Sale #' . $this->reference_no,
+            'notes' => 'Sale deduction (' . ($saleItem->sale_method === 'unit' ? 'unit' : 'piece') . ') - Sale #' . $this->reference_no,
         ]);
     }
 

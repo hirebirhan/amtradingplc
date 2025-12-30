@@ -1,5 +1,7 @@
 <?php
 
+
+
 namespace App\Livewire\Sales;
 
 use App\Models\Item;
@@ -101,7 +103,6 @@ class Create extends Component
         }
 
         $this->setSelectedItem($item, $warehouseId);
-        $this->checkStock($item);
     }
 
     public function addItem(): void
@@ -182,6 +183,9 @@ class Create extends Component
         $this->clearStockWarning();
         $this->warningAcknowledged = false; // Reset acknowledgment on change
         
+        // Refresh availableStock to ensure we use the correct unit count
+        $this->availableStock = $this->getAvailableStockForUnit($this->newItem['sale_unit'] ?? 'each');
+        
         if ($value && $this->availableStock > 0) {
             $quantity = floatval($value);
             if ($quantity > $this->availableStock) {
@@ -193,6 +197,27 @@ class Create extends Component
                     'deficit' => $quantity - $this->availableStock
                 ];
             }
+        }
+    }
+
+    public function updatedNewItemSaleUnit($value): void
+    {
+        $this->clearStockWarning();
+        $this->warningAcknowledged = false;
+        
+        // Update availableStock based on the new unit
+        $this->availableStock = $this->getAvailableStockForUnit($value);
+        
+        // Re-check quantity vs new available stock
+        $quantity = floatval($this->newItem['quantity'] ?? 0);
+        if ($quantity > $this->availableStock && $quantity > 0) {
+            $this->stockWarningType = 'insufficient_stock';
+            $this->stockWarningItem = [
+                'name' => $this->selectedItem['name'],
+                'available' => $this->availableStock,
+                'requested' => $quantity,
+                'deficit' => $quantity - $this->availableStock
+            ];
         }
     }
 
@@ -402,17 +427,6 @@ class Create extends Component
         $this->itemSearch = '';
     }
 
-    private function checkStock(Item $item): void
-    {
-        if ($this->availableStock <= 0) {
-            $this->stockWarningType = 'out_of_stock';
-            $this->stockWarningItem = [
-                'name' => $item->name,
-                'price' => $this->newItem['price'],
-                'stock' => $this->availableStock
-            ];
-        }
-    }
 
     public function clearSelectedItem(): void
     {
@@ -446,9 +460,13 @@ class Create extends Component
 
     private function validateStock(): void
     {
+        $saleUnit = $this->newItem['sale_unit'] ?? 'each';
+        
+        // Final refresh of availableStock to ensure we use the correct unit count for comparison
+        $this->availableStock = $this->getAvailableStockForUnit($saleUnit);
+        
         $quantity = floatval($this->newItem['quantity']);
         $price = floatval($this->newItem['unit_price']);
-        $saleUnit = $this->newItem['sale_unit'] ?? 'each';
         
         // Priority 1: Check for below-cost pricing (most critical) - skip if already acknowledged
         if ($this->selectedItem && $price > 0 && !$this->warningAcknowledged) {
@@ -480,19 +498,8 @@ class Create extends Component
             }
         }
         
-        // Priority 2: Check stock availability (warning, not error)
-        if ($this->availableStock <= 0 && !$this->warningAcknowledged) {
-            $this->stockWarningType = 'out_of_stock';
-            $this->stockWarningItem = [
-                'name' => $this->selectedItem['name'],
-                'price' => $price,
-                'stock' => $this->availableStock
-            ];
-            return;
-        }
-        
-        // Priority 3: Check quantity vs available stock
-        if ($quantity > $this->availableStock && !$this->warningAcknowledged) {
+        // Priority 2: Check quantity vs available stock (only when quantity > 0)
+        if ($quantity > $this->availableStock && $quantity > 0 && !$this->warningAcknowledged) {
             $this->stockWarningType = 'insufficient_stock';
             $this->stockWarningItem = [
                 'name' => $this->selectedItem['name'],
@@ -500,6 +507,7 @@ class Create extends Component
                 'requested' => $quantity,
                 'deficit' => $quantity - $this->availableStock
             ];
+            return;
         }
     }
 
