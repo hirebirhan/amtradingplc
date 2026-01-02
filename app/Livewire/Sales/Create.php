@@ -141,7 +141,7 @@ class Create extends Component
     {
         $removedItem = $this->getServices()->cart()->removeItemFromCart($index, $this->items);
         $this->updateTotals();
-        $this->notify($removedItem['name'] . ' removed from cart', 'success');
+        
     }
 
     public function clearCart(): void
@@ -530,11 +530,10 @@ class Create extends Component
             $message = 'Item updated successfully';
         } else {
             $this->items[] = $itemData;
-            $message = 'Item added successfully';
+            
         }
         
         $this->editingItemIndex = null;
-        $this->notify($message, 'success');
         $this->updateTotals();
         $this->clearSelectedItem();
     }

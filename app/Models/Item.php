@@ -617,11 +617,4 @@ class Item extends Model
         return $costPrice > 0 ? (($sellingPrice - $costPrice) / $costPrice) * 100 : 0;
     }
 
-    /**
-     * Get the user who deleted this item.
-     */
-    public function deleter(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'deleted_by');
-    }
 }
