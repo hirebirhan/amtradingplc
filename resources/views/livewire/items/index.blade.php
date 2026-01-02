@@ -29,7 +29,7 @@
         <div class="d-flex align-items-center gap-2 flex-shrink-0">
             @can('items.create')
             <div class="d-flex gap-2">
-                <a href="{{ route('admin.items.import') }}" class="btn btn-outline-primary">
+                <a href="{{ route('admin.items.import') }}" class="btn btn-primary">
                     <i class="bi bi-upload me-2"></i>Import
                 </a>
                 <a href="{{ route('admin.items.create') }}" class="btn btn-primary">

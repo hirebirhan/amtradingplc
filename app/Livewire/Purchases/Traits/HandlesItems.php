@@ -173,7 +173,7 @@ trait HandlesItems
         $this->updateTotals();
         $this->loadItems();
         
-        $this->notify("✓ {$removedItem['name']} removed from cart", 'success');
+        
     }
 
     private function processAddItem()
@@ -235,7 +235,6 @@ trait HandlesItems
         
         if (count($this->items) > 0) {
             $lastItem = end($this->items);
-            $this->notify("✓ {$lastItem['name']} added to purchase", 'success');
         }
     }
 
