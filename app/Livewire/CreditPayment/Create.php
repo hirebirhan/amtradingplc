@@ -117,19 +117,9 @@ class Create extends Component
     
     public function updatedAmount($value)
     {
-        // For closing payments, restrict to exact credit balance
-        if ($this->paymentType === 'closing_payment') {
-            if ($value != $this->credit->balance) {
-                $this->amount = $this->credit->balance;
-                $this->addError('amount', 'For closing payments, you must pay the exact remaining balance of ' . number_format($this->credit->balance, 2) . ' ETB.');
-            }
-        } else {
-            // For regular payments, don't allow exceeding balance
-            if ($value > $this->credit->balance) {
-                $this->amount = $this->credit->balance;
-                $this->addError('amount', 'Payment amount cannot exceed the credit balance of ' . number_format($this->credit->balance, 2) . ' ETB.');
-            }
-        }
+        // Remove all payment amount restrictions
+        // Allow any amount to be paid regardless of credit balance
+        // This enables flexible payment options including overpayment
     }
     
     /**
@@ -249,25 +239,7 @@ class Create extends Component
                 'required',
                 'numeric',
                 'min:0.01',
-                function ($attribute, $value, $fail) {
-                    $amount = (float) $value;
-                    $balance = (float) $this->credit->balance;
-                    
-                    // For closing payments, must be exact balance
-                    if ($this->paymentType === 'closing_payment' && $amount != $balance) {
-                        $fail('For closing payments, you must pay the exact remaining balance of ' . number_format($balance, 2) . ' ETB.');
-                    }
-                    
-                    // Prevent full payment with partial payment type
-                    if ($this->paymentType === 'down_payment' && $amount >= $balance) {
-                        $fail('Cannot pay full amount with Down Payment. Use Closing Payment instead.');
-                    }
-                    
-                    // Never allow exceeding balance
-                    if ($amount > $balance) {
-                        $fail('Payment amount cannot exceed the credit balance of ' . number_format($balance, 2) . ' ETB.');
-                    }
-                },
+                // Remove all balance restrictions to allow flexible payments
             ],
             'payment_method' => 'required|string|in:cash,bank_transfer,telebirr,check',
             'payment_date' => 'required|date',
@@ -387,35 +359,41 @@ class Create extends Component
             'closingPrices.*' => 'required|numeric|min:0',
         ]);
         
-        // Calculate total closing cost and validate against credit balance
+        // Calculate total closing cost based on unit prices × unit_quantity × quantities
         $totalClosingCost = 0;
         if ($this->credit->reference_type === 'purchase' && $this->credit->purchase) {
             $uniqueItems = $this->credit->purchase->items->groupBy('item_id');
             foreach ($uniqueItems as $itemId => $itemGroup) {
                 if (isset($this->closingPrices[$itemId]) && is_numeric($this->closingPrices[$itemId])) {
-                    $totalClosingCost += (float) $this->closingPrices[$itemId];
+                    $unitPrice = (float) $this->closingPrices[$itemId]; // Price per unit (kg, meter, etc.)
+                    $firstItem = $itemGroup->first();
+                    $unitQuantity = $firstItem->item->unit_quantity ?: 1; // Units per piece
+                    $totalQuantity = $itemGroup->sum('quantity'); // Number of pieces purchased
+                    
+                    // Calculate: (unit_price × unit_quantity) × total_quantity
+                    $pricePerPiece = $unitPrice * $unitQuantity;
+                    $totalClosingCost += $pricePerPiece * $totalQuantity;
                 }
             }
         } elseif ($this->credit->reference_type === 'sale' && $this->credit->sale) {
             $uniqueItems = $this->credit->sale->items->groupBy('item_id');
             foreach ($uniqueItems as $itemId => $itemGroup) {
                 if (isset($this->closingPrices[$itemId]) && is_numeric($this->closingPrices[$itemId])) {
-                    $totalClosingCost += (float) $this->closingPrices[$itemId];
+                    $unitPrice = (float) $this->closingPrices[$itemId]; // Price per unit (kg, meter, etc.)
+                    $firstItem = $itemGroup->first();
+                    $unitQuantity = $firstItem->item->unit_quantity ?: 1; // Units per piece
+                    $totalQuantity = $itemGroup->sum('quantity'); // Number of pieces purchased
+                    
+                    // Calculate: (unit_price × unit_quantity) × total_quantity
+                    $pricePerPiece = $unitPrice * $unitQuantity;
+                    $totalClosingCost += $pricePerPiece * $totalQuantity;
                 }
             }
         }
         
-        // Validate total closing cost doesn't exceed credit balance
-        if ($totalClosingCost != $this->credit->balance) {
-            if ($totalClosingCost > $this->credit->balance) {
-                $this->addError('closingPrices', 'Total closing cost (' . number_format($totalClosingCost, 2) . ' ETB) cannot exceed credit balance (' . number_format($this->credit->balance, 2) . ' ETB).');
-            } else {
-                $this->addError('closingPrices', 'Total closing cost (' . number_format($totalClosingCost, 2) . ' ETB) must equal credit balance (' . number_format($this->credit->balance, 2) . ' ETB) for closing payment.');
-            }
-            return;
-        }
-        
-        $this->amount = $this->credit->balance;
+        // Allow payment even if total closing cost differs from credit balance
+        // Remove validation that requires exact match
+        $this->amount = $totalClosingCost;
         $this->showClosingPricesModal = false;
         
         // Process as regular payment with closing price tracking
@@ -463,17 +441,20 @@ class Create extends Component
                 $uniqueItems = $this->credit->purchase->items->groupBy('item_id');
                 foreach ($uniqueItems as $itemId => $itemGroup) {
                     if (isset($this->closingPrices[$itemId])) {
-                        $closingPrice = (float) $this->closingPrices[$itemId];
-                        $totalQuantity = $itemGroup->sum('quantity');
-                        $unitClosingPrice = $totalQuantity > 0 ? $closingPrice / $totalQuantity : 0;
+                        $unitPrice = (float) $this->closingPrices[$itemId]; // Price per unit (kg, meter, etc.)
+                        $firstItem = $itemGroup->first();
+                        $unitQuantity = $firstItem->item->unit_quantity ?: 1; // Units per piece
+                        
+                        // Calculate price per piece
+                        $pricePerPiece = $unitPrice * $unitQuantity;
                         
                         // Update all items in this group
                         foreach ($itemGroup as $item) {
                             $originalTotalCost = $item->unit_cost * $item->quantity;
-                            $itemClosingCost = $unitClosingPrice * $item->quantity;
+                            $itemClosingCost = $pricePerPiece * $item->quantity;
                             
                             $item->update([
-                                'closing_unit_price' => $unitClosingPrice,
+                                'closing_unit_price' => $unitPrice, // Store the unit price entered by user
                                 'total_closing_cost' => $itemClosingCost,
                                 'profit_loss_per_item' => $originalTotalCost - $itemClosingCost
                             ]);
@@ -484,17 +465,20 @@ class Create extends Component
                 $uniqueItems = $this->credit->sale->items->groupBy('item_id');
                 foreach ($uniqueItems as $itemId => $itemGroup) {
                     if (isset($this->closingPrices[$itemId])) {
-                        $closingPrice = (float) $this->closingPrices[$itemId];
-                        $totalQuantity = $itemGroup->sum('quantity');
-                        $unitClosingPrice = $totalQuantity > 0 ? $closingPrice / $totalQuantity : 0;
+                        $unitPrice = (float) $this->closingPrices[$itemId]; // Price per unit (kg, meter, etc.)
+                        $firstItem = $itemGroup->first();
+                        $unitQuantity = $firstItem->item->unit_quantity ?: 1; // Units per piece
+                        
+                        // Calculate price per piece
+                        $pricePerPiece = $unitPrice * $unitQuantity;
                         
                         // Update all items in this group
                         foreach ($itemGroup as $item) {
                             $originalTotalCost = $item->unit_price * $item->quantity;
-                            $itemClosingCost = $unitClosingPrice * $item->quantity;
+                            $itemClosingCost = $pricePerPiece * $item->quantity;
                             
                             $item->update([
-                                'closing_unit_price' => $unitClosingPrice,
+                                'closing_unit_price' => $unitPrice, // Store the unit price entered by user
                                 'total_closing_cost' => $itemClosingCost,
                                 'profit_loss_per_item' => $originalTotalCost - $itemClosingCost
                             ]);
@@ -701,7 +685,6 @@ class Create extends Component
             'amount.required' => 'Payment amount is required.',
             'amount.numeric' => 'Payment amount must be a valid number.',
             'amount.min' => 'Payment amount must be at least 0.01.',
-            'amount.max' => 'Payment amount cannot exceed the credit balance.',
             'payment_method.required' => 'Payment method is required.',
             'payment_method.in' => 'Please select a valid payment method.',
             'payment_date.required' => 'Payment date is required.',
