@@ -627,7 +627,14 @@
                                     if(isset($closingPrices[$itemId]) && 
                                        $closingPrices[$itemId] !== '' && 
                                        is_numeric($closingPrices[$itemId])) {
-                                        $totalClosingCost += (float) $closingPrices[$itemId];
+                                        $unitPrice = (float) $closingPrices[$itemId]; // Price per unit (kg, meter, etc.)
+                                        $firstItem = $itemGroup->first();
+                                        $unitQuantity = $firstItem->item->unit_quantity ?: 1; // Units per piece
+                                        $totalQuantity = $itemGroup->sum('quantity'); // Number of pieces purchased
+                                        
+                                        // Calculate: (unit_price × unit_quantity) × total_quantity
+                                        $pricePerPiece = $unitPrice * $unitQuantity;
+                                        $totalClosingCost += $pricePerPiece * $totalQuantity;
                                     }
                                 }
                             } elseif($credit->reference_type === 'sale' && $credit->sale) {
@@ -636,7 +643,14 @@
                                     if(isset($closingPrices[$itemId]) && 
                                        $closingPrices[$itemId] !== '' && 
                                        is_numeric($closingPrices[$itemId])) {
-                                        $totalClosingCost += (float) $closingPrices[$itemId];
+                                        $unitPrice = (float) $closingPrices[$itemId]; // Price per unit (kg, meter, etc.)
+                                        $firstItem = $itemGroup->first();
+                                        $unitQuantity = $firstItem->item->unit_quantity ?: 1; // Units per piece
+                                        $totalQuantity = $itemGroup->sum('quantity'); // Number of pieces purchased
+                                        
+                                        // Calculate: (unit_price × unit_quantity) × total_quantity
+                                        $pricePerPiece = $unitPrice * $unitQuantity;
+                                        $totalClosingCost += $pricePerPiece * $totalQuantity;
                                     }
                                 }
                             }
@@ -649,24 +663,25 @@
                                     <strong>Already Paid:</strong> {{ number_format($credit->paid_amount, 2) }} ETB
                                 </div>
                                 <div class="col-md-6">
-                                    <strong class="text-primary">Payment Amount:</strong> {{ number_format($credit->balance, 2) }} ETB<br>
                                     @if($totalClosingCost > 0)
+                                        <strong class="text-primary">Payment Amount:</strong> {{ number_format($totalClosingCost, 2) }} ETB<br>
                                         <strong>Total Closing Cost:</strong> {{ number_format($totalClosingCost, 2) }} ETB
+                                    @else
+                                        <strong class="text-primary">Payment Amount:</strong> Will be calculated<br>
+                                        <strong>Total Closing Cost:</strong> Will be calculated
                                     @endif
                                 </div>
                             </div>
                         </div>
                         
-                        @if($totalClosingCost > 0 && $totalClosingCost != $credit->balance)
-                            <div class="alert alert-warning">
-                                <i class="fas fa-exclamation-triangle me-2"></i>
-                                <strong>Warning:</strong> 
-                                @if($totalClosingCost > $credit->balance)
-                                    Total closing cost ({{ number_format($totalClosingCost, 2) }} ETB) exceeds credit balance ({{ number_format($credit->balance, 2) }} ETB).
-                                @else
-                                    Total closing cost ({{ number_format($totalClosingCost, 2) }} ETB) is less than credit balance ({{ number_format($credit->balance, 2) }} ETB).
+                        @if($totalClosingCost > 0)
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle me-2"></i>
+                                <strong>Payment Summary:</strong> 
+                                Total closing cost is {{ number_format($totalClosingCost, 2) }} ETB.
+                                @if($totalClosingCost != $credit->balance)
+                                    This differs from the credit balance of {{ number_format($credit->balance, 2) }} ETB.
                                 @endif
-                                Please adjust prices to exactly {{ number_format($credit->balance, 2) }} ETB.
                             </div>
                         @endif
                         
@@ -687,7 +702,9 @@
                                 <thead>
                                     <tr>
                                         <th>Item Name</th>
-                                        <th class="text-center">Total Closing Price</th>
+                                        <th class="text-center">Quantity (Pieces)</th>
+                                        <th class="text-center">Unit Price (ETB)</th>
+                                        <th class="text-center">Total Closing Price (ETB)</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -699,20 +716,30 @@
                                             @php
                                                 $firstItem = $itemGroup->first();
                                                 $totalQuantity = $itemGroup->sum('quantity');
+                                                $unitQuantity = $firstItem->item->unit_quantity ?: 1;
+                                                $unitPrice = isset($closingPrices[$itemId]) && is_numeric($closingPrices[$itemId]) ? (float) $closingPrices[$itemId] : 0;
+                                                $pricePerPiece = $unitPrice * $unitQuantity;
+                                                $totalPrice = $pricePerPiece * $totalQuantity;
                                             @endphp
                                             <tr>
                                                 <td class="fw-medium">{{ $firstItem->item->name }}</td>
+                                                <td class="text-center">{{ $totalQuantity }}</td>
                                                 <td class="text-center">
                                                     <input type="number" 
                                                         wire:model.live="closingPrices.{{ $itemId }}" 
                                                         class="form-control form-control-sm text-center @error('closingPrices.'.$itemId) is-invalid @enderror" 
                                                         step="0.01" 
                                                         min="0" 
-                                                        placeholder="Enter total closing price"
-                                                        style="width: 200px; margin: 0 auto;">
+                                                        placeholder="Enter unit price"
+                                                        style="width: 150px; margin: 0 auto;">
                                                     @error('closingPrices.'.$itemId)
                                                         <div class="invalid-feedback">{{ $message }}</div>
                                                     @enderror
+                                                    <small class="text-muted d-block mt-1">Per unit ({{ $firstItem->item->unit_type ?? 'unit' }})</small>
+                                                </td>
+                                                <td class="text-center fw-bold">
+                                                    {{ number_format($totalPrice, 2) }}
+                                                    <small class="text-muted d-block">({{ number_format($pricePerPiece, 2) }} × {{ $totalQuantity }})</small>
                                                 </td>
                                             </tr>
                                         @endforeach
@@ -724,26 +751,36 @@
                                             @php
                                                 $firstItem = $itemGroup->first();
                                                 $totalQuantity = $itemGroup->sum('quantity');
+                                                $unitQuantity = $firstItem->item->unit_quantity ?: 1;
+                                                $unitPrice = isset($closingPrices[$itemId]) && is_numeric($closingPrices[$itemId]) ? (float) $closingPrices[$itemId] : 0;
+                                                $pricePerPiece = $unitPrice * $unitQuantity;
+                                                $totalPrice = $pricePerPiece * $totalQuantity;
                                             @endphp
                                             <tr>
                                                 <td class="fw-medium">{{ $firstItem->item->name }}</td>
+                                                <td class="text-center">{{ $totalQuantity }}</td>
                                                 <td class="text-center">
                                                     <input type="number" 
                                                         wire:model.live="closingPrices.{{ $itemId }}" 
                                                         class="form-control form-control-sm text-center @error('closingPrices.'.$itemId) is-invalid @enderror" 
                                                         step="0.01" 
                                                         min="0" 
-                                                        placeholder="Enter total closing price"
-                                                        style="width: 200px; margin: 0 auto;">
+                                                        placeholder="Enter unit price"
+                                                        style="width: 150px; margin: 0 auto;">
                                                     @error('closingPrices.'.$itemId)
                                                         <div class="invalid-feedback">{{ $message }}</div>
                                                     @enderror
+                                                    <small class="text-muted d-block mt-1">Per unit ({{ $firstItem->item->unit_type ?? 'unit' }})</small>
+                                                </td>
+                                                <td class="text-center fw-bold">
+                                                    {{ number_format($totalPrice, 2) }}
+                                                    <small class="text-muted d-block">({{ number_format($pricePerPiece, 2) }} × {{ $totalQuantity }})</small>
                                                 </td>
                                             </tr>
                                         @endforeach
                                     @else
                                         <tr>
-                                            <td colspan="2" class="text-center text-muted">
+                                            <td colspan="4" class="text-center text-muted">
                                                 <i class="fas fa-exclamation-triangle me-2"></i>
                                                 No items found for this credit.
                                             </td>
