@@ -105,7 +105,7 @@
                 </div>
             </div>
             
-            <!-- Row 2: Branch, Warehouse, and Toggle -->
+            <!-- Row 2: Branch and Toggle -->
             <div class="row g-3">
                 @if(auth()->user()->canAccessLocationFilters())
                     <div class="col-6 col-md-4">
@@ -116,15 +116,7 @@
                             @endforeach
                         </select>
                     </div>
-                    <div class="col-6 col-md-4">
-                        <select wire:model.live="warehouseFilter" class="form-select">
-                            <option value="">All Warehouses</option>
-                            @foreach($warehouses as $warehouse)
-                                <option value="{{ $warehouse->id }}">{{ $warehouse->name }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-                    <div class="col-12 col-md-4">
+                    <div class="col-12 col-md-8">
                         <div class="d-flex align-items-center h-100">
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" wire:model.live="hideZeroStock" id="hideZeroStock">
@@ -148,7 +140,7 @@
                 @endif
             </div>
 
-                @if($search || $categoryFilter || $stockFilter || $hideZeroStock || (auth()->user()->canAccessLocationFilters() && ($branchFilter || $warehouseFilter)))
+            @if($search || $categoryFilter || $stockFilter || $hideZeroStock || (auth()->user()->canAccessLocationFilters() && $branchFilter))
                 <div class="mt-3">
                     <button type="button" class="btn btn-outline-secondary btn-sm" wire:click="clearFilters">
                         <i class="bi bi-arrow-clockwise me-1"></i>Clear Filters

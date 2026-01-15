@@ -89,6 +89,7 @@ trait HandlesItems
                 $this->newItem['cost'] = $costPerPiece;
                 $this->newItem['unit'] = $item->unit ?? '';
                 $this->current_stock = $this->getItemStock($value);
+                $this->itemSearch = $item->name;
 
                 $this->selectedItem = [
                     'id' => $item->id,
@@ -174,6 +175,14 @@ trait HandlesItems
         $this->loadItems();
         
         
+    }
+
+    public function clearCart()
+    {
+        $this->items = [];
+        $this->updateTotals();
+        $this->loadItems();
+        $this->notify('✓ Cart cleared successfully', 'success');
     }
 
     private function processAddItem()
@@ -297,13 +306,14 @@ trait HandlesItems
         
         $this->selectedItem = [
             'id' => $item['item_id'],
-            'name' => $item['name'],
-            'sku' => $item['sku'],
-            'unit' => $item['unit'],
-            'unit_quantity' => $item['unit_quantity'],
-            'item_unit' => $item['item_unit'],
+            'name' => $item['name'] ?? $item['item_name'] ?? 'Item',
+            'sku' => $item['sku'] ?? '',
+            'unit' => $item['unit'] ?? '',
+            'unit_quantity' => $item['unit_quantity'] ?? 1,
+            'item_unit' => $item['item_unit'] ?? 'pcs',
         ];
         
+        $this->itemSearch = $this->selectedItem['name'];
         $this->editingItemIndex = $index;
     }
 

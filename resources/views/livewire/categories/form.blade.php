@@ -2,29 +2,7 @@
     <form id="categoryForm" wire:submit.prevent="save" class="needs-validation">
         <div class="card-body p-0">
             <!-- Success/Error Messages -->
-            @if (session()->has('success'))
-                <div class="p-4 pb-0">
-                    <div class="alert alert-success alert-dismissible fade show mb-3" role="alert">
-                        <div class="d-flex align-items-center">
-                            <i class="bi bi-check-circle me-2"></i>
-                            <div>{{ session('success') }}</div>
-                        </div>
-                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                    </div>
-                </div>
-            @endif
 
-            @if (session()->has('error'))
-                <div class="p-4 pb-0">
-                    <div class="alert alert-danger alert-dismissible fade show mb-3" role="alert">
-                        <div class="d-flex align-items-center">
-                            <i class="bi bi-exclamation-triangle me-2"></i>
-                            <div>{{ session('error') }}</div>
-                        </div>
-                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                    </div>
-                </div>
-            @endif
 
             <!-- Form Content -->
             <div class="p-4 pt-0">

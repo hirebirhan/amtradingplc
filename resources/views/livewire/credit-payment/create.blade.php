@@ -662,15 +662,7 @@
                                     <strong>Credit Balance:</strong> {{ number_format($credit->balance, 2) }} ETB<br>
                                     <strong>Already Paid:</strong> {{ number_format($credit->paid_amount, 2) }} ETB
                                 </div>
-                                <div class="col-md-6">
-                                    @if($totalClosingCost > 0)
-                                        <strong class="text-primary">Payment Amount:</strong> {{ number_format($totalClosingCost, 2) }} ETB<br>
-                                        <strong>Total Closing Cost:</strong> {{ number_format($totalClosingCost, 2) }} ETB
-                                    @else
-                                        <strong class="text-primary">Payment Amount:</strong> Will be calculated<br>
-                                        <strong>Total Closing Cost:</strong> Will be calculated
-                                    @endif
-                                </div>
+                                
                             </div>
                         </div>
                         
@@ -692,9 +684,7 @@
                         @enderror
                         
                         @if(empty($closingPrices) || array_filter($closingPrices) == [])
-                            <div class="alert alert-warning">
-                                <i class="fas fa-info-circle me-2"></i>The closing prices field is required.
-                            </div>
+                            
                         @endif
                         
                         <div class="table-responsive">

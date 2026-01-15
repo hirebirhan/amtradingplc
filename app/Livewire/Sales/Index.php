@@ -18,7 +18,6 @@ class Index extends Component
     public $dateFrom = '';
     public $dateTo = '';
     public $branchFilter = '';
-    public $warehouseFilter = '';
     public $sortField = 'created_at';
     public $sortDirection = 'desc';
     public $perPage = 10;
@@ -29,7 +28,6 @@ class Index extends Component
         'dateFrom' => ['except' => ''],
         'dateTo' => ['except' => ''],
         'branchFilter' => ['except' => ''],
-        'warehouseFilter' => ['except' => ''],
         'sortField' => ['except' => 'created_at'],
         'sortDirection' => ['except' => 'desc'],
     ];
@@ -54,19 +52,15 @@ class Index extends Component
         $this->resetPage();
     }
 
-    public function updatingBranchFilter()
-    {
-        $this->resetPage();
-    }
 
-    public function updatingWarehouseFilter()
+    public function updatingBranchFilter()
     {
         $this->resetPage();
     }
 
     public function clearFilters()
     {
-        $this->reset(['search', 'status', 'dateFrom', 'dateTo', 'branchFilter', 'warehouseFilter']);
+        $this->reset(['search', 'status', 'dateFrom', 'dateTo', 'branchFilter']);
         $this->resetPage();
     }
 
@@ -177,9 +171,6 @@ class Index extends Component
                     });
                 });
             })
-            ->when($this->warehouseFilter, function($query) {
-                $query->where('warehouse_id', $this->warehouseFilter);
-            })
             ->when($this->sortField === 'total', function($query) {
                 $query->orderBy('total_amount', $this->sortDirection);
             }, function($query) {
@@ -216,32 +207,21 @@ class Index extends Component
         $sales = $this->getSalesQuery()->with('credit')->paginate($this->perPage);
         $user = auth()->user();
 
-        // Get branches and warehouses for filters based on user role
+        // Get branches for filters based on user role
         if ($user->isSuperAdmin() || $user->isGeneralManager()) {
-            // SuperAdmin and GeneralManager see all branches and warehouses
             $branches = \App\Models\Branch::where('is_active', true)->orderBy('name')->get();
-            $warehouses = \App\Models\Warehouse::orderBy('name')->get();
         } elseif ($user->isBranchManager() && $user->branch_id) {
-            // Branch Manager sees only their branch and its warehouses
             $branches = \App\Models\Branch::where('id', $user->branch_id)->where('is_active', true)->get();
-            $warehouses = \App\Models\Warehouse::whereHas('branches', function($q) use ($user) {
-                $q->where('branches.id', $user->branch_id);
-            })->orderBy('name')->get();
         } elseif ($user->warehouse_id) {
-            // Warehouse users see only their warehouse and its branches
             $warehouse = \App\Models\Warehouse::with('branches')->find($user->warehouse_id);
             $branches = $warehouse ? $warehouse->branches : collect([]);
-            $warehouses = collect([$warehouse])->filter();
         } else {
-            // Default: no filters for other users
             $branches = collect([]);
-            $warehouses = collect([]);
         }
 
         return view('livewire.sales.index', [
             'sales' => $sales,
             'branches' => $branches,
-            'warehouses' => $warehouses,
             'thisMonthCount' => $this->thisMonthCount,
             'totalRevenue' => $this->totalRevenue,
             'thisMonthRevenue' => $this->thisMonthRevenue,

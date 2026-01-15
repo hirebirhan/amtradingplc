@@ -50,37 +50,39 @@
 
     {{-- Add Item Form --}}
     <div class="border rounded p-3">
-        <div class="row g-3">
+        <div class="row g-2 align-items-end">
             {{-- Item Selection --}}
-            <div class="col-12 {{ ($selectedItem && !$stockWarningType) ? 'col-lg-3' : 'col-lg-12' }}">
-                <label class="form-label fw-medium">
+            <div class="col-12 {{ $selectedItem ? 'col-md-3' : 'col-md-10' }}" wire:key="item-selection-container">
+                <label class="form-label fw-medium mb-1">
                     Item <span class="text-primary">*</span>
                 </label>
-                @if($selectedItem && !$stockWarningType)
+                
+                <div class="position-relative" wire:key="item-selection-container-root">
                     <div class="input-group">
                         <span class="input-group-text bg-light">
-                            <i class="bi bi-box-seam text-primary"></i>
+                            <i class="bi {{ $selectedItem ? 'bi-box-seam text-primary' : 'bi-search text-secondary' }}"></i>
                         </span>
-                        <input type="text" readonly class="form-control form-control-lg fw-medium" value="{{ $selectedItem['name'] }}">
-                        <button class="btn btn-outline-danger" type="button" wire:click="clearSelectedItem" title="Clear item">
-                            <i class="bi bi-x-lg"></i>
-                        </button>
+                        <input type="text" 
+                               wire:model.live.debounce.300ms="itemSearch" 
+                               class="form-control {{ $selectedItem ? 'bg-light fw-medium' : '' }}" 
+                               @if(!$stockWarningType)
+                                   placeholder="Search items..."
+                               @endif
+                               autocomplete="off"
+                               {{ $selectedItem ? 'readonly' : '' }}>
+                        
+                        @if($selectedItem && !$stockWarningType)
+                            <button class="btn btn-outline-danger" type="button" wire:click="clearSelectedItem" title="Clear item">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        @endif
                     </div>
-                    <small class="text-muted d-block mt-1">
-                        <i class="bi bi-tag me-1"></i>SKU: {{ $selectedItem['sku'] }}
-                    </small>
-                @elseif(!$stockWarningType)
-                    <div class="position-relative">
-                        <div class="input-group">
-                            <span class="input-group-text bg-light">
-                                <i class="bi bi-search text-secondary"></i>
-                            </span>
-                            <input type="text" 
-                                   wire:model.live.debounce.300ms="itemSearch" 
-                                   class="form-control form-control-lg" 
-                                   placeholder="Search by name, SKU, or barcode..."
-                                   autocomplete="off">
-                        </div>
+
+                    @if($selectedItem && !$stockWarningType)
+                        <small class="text-muted d-block mt-1">
+                            <i class="bi bi-tag me-1"></i>SKU: {{ $selectedItem['sku'] }}
+                        </small>
+                    @elseif(!$stockWarningType)
                         @if(strlen($itemSearch) >= 2)
                             <div class="dropdown-menu show w-100 shadow-sm border" style="max-height: 300px; overflow-y: auto; z-index: 1050;">
                                 @if(count($this->filteredItemOptions) > 0)
@@ -155,14 +157,14 @@
                                 </div>
                             </div>
                         @endif
-                    </div>
-                @endif
+                    @endif
+                </div>
             </div>
 
             @if($selectedItem && !$stockWarningType)
                 {{-- Sale Unit Selection --}}
-                <div class="col-12 col-lg-2">
-                    <label class="form-label fw-medium">Sale Unit</label>
+                <div class="col-12 col-md-1">
+                    <label class="form-label fw-medium mb-1">Unit</label>
                     @php
                         $itemUnit = $selectedItem['item_unit'] ?? 'each';
                         $unitQuantity = $selectedItem['unit_quantity'] ?? 1;
@@ -184,7 +186,7 @@
                             'sqft' => 'Sq. Foot',
                         ];
                     @endphp
-                    <select wire:model.live="newItem.sale_unit" class="form-select form-select-lg">
+                    <select wire:model.live="newItem.sale_unit" class="form-select">
                         <option value="each">Each (Piece)</option>
                         @if($unitQuantity > 1 && $itemUnit !== 'each' && $itemUnit !== 'piece')
                             <option value="{{ $itemUnit }}">{{ $unitLabels[$itemUnit] ?? ucfirst($itemUnit) }}</option>
@@ -198,8 +200,8 @@
                 </div>
 
                 {{-- Quantity --}}
-                <div class="col-6 col-lg-2">
-                    <label class="form-label fw-medium">Quantity</label>
+                <div class="col-6 col-md-2">
+                    <label class="form-label fw-medium mb-1">Qty</label>
                     <div class="input-group">
                         @php
                             $isEach = ($newItem['sale_unit'] ?? 'each') === 'each';
@@ -207,7 +209,7 @@
                             $step = in_array($saleUnit, ['g', 'ml']) ? '0.01' : '1';
                             $unitLabel = $isEach ? 'Each' : ucfirst($saleUnit);
                         @endphp
-                        <input type="number" wire:model.live="newItem.quantity" class="form-control form-control-lg" min="0.01" step="{{ $step }}" placeholder="0">
+                        <input type="number" wire:model.live="newItem.quantity" class="form-control" min="0.01" step="{{ $step }}" placeholder="0">
                         <span class="input-group-text bg-light">{{ $unitLabel }}</span>
                     </div>
                     @php
@@ -232,16 +234,12 @@
                 </div>
 
                 {{-- Unit Price --}}
-                <div class="col-6 col-lg-2">
-                    <label class="form-label fw-medium">
-                        @if(($newItem['sale_unit'] ?? 'each') === 'each')
-                            Price/Each
-                        @else
-                            Price/{{ ucfirst($newItem['sale_unit'] ?? 'unit') }}
-                        @endif
+                <div class="col-6 col-md-2">
+                    <label class="form-label fw-medium mb-1">
+                        Price @if(($newItem['sale_unit'] ?? 'each') === 'each')/Each @else/{{ ucfirst($newItem['sale_unit'] ?? 'unit') }} @endif
                     </label>
                     <div class="input-group">
-                        <input type="number" wire:model.live="newItem.unit_price" class="form-control form-control-lg" min="0" step="0.01" placeholder="0.00">
+                        <input type="number" wire:model.live="newItem.unit_price" class="form-control" min="0" step="0.01" placeholder="0.00">
                     </div>
                     @if($newItem['sale_method'] === 'unit' && ($selectedItem['unit_quantity'] ?? 1) > 1)
                         <small class="text-muted d-block mt-1">
@@ -251,10 +249,10 @@
                 </div>
 
                 {{-- Total Price --}}
-                <div class="col-6 col-lg-2">
-                    <label class="form-label fw-medium">Total Amount</label>
+                <div class="col-6 col-md-2">
+                    <label class="form-label fw-medium mb-1">Total</label>
                     <div class="input-group">
-                        <input type="text" class="form-control form-control-lg fw-bold" value="{{ number_format((floatval($newItem['quantity'] ?? 0)) * (floatval($newItem['unit_price'] ?? 0)), 2) }}" readonly>
+                        <input type="text" class="form-control fw-bold" value="{{ number_format((floatval($newItem['quantity'] ?? 0)) * (floatval($newItem['unit_price'] ?? 0)), 2) }}" readonly>
                     </div>
                     @if($newItem['sale_method'] === 'unit' && ($selectedItem['unit_quantity'] ?? 1) > 1)
                         @php
@@ -266,19 +264,15 @@
                     @endif
                 </div>
 
-                {{-- Add Button --}}
-                <div class="col-6 col-lg-2 d-flex align-items-end pb-1">
+                <div class="col-6 col-md-2 d-flex align-items-end">
                     @if($editingItemIndex !== null)
-                        <div class="btn-group w-100">
-                            <button type="button" class="btn btn-success btn-lg" wire:click="addItem">
-                                <i class="bi bi-check-lg"></i>
-                            </button>
-                            <button type="button" class="btn btn-secondary btn-lg" wire:click="cancelEdit">
-                                <i class="bi bi-x-lg"></i>
+                        <div class="d-flex gap-1 w-100">
+                            <button type="button" class="btn btn-primary btn-sm flex-fill" wire:click="addItem">
+                                Update
                             </button>
                         </div>
                     @else
-                        <button type="button" class="btn btn-primary btn-lg w-100" wire:click="addItem">
+                        <button type="button" class="btn btn-primary w-100" wire:click="addItem">
                             <i class="bi bi-plus-lg me-1"></i>Add
                         </button>
                     @endif

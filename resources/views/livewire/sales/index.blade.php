@@ -47,7 +47,7 @@
                                 <i class="bi bi-x-lg"></i>
                             </button>
                         @endif
-                    </div>
+                </div>
                 </div>
                 <div class="col-6 col-md-2">
                     <select class="form-select" wire:model.live="status">
@@ -57,7 +57,7 @@
                         @endforeach
                     </select>
                 </div>
-                <div class="col-6 col-md-2">
+                <div class="col-6 col-md-3">
                     <select class="form-select" wire:model.live="branchFilter">
                         <option value="">All Branches</option>
                         @foreach($branches as $branch)
@@ -65,15 +65,6 @@
                         @endforeach
                     </select>
                 </div>
-                <div class="col-6 col-md-2">
-                    <select class="form-select" wire:model.live="warehouseFilter">
-                        <option value="">All Warehouses</option>
-                        @foreach($warehouses as $warehouse)
-                            <option value="{{ $warehouse->id }}">{{ $warehouse->name }}</option>
-                        @endforeach
-                    </select>
-                </div>
-             
             </div>
             
             <!-- Row 2: Date Range -->
@@ -86,10 +77,10 @@
                 </div>
             </div>
             
-            @if($search || $status || $dateFrom || $dateTo || $branchFilter || $warehouseFilter)
+            @if($search || $status || $dateFrom || $dateTo || $branchFilter)
                 <div class="mt-3">
-                        <button type="button" class="btn btn-outline-secondary btn-sm" wire:click="clearFilters">
-                            <i class="bi bi-arrow-clockwise me-1"></i>Clear Filters
+                    <button type="button" class="btn btn-outline-secondary btn-sm" wire:click="clearFilters">
+                        <i class="bi bi-arrow-clockwise me-1"></i>Clear Filters
                     </button>
                 </div>
             @endif

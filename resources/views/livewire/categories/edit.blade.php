@@ -12,9 +12,6 @@
                     </div>
                 </div>
                 <div class="d-flex gap-1">
-                    <a href="{{ route('admin.categories.show', $category) }}" class="btn btn-sm btn-outline-info">
-                        <i class="fas fa-eye me-1"></i> View
-                    </a>
                     <a href="{{ route('admin.categories.index') }}" class="btn btn-sm btn-outline-secondary">
                         <i class="fas fa-arrow-left me-1"></i> Back
                     </a>
