@@ -255,9 +255,9 @@
                                 <i class="bi bi-arrow-clockwise"></i>
                             </button>
                             @if(count($items) > 0)
-                                <button type="button" class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#clearCartModal"
-                                    title="Clear all items">
+                                <button type="button" class="btn btn-outline-danger btn-sm d-flex align-items-center gap-1" data-bs-toggle="modal" data-bs-target="#clearCartModal">
                                     <i class="bi bi-trash"></i>
+                                    <span>Clear All</span>
                                 </button>
                             @endif
                         </div>
@@ -270,11 +270,12 @@
                     <div class="border rounded p-3">
                         <div class="row g-2 align-items-end">
                             <!-- Item Selection -->
-                            <div class="col-12 {{ $selectedItem ? 'col-md-4' : 'col-md-10' }}">
+                            <div class="col-12 {{ $selectedItem ? 'col-md-4' : 'col-md-10' }}" wire:key="item-selection-container">
                                 <div class="d-flex justify-content-between align-items-center mb-1">
                                     <label class="form-label fw-medium mb-0">
                                         Item <span class="text-primary">*</span>
                                     </label>
+                                @if (!$selectedItem)
                                     <button type="button" 
                                             class="btn btn-primary btn-sm" 
                                             data-bs-toggle="modal" 
@@ -282,21 +283,22 @@
                                             title="Create new item">
                                         <i class="bi bi-plus-lg me-1"></i>New Item
                                     </button>
+                                @endif
                                 </div>
-                                @if($selectedItem)
-                                    <div class="input-group">
-                                        <input type="text" readonly class="form-control" value="{{ $selectedItem['name'] }}">
-                                        <button class="btn btn-outline-danger" type="button" wire:click="clearSelectedItem" title="Clear item">
+                                <div class="position-relative" wire:key="item-selection-container-root">
+                                    <input type="text" 
+                                           wire:model.live.debounce.300ms="itemSearch" 
+                                           class="form-control {{ $selectedItem ? 'bg-light' : '' }}" 
+                                           placeholder="Search items..."
+                                           autocomplete="off"
+                                           {{ $selectedItem ? 'readonly' : '' }}>
+                                    
+                                    @if($selectedItem)
+                                        <button class="btn btn-outline-danger btn-sm position-absolute top-50 end-0 translate-middle-y me-2" 
+                                                type="button" wire:click="clearSelectedItem" title="Clear item" style="z-index: 5;">
                                             <i class="bi bi-x-lg"></i>
                                         </button>
-                                    </div>
-                                @else
-                                    <div class="position-relative">
-                                        <input type="text" 
-                                               wire:model.live.debounce.300ms="itemSearch" 
-                                               class="form-control" 
-                                               placeholder="Search items..."
-                                               autocomplete="off">
+                                    @else
                                         @if(!empty($itemSearch) && count($this->filteredItemOptions) > 0)
                                             <div class="dropdown-menu show w-100" style="max-height: 200px; overflow-y: auto;">
                                                 @foreach($this->filteredItemOptions as $item)
@@ -322,8 +324,8 @@
                                                 @endforeach
                                             </div>
                                         @endif
-                                    </div>
-                                @endif
+                                    @endif
+                                </div>
                             </div>
                             @if($selectedItem)
                             <!-- Quantity -->
@@ -358,15 +360,13 @@
                             <div class="col-6 col-md-2 d-flex align-items-end">
                                 @if($editingItemIndex !== null)
                                     <div class="d-flex gap-1 w-100">
-                                        <button type="button" class="btn btn-success btn-sm flex-fill" wire:click="updateExistingItem">
-                                            <i class="bi bi-check-lg"></i>
-                                        </button>
-                                        <button type="button" class="btn btn-secondary btn-sm" wire:click="cancelEdit" title="Cancel editing">
-                                            <i class="bi bi-x-lg"></i>
+                                        
+                                        <button type="button" class="btn btn-primary btn-sm flex-fill" wire:click="updateExistingItem">
+                                            Update
                                         </button>
                                     </div>
                                 @else
-                                    <button type="button" class="btn btn-outline-secondary w-100" wire:click="addItem">
+                                    <button type="button" class="btn btn-primary w-100" wire:click="addItem">
                                         <i class="bi bi-plus-lg me-1"></i>Add
                                     </button>
                                 @endif
@@ -393,7 +393,7 @@
                                 </thead>
                                 <tbody>
                                     @foreach($items as $index => $item)
-                                    <tr>
+                                    <tr wire:key="cart-item-{{ $index }}">
                                         <td class="py-2 px-3">
                                             <div class="fw-medium">{{ $item['name'] }}</div>
                                         </td>

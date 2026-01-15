@@ -1,4 +1,3 @@
-<x-app-layout>
     <div class="container-fluid py-4">
         <!-- Page Header -->
         <div class="row align-items-center mb-4">
@@ -212,4 +211,4 @@
             </div>
         </div>
     </div>
-</x-app-layout>
+

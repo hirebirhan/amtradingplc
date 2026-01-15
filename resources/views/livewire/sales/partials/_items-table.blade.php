@@ -5,24 +5,24 @@
 @if($itemCount > 0)
     <div class="mb-4">
         <div class="table-responsive">
-            <table class="table table-hover mb-0">
+            <table class="table table-sm table-hover mb-0">
                 <thead>
                     <tr>
-                        <th class="py-3 px-4 fw-semibold text-dark">Item</th>
-                        <th class="text-center py-3 px-3 fw-semibold text-dark">Method</th>
-                        <th class="text-center py-3 px-3 fw-semibold text-dark">Qty</th>
-                        <th class="text-end py-3 px-3 fw-semibold text-dark">Price</th>
-                        <th class="text-end py-3 px-3 fw-semibold text-dark">Total</th>
-                        <th class="text-end py-3 px-4 fw-semibold text-dark" style="width: 80px;">Actions</th>
+                        <th class="py-2 px-3 fw-semibold text-dark">Item</th>
+                        <th class="text-center py-2 px-3 fw-semibold text-dark">Method</th>
+                        <th class="text-center py-2 px-3 fw-semibold text-dark">Qty</th>
+                        <th class="text-end py-2 px-3 fw-semibold text-dark">Price</th>
+                        <th class="text-end py-2 px-3 fw-semibold text-dark">Total</th>
+                        <th class="text-end py-2 px-3 fw-semibold text-dark" style="width: 80px;">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     @foreach($items as $index => $item)
                     <tr>
-                        <td class="py-3 px-4">
+                        <td class="py-2 px-3">
                             <div class="fw-medium">{{ $item['name'] }}</div>
                         </td>
-                        <td class="text-center py-3 px-3">
+                        <td class="text-center py-2 px-3">
                             @if(($item['sale_method'] ?? 'piece') === 'piece')
                                 <span class="badge bg-primary-subtle text-primary-emphasis">
                                     <i class="bi bi-box me-1"></i>Each
@@ -33,7 +33,7 @@
                                 </span>
                             @endif
                         </td>
-                        <td class="text-center py-3 px-3">
+                        <td class="text-center py-2 px-3">
                             {{ number_format($item['quantity'], ($item['sale_method'] ?? 'piece') === 'unit' ? 2 : 0) }} 
                             @if(($item['sale_method'] ?? 'piece') === 'piece')
                                 Each
@@ -41,18 +41,18 @@
                                 {{ $item['item_unit'] ?? 'units' }}
                             @endif
                         </td>
-                        <td class="text-end py-3 px-3">
+                        <td class="text-end py-2 px-3">
                             {{ number_format($item['price'], 2) }}
                         </td>
-                        <td class="text-end py-3 px-3">
+                        <td class="text-end py-2 px-3">
                             <span class="fw-semibold">{{ number_format($item['subtotal'], 2) }}</span>
                         </td>
-                        <td class="text-end py-3 px-4">
+                        <td class="text-end py-2 px-3">
                             <div class="btn-group btn-group-sm">
-                                <button type="button" class="btn btn-outline-secondary" wire:click="editItem({{ $index }})" title="Edit">
+                                <button type="button" class="btn btn-outline-secondary" wire:click="editItem({{ $index }})" title="Edit Item">
                                     <i class="bi bi-pencil-square"></i>
                                 </button>
-                                <button type="button" class="btn btn-outline-danger" wire:click="removeItem({{ $index }})" title="Remove">
+                                <button type="button" class="btn btn-outline-danger" wire:click="removeItem({{ $index }})" title="Remove Item">
                                     <i class="bi bi-trash"></i>
                                 </button>
                             </div>

@@ -34,9 +34,6 @@ class Index extends Component
     #[Url(except: '')]
     public $branchFilter = '';
     
-    #[Url(except: '')]
-    public $warehouseFilter = '';
-    
     #[Url(except: false)]
     public $hideZeroStock = false;
     
@@ -743,11 +740,6 @@ class Index extends Component
             ->when($this->branchFilter && auth()->user()->canAccessLocationFilters(), function ($query) {
                 $query->whereHas('stocks.warehouse.branches', function ($q) {
                     $q->where('branches.id', $this->branchFilter);
-                });
-            })
-            ->when($this->warehouseFilter && auth()->user()->canAccessLocationFilters(), function ($query) {
-                $query->whereHas('stocks', function ($q) {
-                    $q->where('warehouse_id', $this->warehouseFilter);
                 });
             })
             ->when($this->hideZeroStock, function ($query) use ($warehouseIds) {

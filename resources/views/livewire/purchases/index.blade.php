@@ -43,6 +43,14 @@
                         @endif
                     </div>
                 </div>
+                <div class="col-6 col-md-3">
+                    <select class="form-select" wire:model.live="branchFilter">
+                        <option value="">All Branches</option>
+                        @foreach($branches as $branch)
+                            <option value="{{ $branch->id }}">{{ $branch->name }}</option>
+                        @endforeach
+                    </select>
+                </div>
                 <div class="col-6 col-md-2">
                     <select class="form-select" wire:model.live="statusFilter">
                         <option value="">All Status</option>
@@ -52,23 +60,6 @@
                         <option value="pending">Pending</option>
                     </select>
                 </div>
-                <div class="col-6 col-md-2">
-                    <select class="form-select" wire:model.live="branchFilter">
-                        <option value="">All Branches</option>
-                        @foreach($branches as $branch)
-                            <option value="{{ $branch->id }}">{{ $branch->name }}</option>
-                        @endforeach
-                    </select>
-                </div>
-                <div class="col-6 col-md-2">
-                    <select class="form-select" wire:model.live="warehouseFilter">
-                        <option value="">All Warehouses</option>
-                        @foreach($warehouses as $warehouse)
-                            <option value="{{ $warehouse->id }}">{{ $warehouse->name }}</option>
-                        @endforeach
-                    </select>
-                </div>
-             
             </div>
             
             <!-- Row 2: Date Range -->
@@ -78,12 +69,12 @@
                 </div>
             </div>
 
-                @if($search || $statusFilter || $dateFilter || $branchFilter || $warehouseFilter)
+                @if($search || $statusFilter || $dateFilter)
                     <div class="mt-3">
                         <button type="button" class="btn btn-outline-secondary btn-sm" wire:click="clearFilters">
                             <i class="bi bi-arrow-clockwise me-1"></i>Clear Filters
                         </button>
-            </div>
+                    </div>
                 @endif
         </div>
 
@@ -95,12 +86,6 @@
                             <th class="px-4 py-3 cursor-pointer fw-semibold text-dark" wire:click="sortBy('supplier_id')">
                                 <div class="d-flex align-items-center gap-2">
                                     <span>Supplier</span>
-                                    <i class="bi bi-arrow-down-up text-secondary"></i>
-                                </div>
-                            </th>
-                            <th class="px-3 py-3 cursor-pointer fw-semibold text-dark" wire:click="sortBy('warehouse_id')">
-                                <div class="d-flex align-items-center gap-2">
-                                    <span>Warehouse</span>
                                     <i class="bi bi-arrow-down-up text-secondary"></i>
                                 </div>
                             </th>
@@ -131,7 +116,6 @@
                                 <td class="px-4 py-3">
                                     <span class="fw-medium">{{ $purchase->supplier->name ?? 'N/A' }}</span>
                                 </td>
-                                <td class="px-3 py-3">{{ $purchase->warehouse->name ?? 'N/A' }}</td>
                                 <td class="px-3 py-3">{{ $purchase->purchase_date->format('M d, Y') ?? 'N/A' }}</td>
                                 <td class="px-3 py-3 text-start">{{ number_format($purchase->total_amount, 2) ?? 'N/A' }}</td>
                                 <td class="px-3 py-3 text-center">
@@ -172,11 +156,11 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="6" class="text-center py-5">
+                                <td colspan="5" class="text-center py-5">
                                     <div class="d-flex flex-column align-items-center">
                                         <i class="bi bi-cart-x display-6 text-secondary mb-3"></i>
                                         <h6 class="fw-medium">No purchases found</h6>
-                                        @if($search || $statusFilter || $dateFilter || $branchFilter || $warehouseFilter)
+                                        @if($search || $statusFilter || $dateFilter || $branchFilter)
                                             <p class="text-secondary small">Try adjusting your search criteria</p>
                                             <button type="button" class="btn btn-outline-secondary btn-sm mt-2" wire:click="clearFilters">
                                                 <i class="bi bi-arrow-clockwise me-1"></i>Clear Filters

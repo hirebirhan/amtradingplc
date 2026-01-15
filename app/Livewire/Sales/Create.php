@@ -424,7 +424,7 @@ class Create extends Component
         ]);
 
         $this->availableStock = $item->getStockInWarehouse($warehouseId);
-        $this->itemSearch = '';
+        $this->itemSearch = $item->name;
     }
 
 
@@ -623,6 +623,8 @@ class Create extends Component
                 (int)($this->form['warehouse_id'] ?? 0),
                 (int)($this->form['branch_id'] ?? 0)
             );
+
+            $this->itemSearch = $itemModel->name;
         }
     }
 

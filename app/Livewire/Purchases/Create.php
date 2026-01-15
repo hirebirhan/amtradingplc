@@ -333,6 +333,7 @@ class Create extends Component
         ];
         
         $this->current_stock = $this->getItemStock($item->id);
+        $this->updatedNewItemItemId($item->id);
     }
 
     private function transactionNumberExists(string $transactionNumber): bool

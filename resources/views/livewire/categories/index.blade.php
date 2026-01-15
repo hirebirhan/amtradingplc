@@ -1,17 +1,6 @@
 {{-- Clean Categories Management Page --}}
 <div>
-    @if(session('success'))
-        <div class="alert alert-success alert-dismissible fade show" role="alert">
-            {{ session('success') }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-        </div>
-    @endif
-    @if(session('error'))
-        <div class="alert alert-danger alert-dismissible fade show" role="alert">
-            {{ session('error') }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-        </div>
-    @endif
+
     <!-- Modern 2-Row Header -->
     <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-start gap-3 mb-4">
         <div class="flex-grow-1">
