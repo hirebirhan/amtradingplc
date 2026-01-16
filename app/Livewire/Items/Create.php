@@ -268,7 +268,10 @@ class Create extends Component
         $branchId = $user->isSuperAdmin() ? null : $user->branch_id;
         
         return Item::where('name', $name)
-            ->where('branch_id', $branchId)
+            ->where(function($q) use ($branchId) {
+                $q->where('branch_id', $branchId)
+                  ->orWhereNull('branch_id');
+            })
             ->exists();
     }
     public function save()
@@ -293,7 +296,10 @@ class Create extends Component
                     Rule::unique('items', 'name')->where(function ($query) {
                         $user = Auth::user();
                         $branchId = $user->isSuperAdmin() ? null : $user->branch_id;
-                        return $query->where('branch_id', $branchId);
+                        return $query->where(function($q) use ($branchId) {
+                            $q->where('branch_id', $branchId)
+                              ->orWhereNull('branch_id');
+                        });
                     })
                 ],
                 'form.category_id' => 'required|exists:categories,id',

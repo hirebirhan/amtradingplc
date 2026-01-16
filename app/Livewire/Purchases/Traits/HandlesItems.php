@@ -31,7 +31,10 @@ trait HandlesItems
         // Apply branch filtering for non-admin users
         if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
             if ($user->branch_id) {
-                $query->where('branch_id', $user->branch_id);
+                $query->where(function($q) use ($user) {
+                    $q->where('branch_id', $user->branch_id)
+                      ->orWhereNull('branch_id');
+                });
             }
         }
         
@@ -366,7 +369,10 @@ trait HandlesItems
         // Apply branch filtering for non-admin users
         if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
             if ($user->branch_id) {
-                $query->where('branch_id', $user->branch_id);
+                $query->where(function($q) use ($user) {
+                    $q->where('branch_id', $user->branch_id)
+                      ->orWhereNull('branch_id');
+                });
             }
         }
         

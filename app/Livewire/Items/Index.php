@@ -707,13 +707,29 @@ class Index extends Component
         }
         
         $query = Item::query()
-            ->with(['category', 'stocks.warehouse', 'purchaseItems', 'saleItems'])
+            ->with(['category', 'stocks' => function($q) use ($user) {
+                // Filter stocks based on user's branch or selected filter
+                if (!$user->isSuperAdmin() && !$user->isGeneralManager() && $user->branch_id) {
+                    $q->whereHas('warehouse.branches', function($bq) use ($user) {
+                        $bq->where('branches.id', $user->branch_id);
+                    });
+                }
+                // If admin is filtering by branch
+                elseif (($user->isSuperAdmin() || $user->isGeneralManager()) && $this->branchFilter) {
+                    $q->whereHas('warehouse.branches', function($bq) {
+                        $bq->where('branches.id', $this->branchFilter);
+                    });
+                }
+            }, 'stocks.warehouse', 'purchaseItems', 'saleItems'])
             ->where('is_active', true);
             
         // Apply branch filtering for non-admin users
         if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
             if ($user->branch_id) {
-                $query->where('branch_id', $user->branch_id);
+                $query->where(function($q) use ($user) {
+                    $q->where('branch_id', $user->branch_id)
+                      ->orWhereNull('branch_id');
+                });
             }
         }
         
