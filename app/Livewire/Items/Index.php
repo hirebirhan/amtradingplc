@@ -878,10 +878,9 @@ class Index extends Component
     {
         $filtersToReset = ['search', 'categoryFilter', 'stockFilter', 'hideZeroStock'];
         
-        // Only reset branch and warehouse filters for users with permission
+        // Only reset branch filter for users with permission
         if (auth()->user()->canAccessLocationFilters()) {
             $filtersToReset[] = 'branchFilter';
-            $filtersToReset[] = 'warehouseFilter';
         }
         
         $this->reset($filtersToReset);
