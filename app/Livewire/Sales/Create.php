@@ -423,7 +423,8 @@ class Create extends Component
             'quantity' => 1,
         ]);
 
-        $this->availableStock = $item->getStockInWarehouse($warehouseId);
+        // Use getPiecesInWarehouse to get actual stock from database
+        $this->availableStock = $item->getPiecesInWarehouse($warehouseId);
         $this->itemSearch = $item->name;
     }
 

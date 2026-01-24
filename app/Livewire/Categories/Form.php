@@ -28,8 +28,6 @@ class Form extends Component
 
     protected function rules()
     {
-        $branchId = auth()->user()->branch_id;
-        
         $rules = [
             'name' => ['required', 'string', 'min:3', 'max:255', 'regex:/^[a-zA-Z0-9\s\-_]+$/'],
             'description' => 'nullable|string|max:1000',
@@ -40,11 +38,11 @@ class Form extends Component
             }],
         ];
 
-        // Add unique validation for name within branch
+        // Add unique validation for name globally
         if ($this->isEdit) {
-            $rules['name'][] = "unique:categories,name,{$this->category->id},id,branch_id,{$branchId}";
+            $rules['name'][] = "unique:categories,name,{$this->category->id}";
         } else {
-            $rules['name'][] = "unique:categories,name,NULL,id,branch_id,{$branchId}";
+            $rules['name'][] = "unique:categories,name";
         }
 
         return $rules;
@@ -89,18 +87,14 @@ class Form extends Component
     private function loadParentCategories(): void
     {
         try {
-            $branchId = auth()->user()->branch_id;
-            
             if ($this->isEdit) {
                 $excludedIds = $this->getCategoryAndChildrenIds($this->category);
-                $this->parentCategories = Category::where('branch_id', $branchId)
-                    ->whereNotIn('id', $excludedIds)
+                $this->parentCategories = Category::whereNotIn('id', $excludedIds)
                     ->orderBy('name')
                     ->get()
                     ->toArray();
             } else {
-                $this->parentCategories = Category::where('branch_id', $branchId)
-                    ->orderBy('name')
+                $this->parentCategories = Category::orderBy('name')
                     ->get()
                     ->toArray();
             }
@@ -156,10 +150,8 @@ class Form extends Component
             if ($this->isEdit && !empty($this->category->code)) {
                 $code = $this->category->code;
             } else {
-                // Otherwise generate a unique code
-                $branchId = auth()->user()->branch_id;
+                // Otherwise generate a unique code globally
                 while (Category::where('code', $code)
-                    ->where('branch_id', $branchId)
                     ->when($this->isEdit, function($query) {
                         return $query->where('id', '!=', $this->category->id);
                     })
@@ -194,7 +186,7 @@ class Form extends Component
                 'code' => $code,
                 'description' => $validated['description'] ? trim($validated['description']) : null,
                 'parent_id' => $validated['parent_id'],
-                'branch_id' => auth()->user()->branch_id,
+                'branch_id' => null, // Global category accessible to all branches
                 'is_active' => $this->is_active,
             ];
             
@@ -202,11 +194,10 @@ class Form extends Component
             if (!$this->isEdit || $this->category->name !== $categoryData['name']) {
                 $categoryData['slug'] = Str::slug($categoryData['name']);
                 
-                // Ensure slug is unique within branch
+                // Ensure slug is unique globally
                 $baseSlug = $categoryData['slug'];
                 $counter = 1;
                 while (Category::where('slug', $categoryData['slug'])
-                    ->where('branch_id', $categoryData['branch_id'])
                     ->when($this->isEdit, function($query) {
                         return $query->where('id', '!=', $this->category->id);
                     })

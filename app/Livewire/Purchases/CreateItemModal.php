@@ -76,7 +76,7 @@ class CreateItemModal extends Component
                 'barcode' => $barcode,
                 'is_active' => true,
                 'created_by' => Auth::id(),
-                'branch_id' => Auth::user()->isSuperAdmin() ? null : Auth::user()->branch_id,
+                'branch_id' => null, // Global item accessible to all branches
                 'reorder_level' => $validated['form']['reorder_level'] ?? 1,
             ]);
 
@@ -127,12 +127,8 @@ class CreateItemModal extends Component
     {
         $user = auth()->user();
         
-        // Apply branch filtering to categories
-        if ($user->isSuperAdmin() || $user->isGeneralManager()) {
-            $categories = Category::where('is_active', true)->orderBy('name')->get();
-        } else {
-            $categories = Category::forBranch($user->branch_id)->where('is_active', true)->orderBy('name')->get();
-        }
+        // Show all categories globally
+        $categories = Category::where('is_active', true)->orderBy('name')->get();
         
         $itemUnits = collect(ItemUnit::cases())->mapWithKeys(function ($unit) {
             return [$unit->value => $unit->label()];

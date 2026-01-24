@@ -136,16 +136,12 @@ class ItemsImport implements ToCollection, WithHeadingRow, WithValidation, WithB
                         $barcode = 'BAR-' . strtoupper(Str::random(12));
                     }
 
-                    $branchId = auth()->user()->isSuperAdmin() || auth()->user()->isGeneralManager() 
-                        ? null 
-                        : auth()->user()->branch_id;
-
                     $item = Item::create([
                         'name' => $name,
                         'sku' => $sku,
                         'barcode' => $barcode,
                         'category_id' => $categoryId,
-                        'branch_id' => $branchId,
+                        'branch_id' => null, // Global item accessible to all branches
                         'unit' => $unit,
                         'unit_quantity' => $unitQuantity,
                         'cost_price' => $costPrice,

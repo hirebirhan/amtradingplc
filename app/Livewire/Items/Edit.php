@@ -71,7 +71,7 @@ class Edit extends Component
                 'required',
                 'string', 
                 'max:255',
-                "unique:items,name,{$this->item->id},id,branch_id,{$branchId}"
+                "unique:items,name,{$this->item->id}"
             ],
             'form.category_id' => 'required|exists:categories,id',
             'form.description' => 'nullable|string',
@@ -84,7 +84,7 @@ class Edit extends Component
         ], [
             'form.name.required' => 'Item name is required.',
             'form.name.max' => 'Item name cannot exceed 255 characters.',
-            'form.name.unique' => 'This item name already exists in your branch. Please choose a different name.',
+            'form.name.unique' => 'This item name already exists. Please choose a different name.',
             'form.category_id.required' => 'Please select a category.',
             'form.category_id.exists' => 'Selected category is invalid.',
             'form.cost_price_per_unit.required' => 'Cost price per unit is required.',
@@ -131,12 +131,8 @@ class Edit extends Component
     {
         $user = auth()->user();
         
-        // Apply branch filtering to categories
-        if ($user->isSuperAdmin() || $user->isGeneralManager()) {
-            $categories = Category::where('is_active', true)->orderBy('name')->get();
-        } else {
-            $categories = Category::forBranch($user->branch_id)->where('is_active', true)->orderBy('name')->get();
-        }
+        // Show all categories globally
+        $categories = Category::where('is_active', true)->orderBy('name')->get();
         
         $itemUnits = collect(ItemUnit::cases())->mapWithKeys(function ($unit) {
             return [$unit->value => $unit->label()];

@@ -91,16 +91,9 @@ class Create extends Component
      */
     protected function performCategorySearch($searchTerm)
     {
-        $user = auth()->user();
-        $query = Category::where('name', 'like', '%' . $searchTerm . '%')
-            ->where('is_active', true);
-            
-        // Apply branch filtering for non-admin users
-        if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
-            $query->forBranch($user->branch_id);
-        }
-        
-        return $query->orderBy('name')
+        return Category::where('name', 'like', '%' . $searchTerm . '%')
+            ->where('is_active', true)
+            ->orderBy('name')
             ->limit(15)
             ->get()
             ->map(function ($category) {
@@ -163,6 +156,7 @@ class Create extends Component
             $category = Category::create([
                 'name' => trim($categoryName),
                 'is_active' => true,
+                'branch_id' => null, // Global category
                 'created_by' => auth()->id(),
             ]);
             
@@ -244,7 +238,7 @@ class Create extends Component
             if (strlen($this->form['name']) >= 2) {
                 $exists = $this->checkItemNameExists($this->form['name']);
                 if ($exists) {
-                    $this->addError('form.name', 'This item name already exists in your branch. Please choose a different name.');
+                    $this->addError('form.name', 'This item name already exists. Please choose a different name.');
                 } else {
                     $this->resetErrorBag('form.name');
                 }
@@ -260,19 +254,11 @@ class Create extends Component
     }
 
     /**
-     * Check if item name exists within the user's branch scope
+     * Check if item name exists globally
      */
     private function checkItemNameExists(string $name): bool
     {
-        $user = Auth::user();
-        $branchId = $user->isSuperAdmin() ? null : $user->branch_id;
-        
-        return Item::where('name', $name)
-            ->where(function($q) use ($branchId) {
-                $q->where('branch_id', $branchId)
-                  ->orWhereNull('branch_id');
-            })
-            ->exists();
+        return Item::where('name', $name)->exists();
     }
     public function save()
     {
@@ -293,14 +279,7 @@ class Create extends Component
                     'string',
                     'max:255',
                     'min:2',
-                    Rule::unique('items', 'name')->where(function ($query) {
-                        $user = Auth::user();
-                        $branchId = $user->isSuperAdmin() ? null : $user->branch_id;
-                        return $query->where(function($q) use ($branchId) {
-                            $q->where('branch_id', $branchId)
-                              ->orWhereNull('branch_id');
-                        });
-                    })
+                    'unique:items,name'
                 ],
                 'form.category_id' => 'required|exists:categories,id',
                 'form.description' => 'nullable|string|max:1000',
@@ -311,7 +290,7 @@ class Create extends Component
                 'form.name.required' => 'Item name is required.',
                 'form.name.min' => 'Item name must be at least 2 characters.',
                 'form.name.max' => 'Item name cannot exceed 255 characters.',
-                'form.name.unique' => 'This item name already exists in your branch. Please choose a different name.',
+                'form.name.unique' => 'This item name already exists. Please choose a different name.',
                 'form.category_id.required' => 'Please select a category.',
                 'form.category_id.exists' => 'Selected category is invalid.',
                 'form.unit_quantity.required' => 'Items per piece is required.',
@@ -345,7 +324,7 @@ class Create extends Component
                 'is_active' => true,
                 'created_by' => Auth::id(),
                 'reorder_level' => 1, // Default value
-                'branch_id' => Auth::user()->isSuperAdmin() ? null : Auth::user()->branch_id,
+                'branch_id' => null, // Global item accessible to all branches
             ]);
 
 
@@ -435,18 +414,12 @@ class Create extends Component
      */
     private function getHierarchicalCategories()
     {
-        $user = auth()->user();
         $categories = collect();
         
-        $query = Category::where('parent_id', null)
-            ->where('is_active', true);
-            
-        // Apply branch filtering for non-admin users
-        if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
-            $query->forBranch($user->branch_id);
-        }
-        
-        $rootCategories = $query->orderBy('name')->get();
+        $rootCategories = Category::where('parent_id', null)
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get();
 
         foreach ($rootCategories as $category) {
             $this->addCategoryWithChildren($categories, $category, 0);
@@ -463,16 +436,10 @@ class Create extends Component
         $category->display_name = str_repeat('— ', $level) . $category->name;
         $collection->push($category);
 
-        $user = auth()->user();
-        $query = Category::where('parent_id', $category->id)
-            ->where('is_active', true);
-            
-        // Apply branch filtering for non-admin users
-        if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
-            $query->forBranch($user->branch_id);
-        }
-        
-        $children = $query->orderBy('name')->get();
+        $children = Category::where('parent_id', $category->id)
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get();
 
         foreach ($children as $child) {
             $this->addCategoryWithChildren($collection, $child, $level + 1);
