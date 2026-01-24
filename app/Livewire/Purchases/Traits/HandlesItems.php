@@ -338,11 +338,16 @@ trait HandlesItems
             return;
         }
 
-        $this->items[$this->editingItemIndex]['quantity'] = floatval($this->newItem['quantity']);
-        $this->items[$this->editingItemIndex]['cost'] = round(floatval($this->newItem['cost']), 2);
-        $this->items[$this->editingItemIndex]['unit_cost'] = $this->newItem['unit_cost'];
-        $this->items[$this->editingItemIndex]['subtotal'] = $this->items[$this->editingItemIndex]['quantity'] * $this->items[$this->editingItemIndex]['cost'];
-        $this->items[$this->editingItemIndex]['notes'] = $this->newItem['notes'];
+        // Preserve existing item data and only update the changed fields
+        $existingItem = $this->items[$this->editingItemIndex];
+        
+        $this->items[$this->editingItemIndex] = array_merge($existingItem, [
+            'quantity' => floatval($this->newItem['quantity']),
+            'cost' => round(floatval($this->newItem['cost']), 2),
+            'unit_cost' => $this->newItem['unit_cost'],
+            'subtotal' => floatval($this->newItem['quantity']) * round(floatval($this->newItem['cost']), 2),
+            'notes' => $this->newItem['notes'] ?? '',
+        ]);
 
         $this->updateTotals();
         $this->cancelEdit();

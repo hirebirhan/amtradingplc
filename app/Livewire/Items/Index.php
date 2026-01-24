@@ -803,12 +803,24 @@ class Index extends Component
         
         $items = $query->paginate($this->perPage);
         
-        // Apply branch filtering to categories
-        if ($user->isSuperAdmin() || $user->isGeneralManager()) {
-            $categories = Category::orderBy('name')->get();
-        } else {
-            $categories = Category::forBranch($user->branch_id)->orderBy('name')->get();
+        // Add branch-specific financial data to each item
+        $user = auth()->user();
+        $branchId = null;
+        
+        // Determine branch context for financial data
+        if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
+            $branchId = $user->branch_id;
         }
+        
+        // Calculate branch-specific financial data for each item
+        foreach ($items as $item) {
+            $item->total_purchase_amount = $item->getTotalPurchaseAmount($branchId);
+            $item->total_sales_amount = $item->getTotalSalesAmount($branchId);
+            $item->cost_per_piece = $item->getCostPerPiece($branchId);
+        }
+        
+        // Apply branch filtering to categories - show all categories globally
+        $categories = Category::orderBy('name')->get();
         
         $branches = Branch::orderBy('name')->get();
         $warehouses = Warehouse::orderBy('name')->get();

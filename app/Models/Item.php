@@ -461,35 +461,68 @@ class Item extends Model
     }
 
     /**
-     * Get the total purchase amount for this item.
-     * This calculates the sum of all purchase costs for this item.
+     * Get the total purchase amount for this item (branch-specific).
      *
+     * @param int|null $branchId
      * @return float
      */
-    public function getTotalPurchaseAmountAttribute(): float
+    public function getTotalPurchaseAmount(?int $branchId = null): float
     {
-        return $this->purchaseItems()->sum('subtotal') ?: 0;
+        $query = $this->purchaseItems()
+            ->whereHas('purchase', function($q) use ($branchId) {
+                if ($branchId) {
+                    $q->where('branch_id', $branchId);
+                }
+            });
+        return $query->sum('subtotal') ?: 0;
     }
 
     /**
-     * Get the total quantity purchased for this item.
+     * Get the total quantity purchased for this item (branch-specific).
      *
+     * @param int|null $branchId
      * @return float
      */
-    public function getTotalPurchaseQuantityAttribute(): float
+    public function getTotalPurchaseQuantity(?int $branchId = null): float
     {
-        return $this->purchaseItems()->sum('quantity') ?: 0;
+        $query = $this->purchaseItems()
+            ->whereHas('purchase', function($q) use ($branchId) {
+                if ($branchId) {
+                    $q->where('branch_id', $branchId);
+                }
+            });
+        return $query->sum('quantity') ?: 0;
     }
 
     /**
-     * Get the total sales amount for this item.
-     * This calculates the sum of all sales revenue for this item.
+     * Get the total sales amount for this item (branch-specific).
      *
+     * @param int|null $branchId
      * @return float
      */
-    public function getTotalSalesAmountAttribute(): float
+    public function getTotalSalesAmount(?int $branchId = null): float
     {
-        return $this->saleItems()->sum('subtotal') ?: 0;
+        $query = $this->saleItems()
+            ->whereHas('sale', function($q) use ($branchId) {
+                if ($branchId) {
+                    $q->where('branch_id', $branchId);
+                }
+            });
+        return $query->sum('subtotal') ?: 0;
+    }
+
+    /**
+     * Get cost per piece for this item (branch-specific).
+     *
+     * @param int|null $branchId
+     * @return float
+     */
+    public function getCostPerPiece(?int $branchId = null): float
+    {
+        $totalCost = $this->getTotalPurchaseAmount($branchId);
+        $totalQty = $this->getTotalPurchaseQuantity($branchId);
+        
+        return $totalQty > 0 ? $totalCost / $totalQty : 0;
     }
 
     /**

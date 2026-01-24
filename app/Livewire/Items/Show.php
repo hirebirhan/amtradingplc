@@ -54,6 +54,14 @@ class Show extends Component
 
     public function render()
     {
+        $user = auth()->user();
+        $branchId = null;
+        
+        // Determine branch context for financial data
+        if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
+            $branchId = $user->branch_id;
+        }
+        
         // Get stock levels for this item across all warehouses
         $stocks = Stock::with('warehouse')
             ->where('item_id', $this->item->id)
@@ -67,18 +75,17 @@ class Show extends Component
             ->take(10)
             ->get();
 
-        // Debug: Log the count for troubleshooting
-        \Log::info('Stock histories for item ' . $this->item->id, [
-            'count' => $stockHistories->count(),
-            'item_name' => $this->item->name
-        ]);
-
         // Calculate profit margin
         $margin = $this->item->selling_price > 0 && $this->item->cost_price > 0 ?
             (($this->item->selling_price - $this->item->cost_price) / $this->item->selling_price) * 100 : 0;
 
         // Get recent activities (using stock histories as activities)
         $recentActivities = $stockHistories->take(5);
+        
+        // Calculate branch-specific financial data
+        $totalPurchaseAmount = $this->item->getTotalPurchaseAmount($branchId);
+        $totalSalesAmount = $this->item->getTotalSalesAmount($branchId);
+        $costPerPiece = $this->item->getCostPerPiece($branchId);
 
         return view('livewire.items.show', [
             'stocks' => $stocks,
@@ -87,6 +94,9 @@ class Show extends Component
             'totalStock' => $this->item->getTotalStockAttribute(),
             'isLowStock' => $this->item->isLowStock(),
             'margin' => $margin,
+            'totalPurchaseAmount' => $totalPurchaseAmount,
+            'totalSalesAmount' => $totalSalesAmount,
+            'costPerPiece' => $costPerPiece,
         ])->title('Item Details - ' . $this->item->name);
     }
 }
