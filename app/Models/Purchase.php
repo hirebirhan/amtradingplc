@@ -91,9 +91,21 @@ class Purchase extends Model
         
         // Auto-process purchase after creation based on payment method
         static::created(function ($purchase) {
-            // Only auto-process cash/immediate payments
-            if (in_array($purchase->payment_method, ['cash', 'bank_transfer', 'telebirr'])) {
-                $purchase->processPurchase();
+            // Only auto-process cash/immediate payments that are fully paid
+            if (in_array($purchase->payment_method, ['cash', 'bank_transfer', 'telebirr']) && 
+                $purchase->payment_status === 'paid') {
+                try {
+                    // Load items relationship before processing
+                    $purchase->load('items');
+                    if (!$purchase->items->isEmpty()) {
+                        $purchase->processPurchase();
+                    }
+                } catch (\Exception $e) {
+                    // Log error but don't fail the creation
+                    \Log::warning('Failed to auto-process purchase: ' . $e->getMessage(), [
+                        'purchase_id' => $purchase->id
+                    ]);
+                }
             }
         });
 
@@ -218,11 +230,30 @@ class Purchase extends Model
 
     /**
      * Process the purchase and update stock.
+     * Only processes confirmed purchases and prevents duplicate processing.
      */
     public function processPurchase(): bool
     {
+        // Allow processing for paid purchases or confirmed purchases
         if ($this->status === PurchaseStatus::RECEIVED->value) {
             return false; // Already processed
+        }
+
+        // For paid purchases, allow processing regardless of current status
+        if ($this->payment_status !== 'paid' && $this->status !== PurchaseStatus::CONFIRMED->value) {
+            throw new \InvalidArgumentException(
+                "Cannot process purchase with status '{$this->status}' and payment status '{$this->payment_status}'. Only confirmed or paid purchases can be processed."
+            );
+        }
+
+        // Validate purchase has items
+        if ($this->items->isEmpty()) {
+            throw new \InvalidArgumentException('Cannot process purchase with no items');
+        }
+
+        // Validate warehouse exists
+        if (!$this->warehouse) {
+            throw new \InvalidArgumentException('Purchase must have a valid warehouse');
         }
 
         // Start a transaction
@@ -506,6 +537,40 @@ class Purchase extends Model
     {
         return $this->advance_amount >= $this->total_amount;
     }
+    /**
+     * Validate if purchase can be processed based on current status.
+     */
+    public function canBeProcessed(): bool
+    {
+        return $this->status === PurchaseStatus::CONFIRMED->value && 
+               !$this->items->isEmpty() && 
+               $this->warehouse !== null;
+    }
 
+    /**
+     * Get validation errors for processing this purchase.
+     */
+    public function getProcessingValidationErrors(): array
+    {
+        $errors = [];
+
+        if ($this->status !== PurchaseStatus::CONFIRMED->value) {
+            $errors[] = "Purchase status must be 'confirmed' to process. Current status: {$this->status}";
+        }
+
+        if ($this->items->isEmpty()) {
+            $errors[] = 'Purchase must have at least one item to process';
+        }
+
+        if (!$this->warehouse) {
+            $errors[] = 'Purchase must have a valid warehouse assigned';
+        }
+
+        if ($this->status === PurchaseStatus::RECEIVED->value) {
+            $errors[] = 'Purchase has already been received and processed';
+        }
+
+        return $errors;
+    }
 
 }

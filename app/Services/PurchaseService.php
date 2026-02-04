@@ -49,6 +49,9 @@ class PurchaseService
             $this->createPurchaseItems($purchase, $items);
             $this->createCreditIfNeeded($purchase, $formData, $totalAmount);
             
+            // Auto-receive items for immediate inventory availability
+            $this->autoReceivePurchase($purchase);
+            
             return $purchase;
         });
     }
@@ -70,7 +73,7 @@ class PurchaseService
         $purchase->warehouse_id = $warehouseId;
         $purchase->purchase_date = $formData['purchase_date'];
         $purchase->payment_method = $formData['payment_method'];
-        $purchase->status = 'pending';
+        $purchase->status = \App\Enums\PurchaseStatus::RECEIVED->value; // Auto-receive for immediate availability
         $purchase->discount = 0;
         $purchase->tax = $taxAmount;
         $purchase->total_amount = $totalAmount;
@@ -281,6 +284,23 @@ class PurchaseService
         );
         $warehouse->branches()->syncWithoutDetaching([$branchId]);
         return (int)$warehouse->id;
+    }
+
+    /**
+     * Auto-receive purchase items for immediate inventory availability
+     */
+    private function autoReceivePurchase(Purchase $purchase): void
+    {
+        // Items are already added to stock in createPurchaseItems()
+        // This method can be extended for additional receiving logic if needed
+        
+        // Log the auto-receiving action
+        \Log::info('Purchase auto-received', [
+            'purchase_id' => $purchase->id,
+            'reference_no' => $purchase->reference_no,
+            'items_count' => $purchase->items->count(),
+            'user_id' => Auth::id()
+        ]);
     }
 
     private function generateUniqueReferenceNumber(): string
