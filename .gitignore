@@ -116,3 +116,13 @@ telescope.php
 
 # Laravel Horizon (if used)
 horizon.php
+
+# ==================================================
+# ZSH TERMINAL CONFIGURATION (PERSONAL USE ONLY)
+# ==================================================
+.zshrc
+setup-terminal.sh
+.p10k.zsh
+install-zsh.sh
+setup-personal-zsh.sh
+.gitignore.terminal

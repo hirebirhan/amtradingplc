@@ -45,62 +45,31 @@ class Show extends Component
         $this->paymentHistory = $this->purchase->payments()->orderBy('payment_date', 'desc')->get();
     }
 
-    public function markAsPaid()
-    {
-        if (!$this->canUpdatePurchase()) {
-            return $this->dispatchBrowserEvent('notify', [
-                'type' => 'error',
-                'message' => 'You do not have permission to update this purchase'
-            ]);
-        }
-
-        $this->purchase->payment_status = 'paid';
-        $this->purchase->save();
-
-        $this->dispatchBrowserEvent('notify', [
-            'type' => 'success',
-            'message' => 'Purchase marked as paid successfully!'
-        ]);
-    }
-
-    public function markAsPartial()
-    {
-        if (!$this->canUpdatePurchase()) {
-            return $this->dispatchBrowserEvent('notify', [
-                'type' => 'error',
-                'message' => 'You do not have permission to update this purchase'
-            ]);
-        }
-
-        $this->purchase->payment_status = 'partial';
-        $this->purchase->save();
-
-        $this->dispatchBrowserEvent('notify', [
-            'type' => 'success',
-            'message' => 'Purchase marked as partially paid successfully!'
-        ]);
-    }
-
-    public function markAsPending()
-    {
-        if (!$this->canUpdatePurchase()) {
-            return $this->dispatchBrowserEvent('notify', [
-                'type' => 'error',
-                'message' => 'You do not have permission to update this purchase'
-            ]);
-        }
-
-        $this->purchase->payment_status = 'pending';
-        $this->purchase->save();
-
-        $this->dispatchBrowserEvent('notify', [
-            'type' => 'success',
-            'message' => 'Purchase marked as pending successfully!'
-        ]);
-    }
-
     public function confirmStockUpdate()
     {
+        // Validate before showing confirmation
+        if ($this->purchase->status === 'received') {
+            return $this->dispatch('notify', [
+                'type' => 'info',
+                'message' => 'This purchase has already been received'
+            ]);
+        }
+
+        // Allow processing if confirmed OR if paid (regardless of status)
+        if ($this->purchase->status !== 'confirmed' && $this->purchase->payment_status !== 'paid') {
+            return $this->dispatch('notify', [
+                'type' => 'error',
+                'message' => 'Only confirmed or paid purchases can be received'
+            ]);
+        }
+
+        if ($this->purchase->items->isEmpty()) {
+            return $this->dispatch('notify', [
+                'type' => 'error',
+                'message' => 'Cannot receive purchase with no items'
+            ]);
+        }
+
         $this->confirmingStockUpdate = true;
     }
 
@@ -112,23 +81,41 @@ class Show extends Component
     public function updateStock()
     {
         if (!$this->canUpdatePurchase()) {
-            return $this->dispatchBrowserEvent('notify', [
+            return $this->dispatch('notify', [
                 'type' => 'error',
                 'message' => 'You do not have permission to update stock'
             ]);
         }
 
+        // Check if already received
         if ($this->purchase->status === 'received') {
-            return $this->dispatchBrowserEvent('notify', [
+            return $this->dispatch('notify', [
                 'type' => 'info',
                 'message' => 'This purchase has already been received'
+            ]);
+        }
+
+        // Allow processing if confirmed OR if paid (regardless of status)
+        if ($this->purchase->status !== 'confirmed' && $this->purchase->payment_status !== 'paid') {
+            return $this->dispatch('notify', [
+                'type' => 'error',
+                'message' => 'Only confirmed or paid purchases can be received. Current status: ' . ucfirst($this->purchase->status)
+            ]);
+        }
+
+        // Validate purchase has items
+        if ($this->purchase->items->isEmpty()) {
+            return $this->dispatch('notify', [
+                'type' => 'error',
+                'message' => 'Cannot receive purchase with no items'
             ]);
         }
 
         $this->isUpdatingStock = true;
 
         try {
-            // Process the purchase to update stock levels
+            // Process the purchase directly without changing status
+            // The processPurchase method will handle status validation
             $result = $this->purchase->processPurchase();
             
             if ($result) {
@@ -136,41 +123,32 @@ class Show extends Component
                 $this->purchase->refresh();
                 $this->purchaseItems = $this->purchase->items;
                 
-                $this->dispatchBrowserEvent('notify', [
+                $this->dispatch('notify', [
                     'type' => 'success',
-                    'message' => 'Stock has been updated successfully!'
+                    'message' => 'Purchase received successfully! Stock levels have been updated.'
                 ]);
             } else {
-                $this->dispatchBrowserEvent('notify', [
+                $this->dispatch('notify', [
                     'type' => 'warning',
                     'message' => 'Purchase was already processed or could not be processed'
                 ]);
             }
         } catch (\Exception $e) {
-            $this->dispatchBrowserEvent('notify', [
+            $this->dispatch('notify', [
                 'type' => 'error',
-                'message' => 'Error updating stock: ' . $e->getMessage()
+                'message' => 'Error receiving purchase: ' . $e->getMessage()
             ]);
             
             // Log the error for debugging
             Log::error('Error processing purchase: ' . $e->getMessage(), [
                 'purchase_id' => $this->purchase->id,
+                'user_id' => Auth::id(),
                 'exception' => $e
             ]);
         } finally {
             $this->isUpdatingStock = false;
             $this->confirmingStockUpdate = false;
         }
-    }
-
-    public function downloadPdf()
-    {
-        return redirect()->route('admin.purchases.pdf', $this->purchase->id);
-    }
-
-    public function printInvoice()
-    {
-        return redirect()->route('admin.purchases.print', $this->purchase);
     }
 
     public function render()

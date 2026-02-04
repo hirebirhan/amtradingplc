@@ -50,7 +50,7 @@
 
     {{-- Add Item Form --}}
     <div class="border rounded p-3">
-        <div class="row g-2 align-items-end">
+        <div class="row g-2">
             {{-- Item Selection --}}
             <div class="col-12 {{ $selectedItem ? 'col-md-3' : 'col-md-10' }}" wire:key="item-selection-container">
                 <label class="form-label fw-medium mb-1">
@@ -83,13 +83,12 @@
                             <i class="bi bi-tag me-1"></i>SKU: {{ $selectedItem['sku'] }}
                         </small>
                     @elseif(!$stockWarningType)
-                        @if(strlen($itemSearch) >= 2)
-                            <div class="dropdown-menu show w-100 shadow-sm border" style="max-height: 300px; overflow-y: auto; z-index: 1050;">
-                                @if(count($this->filteredItemOptions) > 0)
-                                    @foreach($this->filteredItemOptions as $item)
-                                        <button type="button" 
-                                                class="dropdown-item py-2 px-3" 
-                                                wire:click="selectItem({{ $item['id'] }})">
+                                        @if(!empty($itemSearch) && count($this->filteredItemOptions) > 0)
+                                            <div class="dropdown-menu show w-100" style="max-height: 200px; overflow-y: auto;">
+                                                @foreach($this->filteredItemOptions as $item)
+                                                    <button type="button" 
+                                                            class="dropdown-item" 
+                                                            wire:click="selectItem({{ $item['id'] }})">
                                             <div class="d-flex justify-content-between align-items-start gap-3">
                                                 <div class="flex-grow-1 min-w-0">
                                                     <div class="fw-medium text-dark mb-1">{{ $item['name'] }}</div>
@@ -140,24 +139,12 @@
                                                     @endif
                                                 </div>
                                             </div>
-                                        </button>
-                                    @endforeach
-                                @else
-                                    <div class="dropdown-item-text text-center py-3">
-                                        <i class="bi bi-search text-muted d-block mb-2" style="font-size: 2rem;"></i>
-                                        <small class="text-muted">No items found for "{{ $itemSearch }}"</small>
-                                    </div>
-                                @endif
-                            </div>
-                        @elseif(strlen($itemSearch) > 0)
-                            <div class="dropdown-menu show w-100 shadow-sm border">
-                                <div class="dropdown-item-text text-center py-3">
-                                    <i class="bi bi-keyboard text-muted d-block mb-2" style="font-size: 2rem;"></i>
-                                    <small class="text-muted">Type at least 2 characters to search...</small>
-                                </div>
-                            </div>
-                        @endif
+                                                    </button>
+                                                @endforeach
+                                            </div>
+                                        @endif
                     @endif
+                    <small class="d-block mt-1 text-muted" style="visibility: hidden;">.</small>
                 </div>
             </div>
 
@@ -192,6 +179,7 @@
                             <option value="{{ $itemUnit }}">{{ $unitLabels[$itemUnit] ?? ucfirst($itemUnit) }}</option>
                         @endif
                     </select>
+                    <small class="d-block mt-1 text-muted" style="visibility: hidden;">.</small>
                     @if($unitQuantity > 1 && $itemUnit !== 'each' && $itemUnit !== 'piece')
                         <small class="text-muted d-block mt-1">
                             <i class="bi bi-info-circle me-1"></i>1 Each = {{ $unitQuantity }} {{ $unitLabels[$itemUnit] ?? ucfirst($itemUnit) }}
@@ -241,6 +229,7 @@
                     <div class="input-group">
                         <input type="number" wire:model.live="newItem.unit_price" class="form-control" min="0" step="0.01" placeholder="0.00">
                     </div>
+                    <small class="d-block mt-1 text-muted" style="visibility: hidden;">.</small>
                     @if($newItem['sale_method'] === 'unit' && ($selectedItem['unit_quantity'] ?? 1) > 1)
                         <small class="text-muted d-block mt-1">
                             = {{ number_format((floatval($newItem['unit_price'] ?? 0)) * ($selectedItem['unit_quantity'] ?? 1), 2) }} ETB/Each
@@ -254,6 +243,7 @@
                     <div class="input-group">
                         <input type="text" class="form-control fw-bold" value="{{ number_format((floatval($newItem['quantity'] ?? 0)) * (floatval($newItem['unit_price'] ?? 0)), 2) }}" readonly>
                     </div>
+                    <small class="d-block mt-1 text-muted" style="visibility: hidden;">.</small>
                     @if($newItem['sale_method'] === 'unit' && ($selectedItem['unit_quantity'] ?? 1) > 1)
                         @php
                             $totalEach = (floatval($newItem['quantity'] ?? 0)) / ($selectedItem['unit_quantity'] ?? 1);
@@ -264,7 +254,8 @@
                     @endif
                 </div>
 
-                <div class="col-6 col-md-2 d-flex align-items-end">
+                <div class="col-6 col-md-2">
+                    <label class="form-label fw-medium mb-1" style="visibility: hidden;">Action</label>
                     @if($editingItemIndex !== null)
                         <div class="d-flex gap-1 w-100">
                             <button type="button" class="btn btn-primary btn-sm flex-fill" wire:click="addItem">
@@ -276,6 +267,7 @@
                             <i class="bi bi-plus-lg me-1"></i>Add
                         </button>
                     @endif
+                    <small class="d-block mt-1 text-muted" style="visibility: hidden;">.</small>
                 </div>
             @endif
         </div>
