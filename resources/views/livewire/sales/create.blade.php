@@ -101,6 +101,12 @@
                 });
             }
             
+            // Stock warning modal events
+            Livewire.on('showStockWarning', () => {
+                // Modal is shown via Livewire conditional rendering
+                // No additional JavaScript needed as it's controlled by $stockWarningType
+            });
+            
             // Debounced price checking
             Livewire.on('checkBelowCostPrice', (data) => {
                 clearTimeout(priceCheckTimeout);

@@ -90,22 +90,7 @@ class Category extends Model
 
     public function scopeForUser($query, User $user = null)
     {
-        if (!$user) {
-            $user = auth()->user();
-        }
-
-        if (!$user) {
-            return $query;
-        }
-
-        if ($user->isSuperAdmin() || $user->isGeneralManager()) {
-            return $query;
-        }
-
-        if ($user->branch_id) {
-            return $query->forBranch($user->branch_id);
-        }
-
+        // Categories are global - no user-based filtering needed
         return $query;
     }
 

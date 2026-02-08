@@ -3,16 +3,11 @@
 namespace App\Livewire\Transfers;
 
 use App\Models\Transfer;
-use App\Models\Branch;
-use App\Models\Stock;
-use App\Models\Item;
-use App\Models\Warehouse;
-use App\Models\Purchase;
-use App\Models\PurchaseItem;
+use App\Services\TransferService;
+use App\Exceptions\TransferException;
 use Livewire\Component;
 use Livewire\WithPagination;
 use Livewire\Attributes\Layout;
-use Illuminate\Support\Facades\DB;
 
 #[Layout('layouts.app')]
 class Pending extends Component
@@ -28,7 +23,7 @@ class Pending extends Component
     
     public $showModal = false;
     public $modalAction = '';
-    public $selectedTransfer = null;
+    public $selectedTransferId = null;
 
     protected $queryString = [
         'search' => ['except' => ''],
@@ -53,6 +48,14 @@ class Pending extends Component
         $this->resetPage();
     }
 
+    public function resetFilters()
+    {
+        $this->search = '';
+        $this->dateFrom = '';
+        $this->dateTo = '';
+        $this->resetPage();
+    }
+
     public function sortBy($field)
     {
         if ($this->sortField === $field) {
@@ -63,16 +66,11 @@ class Pending extends Component
         $this->sortField = $field;
     }
 
-    /**
-     * Get pending transfers query
-     */
     protected function getPendingTransfersQuery()
     {
         $user = auth()->user();
-        $query = Transfer::query()
-            ->where('status', 'pending');
+        $query = Transfer::query()->where('status', 'pending');
             
-        // Apply branch filtering for non-admin users
         if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
             if ($user->branch_id) {
                 $query->where(function ($q) use ($user) {
@@ -89,315 +87,189 @@ class Pending extends Component
             ->when($this->search, function($query) {
                 $query->where(function($q) {
                     $q->where('reference_code', 'like', '%' . $this->search . '%')
-                      ->orWhereHas('sourceWarehouse', function($subQ) {
-                          $subQ->where('name', 'like', '%' . $this->search . '%');
-                      })
-                      ->orWhereHas('destinationWarehouse', function($subQ) {
-                          $subQ->where('name', 'like', '%' . $this->search . '%');
-                      })
-                      ->orWhereHas('sourceBranch', function($subQ) {
-                          $subQ->where('name', 'like', '%' . $this->search . '%');
-                      })
-                      ->orWhereHas('destinationBranch', function($subQ) {
-                          $subQ->where('name', 'like', '%' . $this->search . '%');
-                      });
+                      ->orWhereHas('sourceWarehouse', fn($subQ) => $subQ->where('name', 'like', '%' . $this->search . '%'))
+                      ->orWhereHas('destinationWarehouse', fn($subQ) => $subQ->where('name', 'like', '%' . $this->search . '%'))
+                      ->orWhereHas('sourceBranch', fn($subQ) => $subQ->where('name', 'like', '%' . $this->search . '%'))
+                      ->orWhereHas('destinationBranch', fn($subQ) => $subQ->where('name', 'like', '%' . $this->search . '%'));
                 });
             })
-            ->when($this->dateFrom, function($query) {
-                $query->whereDate('date_initiated', '>=', $this->dateFrom);
-            })
-            ->when($this->dateTo, function($query) {
-                $query->whereDate('date_initiated', '<=', $this->dateTo);
-            })
+            ->when($this->dateFrom, fn($query) => $query->whereDate('date_initiated', '>=', $this->dateFrom))
+            ->when($this->dateTo, fn($query) => $query->whereDate('date_initiated', '<=', $this->dateTo))
             ->orderBy($this->sortField, $this->sortDirection)
-            ->with(['sourceWarehouse', 'destinationWarehouse', 'sourceBranch', 'destinationBranch', 'user', 'items']);
+            ->withCount('items')
+            ->with(['sourceWarehouse', 'destinationWarehouse', 'sourceBranch', 'destinationBranch', 'user']);
     }
 
-    /**
-     * Show confirmation modal
-     */
     public function showConfirmModal($transferId, $action)
     {
-        $this->selectedTransfer = Transfer::findOrFail($transferId);
+        $this->selectedTransferId = $transferId;
         $this->modalAction = $action;
         $this->showModal = true;
     }
     
-    /**
-     * Close modal
-     */
     public function closeModal()
     {
         $this->showModal = false;
         $this->modalAction = '';
-        $this->selectedTransfer = null;
+        $this->selectedTransferId = null;
     }
     
-    /**
-     * Confirm action
-     */
     public function confirmAction()
     {
+        if (!$this->selectedTransferId) {
+            $this->closeModal();
+            return;
+        }
+        
         if ($this->modalAction === 'approve') {
-            $this->approveTransfer($this->selectedTransfer->id);
+            $this->approveTransfer($this->selectedTransferId);
         } elseif ($this->modalAction === 'reject') {
-            $this->rejectTransfer($this->selectedTransfer->id);
+            $this->rejectTransfer($this->selectedTransferId);
+        } elseif ($this->modalAction === 'cancel') {
+            $this->cancelTransfer($this->selectedTransferId);
         }
         
         $this->closeModal();
     }
     
-    /**
-     * Approve a pending transfer
-     */
     public function approveTransfer($transferId)
     {
-        $transfer = Transfer::findOrFail($transferId);
-        
-        if ($transfer->status !== 'pending') {
-            session()->flash('error', 'Only pending transfers can be approved.');
-            return;
+        try {
+            $transfer = Transfer::findOrFail($transferId);
+            $user = auth()->user();
+            
+            // Prevent approving own branch's outgoing transfers
+            if ($user->isBranchManager() && $user->branch_id && 
+                $transfer->source_type === 'branch' && $transfer->source_id === $user->branch_id) {
+                session()->flash('error', 'You cannot approve transfers from your own branch.');
+                return;
+            }
+            
+            // Check permission
+            if (!$this->canApproveTransfer($transfer)) {
+                session()->flash('error', 'You do not have permission to approve this transfer.');
+                return;
+            }
+            
+            $transferService = new TransferService();
+            $transferService->processTransferWorkflow($transfer, auth()->user(), 'approve');
+            
+            session()->flash('success', "Transfer {$transfer->reference_code} approved successfully.");
+        } catch (TransferException $e) {
+            session()->flash('error', $e->getMessage());
+        } catch (\Exception $e) {
+            session()->flash('error', 'Failed to approve transfer: ' . $e->getMessage());
         }
-        
-        $user = auth()->user();
-        if (!($user->isSuperAdmin() || $user->isGeneralManager() || ($user->isBranchManager() && $user->branch_id === $transfer->destination_id))) {
-            session()->flash('error', 'Only the destination branch manager can approve this transfer.');
-            return;
-        }
-        
-        $this->processTransferApproval($transfer, $user);
-        
-        session()->flash('success', 'Transfer approved and completed successfully.');
     }
     
-    /**
-     * Reject a pending transfer
-     */
+    protected function canApproveTransfer($transfer)
+    {
+        $user = auth()->user();
+        
+        if ($user->isSuperAdmin() || $user->isGeneralManager()) {
+            return true;
+        }
+        
+        if ($user->isBranchManager() && $user->branch_id) {
+            // Only the RECEIVING branch can approve (destination)
+            return $transfer->destination_type === 'branch' && $transfer->destination_id === $user->branch_id;
+        }
+        
+        return false;
+    }
+    
     public function rejectTransfer($transferId)
     {
-        $transfer = Transfer::findOrFail($transferId);
-        
-        if ($transfer->status !== 'pending') {
-            session()->flash('error', 'Only pending transfers can be rejected.');
-            return;
-        }
-        
-        $user = auth()->user();
-        if (!($user->isSuperAdmin() || $user->isGeneralManager() || ($user->isBranchManager() && $user->branch_id === $transfer->destination_id))) {
-            session()->flash('error', 'Only the destination branch manager can reject this transfer.');
-            return;
-        }
-        
-        $transfer->update(['status' => 'rejected']);
-        
-        session()->flash('success', 'Transfer rejected successfully.');
-    }
-
-    /**
-     * Process transfer approval with proper stock movement
-     */
-    private function processTransferApproval($transfer, $user)
-    {
-        DB::beginTransaction();
-        
         try {
-            $sourceBranch = Branch::with('warehouses')->find($transfer->source_id);
-            $destinationBranch = Branch::with('warehouses')->find($transfer->destination_id);
+            $transfer = Transfer::findOrFail($transferId);
+            $user = auth()->user();
             
-            if (!$sourceBranch || !$destinationBranch) {
-                throw new \Exception('Source or destination branch not found');
+            // Check permission - only receiver can reject
+            if (!$this->canRejectTransfer($transfer)) {
+                session()->flash('error', 'You do not have permission to reject this transfer.');
+                return;
             }
             
-            $sourceWarehouses = $sourceBranch->warehouses;
-            $destinationWarehouse = $destinationBranch->warehouses->first();
+            $transferService = new TransferService();
+            $transferService->processTransferWorkflow($transfer, auth()->user(), 'reject');
             
-            // Create warehouse if none exists in destination branch
-            if (!$destinationWarehouse) {
-                $destinationWarehouse = Warehouse::create([
-                    'name' => $destinationBranch->name . ' Main Warehouse',
-                    'code' => 'WH-' . strtoupper(substr($destinationBranch->code ?? $destinationBranch->name, 0, 3)) . '-001',
-                    'address' => $destinationBranch->address,
-                    'branch_id' => $destinationBranch->id,
-                    'created_by' => $user->id,
-                ]);
-                
-                // Attach to branch via pivot table
-                $destinationBranch->warehouses()->attach($destinationWarehouse->id);
-            }
-            
-            // Create purchase record for transferred items
-            $purchase = Purchase::create([
-                'reference_no' => 'TRF-' . $transfer->reference_code,
-                'branch_id' => $destinationBranch->id,
-                'warehouse_id' => $destinationWarehouse->id,
-                'user_id' => $user->id,
-                'purchase_date' => now(),
-                'total_amount' => 0,
-                'status' => 'received',
-                'payment_status' => 'paid',
-                'payment_method' => 'cash',
-                'paid_amount' => 0,
-                'due_amount' => 0,
-                'notes' => 'Items transferred from ' . $sourceBranch->name . ' via transfer #' . $transfer->reference_code,
-                'created_by' => $user->id,
-            ]);
-            
-            foreach ($transfer->items as $transferItem) {
-                $item = $transferItem->item;
-                $quantity = $transferItem->quantity;
-                
-                // Deduct from source warehouses using proper stock methods
-                $remainingToDeduct = $quantity;
-                foreach ($sourceWarehouses as $warehouse) {
-                    if ($remainingToDeduct <= 0) break;
-                    
-                    $stock = Stock::where('item_id', $item->id)
-                        ->where('warehouse_id', $warehouse->id)
-                        ->first();
-                    
-                    if ($stock && $stock->piece_count > 0) {
-                        $deductAmount = min($remainingToDeduct, $stock->piece_count);
-                        
-                        // Use proper stock deduction method like sales
-                        $stock->sellByPiece(
-                            $deductAmount,
-                            $item->unit_quantity,
-                            'transfer',
-                            $transfer->id,
-                            "Transfer to {$destinationBranch->name}",
-                            $user->id
-                        );
-                        
-                        $remainingToDeduct -= $deductAmount;
-                    }
-                }
-                
-                // Find or create item in destination branch
-                $destinationItem = Item::where('branch_id', $destinationBranch->id)
-                    ->where('name', $item->name)
-                    ->first();
-                
-                if (!$destinationItem) {
-                    $destinationItem = Item::create([
-                        'name' => $item->name,
-                        'sku' => $this->generateUniqueSku($item->sku, $destinationBranch->id),
-                        'barcode' => $this->generateUniqueBarcode($item->barcode, $destinationBranch->id),
-                        'category_id' => $item->category_id,
-                        'branch_id' => $destinationBranch->id,
-                        'cost_price' => $item->cost_price,
-                        'selling_price' => $item->selling_price,
-                        'unit' => $item->unit,
-                        'unit_quantity' => $item->unit_quantity,
-                        'item_unit' => $item->item_unit,
-                        'reorder_level' => $item->reorder_level,
-                        'brand' => $item->brand,
-                        'description' => $item->description,
-                        'is_active' => true,
-                        'created_by' => $user->id,
-                    ]);
-                }
-                
-                // Create purchase item record - quantity represents pieces
-                PurchaseItem::create([
-                    'purchase_id' => $purchase->id,
-                    'item_id' => $destinationItem->id,
-                    'quantity' => $quantity, // Pieces transferred
-                    'unit_cost' => $item->cost_price,
-                    'subtotal' => $quantity * $item->cost_price,
-                ]);
-                
-                // Add to destination warehouse stock using proper stock methods
-                $destinationStock = Stock::firstOrCreate(
-                    [
-                        'item_id' => $destinationItem->id,
-                        'warehouse_id' => $destinationWarehouse->id,
-                    ],
-                    [
-                        'quantity' => 0,
-                        'piece_count' => 0,
-                        'total_units' => 0,
-                        'current_piece_units' => $destinationItem->unit_quantity,
-                        'branch_id' => $destinationBranch->id
-                    ]
-                );
-                
-                // Use proper stock addition method like purchases
-                $destinationStock->addPieces(
-                    $quantity,
-                    $destinationItem->unit_quantity,
-                    'transfer',
-                    $transfer->id,
-                    "Transfer from {$sourceBranch->name}",
-                    $user->id
-                );
-            }
-            
-            // Update purchase total amount
-            $totalAmount = $purchase->purchaseItems()->sum('subtotal');
-            $purchase->update([
-                'total_amount' => $totalAmount,
-                'paid_amount' => $totalAmount,
-                'due_amount' => 0,
-            ]);
-            
-            $transfer->update([
-                'status' => 'completed',
-                'approved_by' => $user->id,
-                'approved_at' => now(),
-            ]);
-            
-            DB::commit();
-            
+            session()->flash('success', "Transfer {$transfer->reference_code} rejected successfully.");
+        } catch (TransferException $e) {
+            session()->flash('error', $e->getMessage());
         } catch (\Exception $e) {
-            DB::rollBack();
-            throw $e;
+            session()->flash('error', 'Failed to reject transfer: ' . $e->getMessage());
         }
     }
     
-    /**
-     * Generate unique SKU for destination branch
-     */
-    private function generateUniqueSku($originalSku, $branchId)
+    protected function canRejectTransfer($transfer)
     {
-        $baseSku = $originalSku . '-B' . $branchId;
-        $counter = 1;
-        $newSku = $baseSku;
+        $user = auth()->user();
         
-        while (Item::where('sku', $newSku)->exists()) {
-            $newSku = $baseSku . '-' . $counter;
-            $counter++;
+        if ($user->isSuperAdmin() || $user->isGeneralManager()) {
+            return true;
         }
         
-        return $newSku;
+        if ($user->isBranchManager() && $user->branch_id) {
+            // Only the RECEIVING branch can reject (destination)
+            return $transfer->destination_type === 'branch' && $transfer->destination_id === $user->branch_id;
+        }
+        
+        return false;
     }
     
-    /**
-     * Generate unique barcode for destination branch
-     */
-    private function generateUniqueBarcode($originalBarcode, $branchId)
+    public function cancelTransfer($transferId)
     {
-        if (!Item::where('barcode', $originalBarcode)->exists()) {
-            return $originalBarcode;
+        try {
+            $transfer = Transfer::findOrFail($transferId);
+            $user = auth()->user();
+            
+            // Check permission - only sender can cancel
+            if (!$this->canCancelTransfer($transfer)) {
+                session()->flash('error', 'You do not have permission to cancel this transfer.');
+                return;
+            }
+            
+            $transferService = new TransferService();
+            $transferService->processTransferWorkflow($transfer, auth()->user(), 'cancel');
+            
+            session()->flash('success', "Transfer {$transfer->reference_code} cancelled successfully.");
+        } catch (TransferException $e) {
+            session()->flash('error', $e->getMessage());
+        } catch (\Exception $e) {
+            session()->flash('error', 'Failed to cancel transfer: ' . $e->getMessage());
+        }
+    }
+    
+    protected function canCancelTransfer($transfer)
+    {
+        $user = auth()->user();
+        
+        if ($user->isSuperAdmin() || $user->isGeneralManager()) {
+            return true;
         }
         
-        $baseBarcode = $originalBarcode . 'B' . $branchId;
-        $counter = 1;
-        $newBarcode = $baseBarcode;
-        
-        while (Item::where('barcode', $newBarcode)->exists()) {
-            $newBarcode = $baseBarcode . $counter;
-            $counter++;
+        if ($user->isBranchManager() && $user->branch_id) {
+            // Only the SENDING branch can cancel (source)
+            return $transfer->source_type === 'branch' && $transfer->source_id === $user->branch_id;
         }
         
-        return $newBarcode;
+        return false;
     }
 
     public function render()
     {
         $transfers = $this->getPendingTransfersQuery()->paginate($this->perPage);
+        
+        $selectedTransfer = null;
+        if ($this->selectedTransferId) {
+            $selectedTransfer = Transfer::withCount('items')
+                ->with(['sourceWarehouse', 'destinationWarehouse', 'sourceBranch', 'destinationBranch'])
+                ->find($this->selectedTransferId);
+        }
 
         return view('livewire.transfers.pending', [
             'transfers' => $transfers,
+            'selectedTransfer' => $selectedTransfer,
         ])->title('Pending Transfers');
     }
 }

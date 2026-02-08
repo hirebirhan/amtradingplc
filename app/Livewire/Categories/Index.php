@@ -232,11 +232,8 @@ class Index extends Component
             ->withCount(['items', 'children'])
             ->with('parent');
             
-        // Apply branch filtering for non-admin users
-        $user = auth()->user();
-        if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
-            $query->forBranch($user->branch_id);
-        }
+        // Apply branch filtering for non-admin users - Categories are global
+        // No filtering needed at category level since categories are global
         
         $query->when($this->search, function (Builder $query) {
                 $query->where('name', 'like', '%' . $this->search . '%')
@@ -265,11 +262,8 @@ class Index extends Component
     {
         $user = auth()->user();
         
-        // Apply branch filtering for statistics
+        // Categories are global - no branch filtering needed
         $categoryQuery = Category::query();
-        if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
-            $categoryQuery->forBranch($user->branch_id);
-        }
         
         // Get total category count
         $totalCategories = $categoryQuery->count();

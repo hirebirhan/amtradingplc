@@ -62,18 +62,45 @@ class Show extends Component
             $branchId = $user->branch_id;
         }
         
-        // Get stock levels for this item across all warehouses
-        $stocks = Stock::with('warehouse')
-            ->where('item_id', $this->item->id)
-            ->orderBy('quantity', 'desc')
-            ->get();
+        // Get stock levels for this item with branch isolation
+        $stocksQuery = Stock::with('warehouse')
+            ->where('item_id', $this->item->id);
+            
+        // Apply branch isolation
+        if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
+            if ($user->warehouse_id) {
+                // Warehouse user sees only their warehouse
+                $stocksQuery->where('warehouse_id', $user->warehouse_id);
+            } elseif ($user->branch_id) {
+                // Branch user sees only their branch warehouses
+                $stocksQuery->whereHas('warehouse', function($q) use ($user) {
+                    $q->whereHas('branches', function($bq) use ($user) {
+                        $bq->where('branches.id', $user->branch_id);
+                    });
+                });
+            }
+        }
+        
+        $stocks = $stocksQuery->orderBy('quantity', 'desc')->get();
 
-        // Get recent stock histories for this item
-        $stockHistories = StockHistory::with('warehouse', 'user')
-            ->where('item_id', $this->item->id)
-            ->latest()
-            ->take(10)
-            ->get();
+        // Get recent stock histories for this item with branch isolation
+        $stockHistoriesQuery = StockHistory::with('warehouse', 'user')
+            ->where('item_id', $this->item->id);
+            
+        // Apply branch isolation to stock history
+        if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
+            if ($user->warehouse_id) {
+                $stockHistoriesQuery->where('warehouse_id', $user->warehouse_id);
+            } elseif ($user->branch_id) {
+                $stockHistoriesQuery->whereHas('warehouse', function($q) use ($user) {
+                    $q->whereHas('branches', function($bq) use ($user) {
+                        $bq->where('branches.id', $user->branch_id);
+                    });
+                });
+            }
+        }
+        
+        $stockHistories = $stockHistoriesQuery->latest()->take(10)->get();
 
         // Calculate profit margin
         $margin = $this->item->selling_price > 0 && $this->item->cost_price > 0 ?
@@ -91,7 +118,7 @@ class Show extends Component
             'stocks' => $stocks,
             'stockHistories' => $stockHistories,
             'recentActivities' => $recentActivities,
-            'totalStock' => $this->item->getTotalStockAttribute(),
+            'totalStock' => $this->item->getRoleBasedStock($user),
             'isLowStock' => $this->item->isLowStock(),
             'margin' => $margin,
             'totalPurchaseAmount' => $totalPurchaseAmount,

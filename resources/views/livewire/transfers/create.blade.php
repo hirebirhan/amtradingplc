@@ -105,7 +105,7 @@
     </div>
 
     <!-- Add Items Card -->
-    @if(!empty($form['source_id']))
+    @if(!empty($form['source_id']) && !empty($form['destination_id']))
         <div class="card border-0 shadow-sm mb-3">
             <div class="card-header border-bottom d-flex justify-content-between align-items-center">
                 <h6 class="mb-0 fw-semibold">
@@ -113,8 +113,9 @@
                 </h6>
                 <div class="d-flex align-items-center gap-2">
                     @if(count($items) > 0)
-                        <button type="button" class="btn btn-sm btn-outline-danger" wire:click="clearCart" 
-                                wire:confirm="Are you sure you want to clear all items?" title="Clear all items">
+                        <button type="button" class="btn btn-sm btn-outline-danger" 
+                                wire:click="clearCart" 
+                                title="Clear all items">
                             🗑️ Clear Items
                         </button>
                     @endif
@@ -127,6 +128,128 @@
             </div>
             
             <div class="card-body p-3">
+                <!-- Add Item Form - Always visible -->
+                <div class="row g-2 align-items-end mb-3">
+                    <!-- Item Selection -->
+                    <div class="col-md-5">
+                        <label class="form-label fw-medium small mb-1">
+                            🔍 Select Item
+                            @if($editingItemIndex !== null)
+                                <span class="badge ms-2 bg-info bg-opacity-10 text-info">Editing #{{ $editingItemIndex + 1 }}</span>
+                            @endif
+                        </label>
+                        @if($selectedItem)
+                            <div class="input-group">
+                                <input 
+                                    type="text" 
+                                    readonly 
+                                    class="form-control bg-light" 
+                                    value="{{ $selectedItem['label'] }}{{ $editingItemIndex !== null ? ' - EDITING' : '' }}"
+                                >
+                                <button class="btn btn-outline-danger" type="button" wire:click="clearSelectedItem" title="Clear item">
+                                    ×
+                                </button>
+                            </div>
+                        @else
+                            <!-- Searchable Item Dropdown -->
+                            <div class="position-relative">
+                                <input 
+                                    type="text" 
+                                    class="form-control @error('newItem.item_id') is-invalid @enderror" 
+                                    wire:model.live.debounce.300ms="itemSearchTerm"
+                                    placeholder="Search items by name or SKU..."
+                                    autocomplete="off"
+                                >
+                                
+                                @if($itemSearchTerm && $this->filteredItemOptions)
+                                    <div class="dropdown-menu show w-100 shadow-sm" style="max-height: 300px; overflow-y: auto;">
+                                        @forelse($this->filteredItemOptions as $option)
+                                            <button 
+                                                type="button" 
+                                                class="dropdown-item d-flex justify-content-between align-items-center" 
+                                                wire:click="selectItem({{ $option['id'] }})"
+                                            >
+                                                <div>
+                                                    <div class="fw-medium">{{ $option['name'] }}</div>
+                                                    <small class="text-muted">{{ $option['sku'] }}</small>
+                                                </div>
+                                                <div class="text-end">
+                                                    <small class="badge bg-success">{{ number_format($option['available_stock'], 2) }} available</small>
+                                                </div>
+                                            </button>
+                                        @empty
+                                            <div class="dropdown-item-text text-muted">
+                                                <i class="bi bi-search me-1"></i>No items found
+                                            </div>
+                                        @endforelse
+                                    </div>
+                                @endif
+                            </div>
+                        @endif
+                        @error('newItem.item_id') 
+                            <div class="invalid-feedback d-block">{{ $message }}</div> 
+                        @enderror
+                        @if($duplicateWarning)
+                            <small class="text-warning">{{ $duplicateWarning }}</small>
+                        @endif
+                    </div>
+
+                    @if($newItem['item_id'])
+                        <!-- Quantity -->
+                        <div class="col-md-3">
+                            <label class="form-label fw-medium small mb-1">Quantity</label>
+                            <input 
+                                type="number" 
+                                wire:model.live.debounce.300ms="newItem.quantity" 
+                                class="form-control @error('newItem.quantity') is-invalid @enderror" 
+                                min="0.01" 
+                                step="0.01" 
+                                max="{{ $availableStock }}"
+                                placeholder="0.00"
+                            >
+                            @error('newItem.quantity') 
+                                <div class="invalid-feedback">{{ $message }}</div> 
+                            @enderror
+                        </div>
+
+                        <!-- Add/Update Button -->
+                        <div class="col-md-4">
+                            <div class="d-flex gap-1 w-100">
+                                @if($editingItemIndex !== null)
+                                    <button 
+                                        type="button" 
+                                        wire:click="updateExistingItem" 
+                                        class="btn btn-success btn-sm"
+                                        title="Update item"
+                                        {{ empty($newItem['item_id']) || empty($newItem['quantity']) ? 'disabled' : '' }}
+                                    >
+                                        <span wire:loading.remove wire:target="updateExistingItem">✅ Update</span>
+                                        <span wire:loading wire:target="updateExistingItem">
+                                            <div class="spinner-border spinner-border-sm" role="status"></div>
+                                        </span>
+                                    </button>
+                                    <button type="button" class="btn btn-secondary btn-sm" wire:click="cancelEdit" title="Cancel editing">
+                                        ❌
+                                    </button>
+                                @else
+                                    <button 
+                                        type="button" 
+                                        wire:click="addItem" 
+                                        class="btn btn-primary w-100 btn-sm"
+                                        {{ empty($newItem['item_id']) || empty($newItem['quantity']) ? 'disabled' : '' }}
+                                    >
+                                        <span wire:loading.remove wire:target="addItem">➕ Add Item</span>
+                                        <span wire:loading wire:target="addItem">
+                                            <div class="spinner-border spinner-border-sm" role="status"></div>
+                                        </span>
+                                    </button>
+                                @endif
+                            </div>
+                        </div>
+                    @endif
+                </div>
+
+                <!-- No Items Warning -->
                 @if(!$itemOptions || count($itemOptions) == 0)
                     <div class="alert alert-warning p-2 mb-0 small">
                         <strong>⚠️ No Items Available</strong><br>
@@ -134,149 +257,20 @@
                             @if(count($items) > 0)
                                 All available items from this location have been added.
                             @else
-                                No items with available stock found at this location.
+                                No items with available stock found. Try searching for specific items.
                             @endif
                         </small>
                     </div>
-                @else
-                    <!-- Add Item Form -->
-                    <div class="row g-3 mb-3">
-                        <!-- Item Selection -->
-                        <div class="col-md-6">
-                            <label class="form-label fw-medium">
-                                🔍 Select Item
-                                @if($editingItemIndex !== null)
-                                    <span class="badge ms-2 bg-info bg-opacity-10 text-info">Editing #{{ $editingItemIndex + 1 }}</span>
-                                @endif
-                            </label>
-                            @if($selectedItem)
-                                <div class="input-group">
-                                    <input 
-                                        type="text" 
-                                        readonly 
-                                        class="form-control bg-light" 
-                                        value="{{ $selectedItem['label'] }}{{ $editingItemIndex !== null ? ' - EDITING' : '' }}"
-                                    >
-                                    <button class="btn btn-outline-danger" type="button" wire:click="clearSelectedItem" title="Clear item">
-                                        ×
-                                    </button>
-                                </div>
-                            @else
-                                <!-- Searchable Item Dropdown -->
-                                <div class="position-relative">
-                                    <input 
-                                        type="text" 
-                                        class="form-control @error('newItem.item_id') is-invalid @enderror" 
-                                        wire:model.live.debounce.300ms="itemSearchTerm"
-                                        placeholder="Search items by name or SKU..."
-                                        autocomplete="off"
-                                    >
-                                    
-                                    @if($itemSearchTerm && $this->filteredItemOptions)
-                                        <div class="dropdown-menu show w-100 shadow-sm" style="max-height: 300px; overflow-y: auto;">
-                                            @forelse($this->filteredItemOptions as $option)
-                                                <button 
-                                                    type="button" 
-                                                    class="dropdown-item d-flex justify-content-between align-items-center" 
-                                                    wire:click="selectItem({{ $option['id'] }})"
-                                                >
-                                                    <div>
-                                                        <div class="fw-medium">{{ $option['name'] }}</div>
-                                                        <small class="text-muted">{{ $option['sku'] }}</small>
-                                                    </div>
-                                                    <div class="text-end">
-                                                        <small class="badge bg-success">{{ number_format($option['available_stock'], 2) }} available</small>
-                                                    </div>
-                                                </button>
-                                            @empty
-                                                <div class="dropdown-item-text text-muted">
-                                                    <i class="bi bi-search me-1"></i>No items found
-                                                </div>
-                                            @endforelse
-                                        </div>
-                                    @endif
-                                </div>
-                            @endif
-                            @error('newItem.item_id') 
-                                <div class="invalid-feedback d-block">{{ $message }}</div> 
-                            @enderror
-                            @if($duplicateWarning)
-                                <small class="text-warning">{{ $duplicateWarning }}</small>
-                            @endif
-                        </div>
+                @endif
 
-                        @if($newItem['item_id'])
-                            <!-- Quantity -->
-                            <div class="col-md-3">
-                                <label class="form-label fw-medium">Quantity</label>
-                                <input 
-                                    type="number" 
-                                    wire:model.live.debounce.300ms="newItem.quantity" 
-                                    class="form-control @error('newItem.quantity') is-invalid @enderror" 
-                                    min="0.01" 
-                                    step="0.01" 
-                                    max="{{ $availableStock }}"
-                                    placeholder="0.00"
-                                >
-                                @error('newItem.quantity') 
-                                    <div class="invalid-feedback">{{ $message }}</div> 
-                                @enderror
-                                @if($availableStock > 0)
-                                    <small class="text-muted">Available: {{ number_format($availableStock, 2) }}</small>
-                                    @if($availableStock < 10)
-                                        <span class="badge bg-warning ms-1" title="Low stock warning">Low Stock</span>
-                                    @endif
-                                @else
-                                    <small class="text-danger">⚠️ No stock available</small>
-                                @endif
-                            </div>
-
-                            <!-- Add/Update Button -->
-                            <div class="col-md-3 d-flex align-items-end">
-                                <div class="d-flex gap-1 w-100">
-                                    @if($editingItemIndex !== null)
-                                        <button 
-                                            type="button" 
-                                            wire:click="updateExistingItem" 
-                                            class="btn btn-success btn-sm"
-                                            title="Update item"
-                                            {{ empty($newItem['item_id']) || empty($newItem['quantity']) ? 'disabled' : '' }}
-                                        >
-                                            <span wire:loading.remove wire:target="updateExistingItem">✅ Update</span>
-                                            <span wire:loading wire:target="updateExistingItem">
-                                                <div class="spinner-border spinner-border-sm" role="status"></div>
-                                            </span>
-                                        </button>
-                                        <button type="button" class="btn btn-secondary btn-sm" wire:click="cancelEdit" title="Cancel editing">
-                                            ❌
-                                        </button>
-                                    @else
-                                        <button 
-                                            type="button" 
-                                            wire:click="addItem" 
-                                            class="btn btn-primary w-100 btn-sm"
-                                            {{ empty($newItem['item_id']) || empty($newItem['quantity']) ? 'disabled' : '' }}
-                                        >
-                                            <span wire:loading.remove wire:target="addItem">➕ Add Item</span>
-                                            <span wire:loading wire:target="addItem">
-                                                <div class="spinner-border spinner-border-sm" role="status"></div>
-                                            </span>
-                                        </button>
-                                    @endif
-                                </div>
-                            </div>
+                <!-- Item Info Display -->
+                @if($newItem['item_id'] && $newItem['quantity'])
+                    <div class="alert alert-info p-2 mt-2 mb-0 small">
+                        <strong>📋 Transfer Quantity: {{ number_format($newItem['quantity'], 2) }}</strong>
+                        @if($selectedItem && $selectedItem['unit'])
+                            | Unit: {{ $selectedItem['unit'] }}
                         @endif
                     </div>
-
-                    <!-- Item Info Display -->
-                    @if($newItem['item_id'] && $newItem['quantity'])
-                        <div class="alert alert-info p-2 mb-0 small">
-                            <strong>📋 Transfer Quantity: {{ number_format($newItem['quantity'], 2) }}</strong>
-                            @if($selectedItem && $selectedItem['unit'])
-                                | Unit: {{ $selectedItem['unit'] }}
-                            @endif
-                        </div>
-                    @endif
                 @endif
             </div>
         </div>
@@ -467,6 +461,13 @@
         // Enhanced Livewire event handling
         window.addEventListener('livewire:init', () => {
             console.log('Livewire initialized for transfer creation');
+            
+            // Listen for confirm-clear event
+            Livewire.on('confirm-clear', () => {
+                if (confirm('Are you sure you want to clear all items?')) {
+                    Livewire.dispatch('clear-confirmed');
+                }
+            });
         });
         
         // Listen for custom notification events

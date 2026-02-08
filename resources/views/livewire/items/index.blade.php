@@ -201,18 +201,18 @@
                                 <td class="px-3 py-3 text-center">
                                     {{ $item->unit_quantity ?? 1 }}
                                 </td>
-                                <td class="px-3 py-3 text-start">{{ number_format($item->cost_price, 2) }}</td>
+                                <td class="px-3 py-3 text-start">{{ number_format($item->cost_per_piece, 2) }}</td>
                                 <td class="px-3 py-3 text-start">{{ number_format($item->total_purchase_amount, 2) }}</td>
                                 <td class="px-3 py-3 text-start">{{ number_format($item->total_sales_amount, 2) }}</td>
                                 <td class="px-3 py-3 text-center">
                                     <div class="d-flex flex-column align-items-center">
                                         <div class="d-flex align-items-center gap-1">
-                                            <span class="fw-medium">{{ number_format($this->getItemPiecesAvailable($item)) }}</span>
+                                            <span class="fw-medium">{{ number_format($this->getItemStock($item)) }}</span>
                                             <span class="text-secondary">pcs</span>
                                         </div>
                                         @if($item->unit_quantity > 1)
                                         <div class="d-flex align-items-center gap-1 mt-1">
-                                            <small class="text-muted">{{ number_format($this->getItemUnitsAvailable($item), 2) }} units</small>
+                                            <small class="text-muted">{{ number_format($item->getRoleBasedStock() / max($item->unit_quantity, 1), 2) }} {{ $item->item_unit ?? 'units' }}</small>
                                         </div>
                                         @endif
                                     </div>

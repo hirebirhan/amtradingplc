@@ -1,4 +1,19 @@
 <div>
+    <!-- Success/Error Messages -->
+    @if (session()->has('success'))
+        <div class="alert alert-success alert-dismissible fade show mb-3" role="alert">
+            <i class="fas fa-check-circle me-2"></i>{{ session('success') }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    @endif
+
+    @if (session()->has('error'))
+        <div class="alert alert-danger alert-dismissible fade show mb-3" role="alert">
+            <i class="fas fa-exclamation-circle me-2"></i>{{ session('error') }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    @endif
+
     <div class="container-fluid">
         <!-- Header -->
         <div class="row mb-4">
@@ -29,11 +44,11 @@
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label">From Date</label>
-                                <input type="date" class="form-control" wire:model.live="dateFrom">
+                                <input type="date" class="form-control" wire:model.live="dateFrom" placeholder="Select start date">
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label">To Date</label>
-                                <input type="date" class="form-control" wire:model.live="dateTo">
+                                <input type="date" class="form-control" wire:model.live="dateTo" placeholder="Select end date">
                             </div>
                             <div class="col-md-2 d-flex align-items-end">
                                 <button type="button" class="btn btn-outline-secondary w-100" wire:click="resetFilters">
@@ -96,22 +111,52 @@
                                                     @endif
                                                 </td>
                                                 <td>
-                                                    <span class="badge bg-light text-dark">{{ $transfer->items->count() }} items</span>
+                                                    <span class="badge bg-light text-dark">{{ $transfer->items_count }} items</span>
                                                 </td>
                                                 <td>{{ $transfer->date_initiated->format('M d, Y') }}</td>
                                                 <td>
                                                     <span class="badge" style="background-color: #ffc107; color: #000;">Pending</span>
                                                 </td>
                                                 <td>
-                                                    <div class="d-flex gap-2">
-                                                        <button type="button" class="btn btn-sm btn-success" 
-                                                                wire:click="showConfirmModal({{ $transfer->id }}, 'approve')">
-                                                            <i class="fas fa-check me-1"></i>Approve
-                                                        </button>
-                                                        <button type="button" class="btn btn-sm btn-danger" 
-                                                                wire:click="showConfirmModal({{ $transfer->id }}, 'reject')">
-                                                            <i class="fas fa-times me-1"></i>Reject
-                                                        </button>
+                                                    @php
+                                                        $user = auth()->user();
+                                                        $isSender = $user->isBranchManager() && $user->branch_id && 
+                                                                   $transfer->source_type === 'branch' && 
+                                                                   $transfer->source_id === $user->branch_id;
+                                                        $isReceiver = $user->isSuperAdmin() || $user->isGeneralManager() || 
+                                                                     ($user->isBranchManager() && $user->branch_id && 
+                                                                      $transfer->destination_type === 'branch' && 
+                                                                      $transfer->destination_id === $user->branch_id);
+                                                    @endphp
+                                                    <div class="d-flex gap-1">
+                                                        <a href="{{ route('admin.transfers.show', $transfer) }}" 
+                                                           class="btn btn-sm btn-outline-primary" 
+                                                           title="View Details">
+                                                            <i class="fas fa-eye me-1"></i>View
+                                                        </a>
+                                                        @if($isReceiver)
+                                                            <button type="button" 
+                                                                    class="btn btn-sm btn-success" 
+                                                                    wire:click="showConfirmModal({{ $transfer->id }}, 'approve')"
+                                                                    title="Approve">
+                                                                <i class="fas fa-check me-1"></i>Approve
+                                                            </button>
+                                                            <button type="button" 
+                                                                    class="btn btn-sm btn-danger" 
+                                                                    wire:click="showConfirmModal({{ $transfer->id }}, 'reject')"
+                                                                    title="Reject">
+                                                                <i class="fas fa-times me-1"></i>Reject
+                                                            </button>
+                                                        @elseif($isSender)
+                                                            <button type="button" 
+                                                                    class="btn btn-sm btn-warning" 
+                                                                    wire:click="showConfirmModal({{ $transfer->id }}, 'cancel')"
+                                                                    title="Cancel">
+                                                                <i class="fas fa-ban me-1"></i>Cancel
+                                                            </button>
+                                                        @else
+                                                            <span class="badge bg-secondary">Awaiting Approval</span>
+                                                        @endif
                                                     </div>
                                                 </td>
                                             </tr>
@@ -147,35 +192,93 @@
     </div>
     
     <!-- Confirmation Modal -->
-    @if($showModal)
-        <div class="modal fade show" style="display: block;" tabindex="-1">
-            <div class="modal-dialog modal-dialog-centered">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h5 class="modal-title">
-                            {{ $modalAction === 'approve' ? 'Approve Transfer' : 'Reject Transfer' }}
-                        </h5>
-                        <button type="button" class="btn-close" wire:click="closeModal"></button>
-                    </div>
-                    <div class="modal-body">
-                        @if($selectedTransfer)
-                            <p>Are you sure you want to {{ $modalAction }} transfer <strong>{{ $selectedTransfer->reference_code }}</strong>?</p>
-                            <div class="alert alert-info">
-                                <strong>From:</strong> {{ $selectedTransfer->sourceBranch->name ?? $selectedTransfer->sourceWarehouse->name }}<br>
-                                <strong>To:</strong> {{ $selectedTransfer->destinationBranch->name ?? $selectedTransfer->destinationWarehouse->name }}<br>
-                                <strong>Items:</strong> {{ $selectedTransfer->items->count() }} items
+    @if($showModal && $selectedTransfer)
+    <div class="modal fade show" 
+         id="confirmModal" 
+         tabindex="-1" 
+         style="display: block;" 
+         aria-modal="true"
+         role="dialog">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-{{ $modalAction === 'approve' ? 'primary' : 'danger' }} text-white">
+                    <h5 class="modal-title">
+                        <i class="fas fa-{{ $modalAction === 'approve' ? 'check-circle' : ($modalAction === 'cancel' ? 'ban' : 'times-circle') }} me-2"></i>
+                        {{ $modalAction === 'approve' ? 'Approve Transfer' : ($modalAction === 'cancel' ? 'Cancel Transfer' : 'Reject Transfer') }}
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" wire:click="closeModal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-3">Are you sure you want to <strong>{{ $modalAction }}</strong> this transfer?</p>
+                    <div class="card border-0 bg-light">
+                        <div class="card-body">
+                            <div class="row g-2">
+                                <div class="col-12">
+                                    <strong>Reference:</strong> {{ $selectedTransfer->reference_code }}
+                                </div>
+                                <div class="col-12">
+                                    <strong>From:</strong> 
+                                    @if($selectedTransfer->source_type === 'branch')
+                                        {{ $selectedTransfer->sourceBranch->name ?? 'N/A' }}
+                                    @else
+                                        {{ $selectedTransfer->sourceWarehouse->name ?? 'N/A' }}
+                                    @endif
+                                </div>
+                                <div class="col-12">
+                                    <strong>To:</strong> 
+                                    @if($selectedTransfer->destination_type === 'branch')
+                                        {{ $selectedTransfer->destinationBranch->name ?? 'N/A' }}
+                                    @else
+                                        {{ $selectedTransfer->destinationWarehouse->name ?? 'N/A' }}
+                                    @endif
+                                </div>
+                                <div class="col-12">
+                                    <strong>Items:</strong> {{ $selectedTransfer->items_count }} items
+                                </div>
+                                <div class="col-12">
+                                    <strong>Date:</strong> {{ $selectedTransfer->date_initiated->format('M d, Y') }}
+                                </div>
                             </div>
-                        @endif
+                        </div>
                     </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" wire:click="closeModal">Cancel</button>
-                        <button type="button" class="btn btn-{{ $modalAction === 'approve' ? 'success' : 'danger' }}" wire:click="confirmAction">
-                            {{ $modalAction === 'approve' ? 'Approve' : 'Reject' }} Transfer
-                        </button>
-                    </div>
+                    @if($modalAction === 'approve')
+                        <div class="alert alert-info mt-3 mb-0">
+                            <i class="fas fa-info-circle me-2"></i>
+                            <small>After approval, the transfer will be ready for processing and completion.</small>
+                        </div>
+                    @elseif($modalAction === 'cancel')
+                        <div class="alert alert-warning mt-3 mb-0">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            <small>Cancelling this transfer will release all reserved stock. You can create a new transfer if needed.</small>
+                        </div>
+                    @else
+                        <div class="alert alert-warning mt-3 mb-0">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            <small>Rejecting this transfer will release all reserved stock and cannot be undone.</small>
+                        </div>
+                    @endif
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" wire:click="closeModal" wire:loading.attr="disabled">
+                        Cancel
+                    </button>
+                    <button type="button" 
+                            class="btn btn-{{ $modalAction === 'approve' ? 'primary' : 'danger' }}" 
+                            wire:click="confirmAction"
+                            wire:loading.attr="disabled">
+                        <span wire:loading.remove wire:target="confirmAction">
+                            <i class="fas fa-{{ $modalAction === 'approve' ? 'check' : ($modalAction === 'cancel' ? 'ban' : 'times') }} me-1"></i>
+                            {{ $modalAction === 'approve' ? 'Approve' : ($modalAction === 'cancel' ? 'Cancel' : 'Reject') }} Transfer
+                        </span>
+                        <span wire:loading wire:target="confirmAction">
+                            <i class="fas fa-spinner fa-spin me-1"></i>
+                            Processing...
+                        </span>
+                    </button>
                 </div>
             </div>
         </div>
-        <div class="modal-backdrop fade show"></div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
     @endif
 </div>

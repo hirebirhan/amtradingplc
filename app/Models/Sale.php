@@ -262,121 +262,139 @@ class Sale extends Model
 
     /**
      * Process stock deduction for warehouse sale.
+     * BUSINESS RULE: Allow negative stock (backorder/pre-order system)
      */
     private function processWarehouseSaleItem($item, $saleItem): void
     {
-        $stock = Stock::firstOrCreate(
-            [
+        // Ensure warehouse belongs to the sale's branch for branch isolation
+        $warehouse = Warehouse::with('branches')->find($this->warehouse_id);
+        if (!$warehouse) {
+            throw new \Exception('Warehouse not found: ' . $this->warehouse_id);
+        }
+        
+        // Get the branch from warehouse relationship
+        $warehouseBranchId = $warehouse->branches->first()?->id;
+        
+        // Enforce branch isolation: warehouse must belong to sale's branch
+        if ($this->branch_id && $warehouseBranchId !== $this->branch_id) {
+            throw new \Exception('Branch isolation violation: Warehouse does not belong to sale branch');
+        }
+        
+        // Get existing stock or create with 0 if doesn't exist
+        $stock = Stock::where('warehouse_id', $this->warehouse_id)
+            ->where('item_id', $item->id)
+            ->first();
+            
+        if (!$stock) {
+            $stock = Stock::create([
                 'warehouse_id' => $this->warehouse_id,
                 'item_id' => $item->id,
-                'branch_id' => null,
-            ],
-            [
+                'branch_id' => $this->branch_id,
                 'quantity' => 0,
                 'piece_count' => 0,
                 'total_units' => 0,
-                'current_piece_units' => $item->unit_quantity ?? 1,
                 'created_by' => $this->user_id
-            ]
-        );
+            ]);
+        }
 
         $quantity = $saleItem->quantity;
-        $unitCapacity = $item->unit_quantity ?? 1;
+        $quantityBefore = $stock->quantity;
+        $pieceCountBefore = $stock->piece_count ?? 0;
         
-        if ($saleItem->isSoldByPiece()) {
-            $stock->sellByPiece(
-                (int)$quantity, 
-                $unitCapacity, 
-                'sale', 
-                $this->id, 
-                'Warehouse sale by piece - Sale #' . $this->reference_no, 
-                $this->user_id
-            );
-        } else {
-            $stock->sellByUnit(
-                $quantity, 
-                $unitCapacity, 
-                'sale', 
-                $this->id, 
-                'Warehouse sale by unit - Sale #' . $this->reference_no, 
-                $this->user_id
-            );
-        }
+        // CRITICAL FIX: Update both quantity AND piece_count
+        $stock->quantity -= $quantity;
+        $stock->piece_count -= $quantity;
+        $stock->save();
         
-        $this->deductFromPurchaseQuantity($item, $saleItem);
+        // Create stock history
+        \App\Models\StockHistory::create([
+            'item_id' => $item->id,
+            'warehouse_id' => $this->warehouse_id,
+            'branch_id' => $this->branch_id,
+            'movement_type' => 'sale',
+            'quantity_change' => -$quantity,
+            'quantity_before' => $quantityBefore,
+            'quantity_after' => $stock->quantity,
+            'reference_id' => $this->id,
+            'reference_type' => 'sale',
+            'notes' => 'Sale #' . $this->reference_no,
+            'created_by' => $this->user_id,
+        ]);
     }
 
     /**
      * Process stock deduction for branch sale.
+     * BUSINESS RULE: Allow negative stock (backorder/pre-order system)
      */
     private function processBranchSaleItem($item, $saleItem): void
     {
-        // Get warehouses serving this branch
-        $warehouseIds = DB::table('branch_warehouse')
+        // Get all stocks from warehouses in this branch (including zero/negative)
+        $stocks = Stock::where('item_id', $item->id)
             ->where('branch_id', $this->branch_id)
-            ->pluck('warehouse_id')
-            ->toArray();
-
-        if (empty($warehouseIds)) {
-            throw new \Exception('No warehouses found for branch: ' . $this->branch->name);
-        }
-
-        $quantity = $saleItem->quantity;
-        $unitCapacity = $item->unit_quantity ?? 1;
-        $remainingQuantity = $quantity;
-
-        // Sort warehouses by stock availability (highest first)
-        $warehouseStocks = Stock::whereIn('warehouse_id', $warehouseIds)
-            ->where('item_id', $item->id)
-            ->orderBy($saleItem->isSoldByPiece() ? 'piece_count' : 'total_units', 'desc')
+            ->orderBy('quantity', 'desc')
             ->get();
 
-        foreach ($warehouseStocks as $stock) {
-            if ($remainingQuantity <= 0) break;
-
-            if ($saleItem->isSoldByPiece()) {
-                $availablePieces = $stock->piece_count ?? 0;
-                if ($availablePieces <= 0) continue;
-                
-                $deductPieces = min($remainingQuantity, $availablePieces);
-                
-                $stock->sellByPiece(
-                    (int)$deductPieces, 
-                    $unitCapacity, 
-                    'sale', 
-                    $this->id, 
-                    'Branch sale by piece - Sale #' . $this->reference_no, 
-                    $this->user_id
-                );
-                
-                $remainingQuantity -= $deductPieces;
+        if ($stocks->isEmpty()) {
+            // Create stock record if none exists
+            $firstWarehouse = \App\Models\Warehouse::whereHas('branches', function($q) {
+                $q->where('branches.id', $this->branch_id);
+            })->first();
+            
+            if ($firstWarehouse) {
+                $stock = Stock::create([
+                    'warehouse_id' => $firstWarehouse->id,
+                    'item_id' => $item->id,
+                    'branch_id' => $this->branch_id,
+                    'quantity' => 0,
+                    'piece_count' => 0,
+                    'total_units' => 0,
+                    'created_by' => $this->user_id
+                ]);
+                $stocks = collect([$stock]);
             } else {
-                $availableUnits = $stock->total_units ?? 0;
-                if ($availableUnits <= 0) continue;
-                
-                $deductUnits = min($remainingQuantity, $availableUnits);
-                
-                $stock->sellByUnit(
-                    $deductUnits, 
-                    $unitCapacity, 
-                    'sale', 
-                    $this->id, 
-                    'Branch sale by unit - Sale #' . $this->reference_no, 
-                    $this->user_id
-                );
-                
-                $remainingQuantity -= $deductUnits;
+                throw new \Exception('No warehouses found for branch: ' . $this->branch_id);
             }
         }
 
-        // Allow negative stock - just log a warning if we couldn't fulfill completely
-        if ($remainingQuantity > 0) {
-            $method = $saleItem->isSoldByPiece() ? 'pieces' : 'units';
-            \Log::warning("Partial stock fulfillment for item '{$item->name}'. Remaining {$remainingQuantity} {$method} will result in negative stock.");
+        $quantity = $saleItem->quantity;
+        $remainingQuantity = $quantity;
+
+        // Deduct from warehouses with positive stock first, then allow negative
+        foreach ($stocks as $stock) {
+            if ($remainingQuantity <= 0) break;
+
+            if ($stock->quantity > 0) {
+                // Deduct from positive stock
+                $deductQuantity = min($remainingQuantity, $stock->quantity);
+            } else {
+                // All positive stock exhausted, put remaining on first warehouse (allow negative)
+                $deductQuantity = $remainingQuantity;
+            }
+            
+            // Update stock - CRITICAL FIX: Update both quantity AND piece_count
+            $quantityBefore = $stock->quantity;
+            $pieceCountBefore = $stock->piece_count ?? 0;
+            $stock->quantity -= $deductQuantity;
+            $stock->piece_count -= $deductQuantity;
+            $stock->save();
+            
+            // Create stock history
+            \App\Models\StockHistory::create([
+                'item_id' => $item->id,
+                'warehouse_id' => $stock->warehouse_id,
+                'branch_id' => $this->branch_id,
+                'movement_type' => 'sale',
+                'quantity_change' => -$deductQuantity,
+                'quantity_before' => $quantityBefore,
+                'quantity_after' => $stock->quantity,
+                'reference_id' => $this->id,
+                'reference_type' => 'sale',
+                'notes' => 'Branch sale #' . $this->reference_no,
+                'created_by' => $this->user_id,
+            ]);
+            
+            $remainingQuantity -= $deductQuantity;
         }
-        
-        // Also deduct from purchase quantity
-        $this->deductFromPurchaseQuantity($item, $saleItem);
     }
 
     /**

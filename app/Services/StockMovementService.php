@@ -216,7 +216,7 @@ class StockMovementService
     }
 
     /**
-     * Remove stock from warehouse with pessimistic locking - exact piece count
+     * Remove stock from warehouse with pessimistic locking
      */
     private function removeStockFromWarehouse(int $itemId, float $quantity, int $warehouseId): array
     {
@@ -225,70 +225,76 @@ class StockMovementService
             ->lockForUpdate() // Pessimistic lock
             ->first();
 
-        if (!$stock || $stock->piece_count < $quantity) {
+        if (!$stock || $stock->quantity < $quantity) {
             $item = Item::find($itemId);
             $warehouse = Warehouse::find($warehouseId);
             throw new TransferException(
                 "Insufficient stock of {$item->name} in {$warehouse->name}. " .
-                "Available: " . ($stock->piece_count ?? 0) . ", Required: {$quantity}"
+                "Available: " . ($stock->quantity ?? 0) . ", Required: {$quantity}"
             );
         }
 
-        $piecesBefore = $stock->piece_count;
-        // Deduct exact piece count for transfer
+        $quantityBefore = $stock->quantity;
+        $pieceCountBefore = $stock->piece_count ?? 0;
+        
+        // CRITICAL: Update both quantity AND piece_count
+        $stock->quantity -= $quantity;
         $stock->piece_count -= $quantity;
-        $stock->quantity = $stock->piece_count; // Keep quantity in sync
         $stock->updated_at = now();
         $stock->save();
 
         return [[
             'warehouse_id' => $warehouseId,
-            'quantity_before' => $piecesBefore,
-            'quantity_after' => $stock->piece_count,
+            'quantity_before' => $quantityBefore,
+            'quantity_after' => $stock->quantity,
             'quantity_moved' => $quantity,
         ]];
     }
 
     /**
-     * Add stock to warehouse - exact piece count transfer
+     * Add stock to warehouse
      */
     private function addStockToWarehouse(int $itemId, float $quantity, int $warehouseId): array
     {
         $item = Item::find($itemId);
+        $warehouse = Warehouse::with('branches')->find($warehouseId);
+        $branchId = $warehouse->branches->first()?->id;
         
+        // CRITICAL FIX: Use firstOrCreate to avoid overwriting existing stock
         $stock = Stock::firstOrCreate(
             [
                 'warehouse_id' => $warehouseId,
                 'item_id' => $itemId,
             ],
             [
+                'branch_id' => $branchId,
                 'quantity' => 0,
                 'piece_count' => 0,
                 'total_units' => 0,
                 'current_piece_units' => $item->unit_quantity ?? 1,
-                'reorder_level' => $item->reorder_level ?? 0,
-                'created_at' => now(),
+                'created_by' => auth()->id(),
             ]
         );
 
-        $piecesBefore = $stock->piece_count;
+        $quantityBefore = $stock->quantity;
+        $pieceCountBefore = $stock->piece_count ?? 0;
         
-        // For transfers, add exact piece count
+        // CRITICAL: ADD to existing stock (not replace)
+        $stock->quantity += $quantity;
         $stock->piece_count += $quantity;
-        $stock->quantity = $stock->piece_count; // Keep quantity in sync
-        $stock->updated_at = now();
+        $stock->updated_by = auth()->id();
         $stock->save();
 
         return [[
             'warehouse_id' => $warehouseId,
-            'quantity_before' => $piecesBefore,
-            'quantity_after' => $stock->piece_count,
+            'quantity_before' => $quantityBefore,
+            'quantity_after' => $stock->quantity,
             'quantity_moved' => $quantity,
         ]];
     }
 
     /**
-     * Remove stock from branch (exact piece count) - optimized
+     * Remove stock from branch (optimized for quantity consistency)
      */
     private function removeStockFromBranch(int $itemId, float $quantity, int $branchId): array
     {
@@ -302,12 +308,12 @@ class StockMovementService
         // Get all stocks in branch with locking
         $stocks = Stock::whereIn('warehouse_id', $branch->warehouses->pluck('id'))
             ->where('item_id', $itemId)
-            ->where('piece_count', '>', 0)
+            ->where('quantity', '>', 0)
             ->lockForUpdate()
-            ->orderBy('piece_count', 'desc') // Take from warehouses with most pieces first
+            ->orderBy('quantity', 'desc') // Take from warehouses with most stock first
             ->get();
 
-        $totalAvailable = $stocks->sum('piece_count');
+        $totalAvailable = $stocks->sum('quantity');
         
         if ($totalAvailable < $quantity) {
             $item = Item::find($itemId);
@@ -323,19 +329,20 @@ class StockMovementService
         foreach ($stocks as $stock) {
             if ($remainingQuantity <= 0) break;
 
-            $takeQuantity = min($stock->piece_count, $remainingQuantity);
-            $piecesBefore = $stock->piece_count;
+            $takeQuantity = min($stock->quantity, $remainingQuantity);
+            $quantityBefore = $stock->quantity;
+            $pieceCountBefore = $stock->piece_count ?? 0;
             
-            // Deduct exact piece count for transfer
+            // CRITICAL: Update both quantity AND piece_count
+            $stock->quantity -= $takeQuantity;
             $stock->piece_count -= $takeQuantity;
-            $stock->quantity = $stock->piece_count; // Keep quantity in sync
             $stock->updated_at = now();
             $stock->save();
 
             $movements[] = [
                 'warehouse_id' => $stock->warehouse_id,
-                'quantity_before' => $piecesBefore,
-                'quantity_after' => $stock->piece_count,
+                'quantity_before' => $quantityBefore,
+                'quantity_after' => $stock->quantity,
                 'quantity_moved' => $takeQuantity,
             ];
 
@@ -346,7 +353,7 @@ class StockMovementService
     }
 
     /**
-     * Add stock to branch (to existing stock location or primary warehouse) - exact quantity
+     * Add stock to branch (to existing stock location or primary warehouse)
      */
     private function addStockToBranch(int $itemId, float $quantity, int $branchId): array
     {
@@ -363,24 +370,24 @@ class StockMovementService
             ->first();
 
         if ($existingStock) {
-            // Add exact quantity to existing stock location
+            // Add to existing stock location
             return $this->addStockToWarehouse($itemId, $quantity, $existingStock->warehouse_id);
         } else {
-            // Add exact quantity to primary warehouse (first one)
+            // Add to primary warehouse (first one)
             $warehouse = $branch->warehouses->first();
             return $this->addStockToWarehouse($itemId, $quantity, $warehouse->id);
         }
     }
 
     /**
-     * Get available stock (total pieces - reserved)
+     * Get available stock (total quantity - reserved)
      */
     public function getAvailableStock(int $itemId, string $locationType, int $locationId): float
     {
         if ($locationType === 'warehouse') {
             return Stock::where('warehouse_id', $locationId)
                 ->where('item_id', $itemId)
-                ->value('piece_count') ?? 0;
+                ->value('quantity') ?? 0;
         }
 
         // For branch, sum all warehouses
@@ -394,7 +401,7 @@ class StockMovementService
 
         return Stock::whereIn('warehouse_id', $branch->warehouses->pluck('id'))
             ->where('item_id', $itemId)
-            ->sum('piece_count');
+            ->sum('quantity');
     }
 
     /**

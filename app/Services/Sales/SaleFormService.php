@@ -68,25 +68,26 @@ class SaleFormService
 
     public function createSale(array $form, array $items, float $totalAmount, float $taxAmount, float $shippingAmount): Sale
     {
+        $user = Auth::user();
         $branchId = $this->resolveBranchId($form);
         
         if (!$branchId) {
             throw new \Exception('Unable to determine branch for this sale.');
         }
 
+        // Resolve warehouse_id with fallback logic
+        $warehouseId = $this->resolveWarehouseId($form, $user, $branchId);
+
+        if (!$warehouseId) {
+            throw new \Exception('Unable to determine warehouse for this sale.');
+        }
+
         $sale = new Sale();
         $sale->reference_no = $form['reference_no'];
         $sale->customer_id = $form['is_walking_customer'] ? null : $form['customer_id'];
         $sale->is_walking_customer = $form['is_walking_customer'];
-        
-        if (!empty($form['warehouse_id'])) {
-            $sale->warehouse_id = $form['warehouse_id'];
-            $sale->branch_id = $branchId; // Keep branch for tracking
-        } else {
-            $sale->branch_id = $branchId;
-            $sale->warehouse_id = null;
-        }
-        
+        $sale->warehouse_id = $warehouseId;
+        $sale->branch_id = $branchId;
         $sale->user_id = Auth::id();
         $sale->sale_date = $form['sale_date'];
         $sale->payment_method = $form['payment_method'];
@@ -105,6 +106,60 @@ class SaleFormService
         $sale->processSale();
 
         return $sale;
+    }
+
+    private function resolveWarehouseId(array $form, $user, int $branchId): ?int
+    {
+        // 1. User assigned warehouse (already branch-isolated)
+        if ($user->warehouse_id) {
+            return (int)$user->warehouse_id;
+        }
+        
+        // 2. Form warehouse selection (must be in correct branch)
+        if (!empty($form['warehouse_id'])) {
+            $warehouseId = (int)$form['warehouse_id'];
+            // Verify warehouse belongs to the resolved branch
+            $warehouse = Warehouse::whereHas('branches', function($q) use ($branchId) {
+                $q->where('branches.id', $branchId);
+            })->find($warehouseId);
+            
+            if ($warehouse) {
+                return $warehouse->id;
+            }
+        }
+        
+        // 3. First warehouse in the resolved branch
+        $warehouse = Warehouse::whereHas('branches', function($q) use ($branchId) {
+            $q->where('branches.id', $branchId);
+        })->first();
+        
+        if ($warehouse) {
+            return $warehouse->id;
+        }
+        
+        // 4. Create default warehouse for branch if none exists
+        $branch = Branch::find($branchId);
+        if ($branch) {
+            $warehouse = Warehouse::create([
+                'name' => $branch->name . ' Warehouse',
+                'code' => 'WH-' . strtoupper(substr($branch->name, 0, 3)) . '-001',
+                'address' => $branch->address ?? '',
+                'created_by' => $user->id,
+            ]);
+            
+            // Attach warehouse to branch
+            $warehouse->branches()->attach($branchId);
+            
+            return $warehouse->id;
+        }
+        
+        // 5. Only for SuperAdmin/GeneralManager - any warehouse as fallback
+        if ($user->isSuperAdmin() || $user->isGeneralManager()) {
+            $warehouse = Warehouse::first();
+            return $warehouse ? $warehouse->id : null;
+        }
+        
+        return null;
     }
 
     private function setPaymentFields(Sale $sale, array $form, float $totalAmount): void

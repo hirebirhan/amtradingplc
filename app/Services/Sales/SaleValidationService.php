@@ -2,6 +2,8 @@
 
 namespace App\Services\Sales;
 
+use Illuminate\Support\Facades\Auth;
+
 class SaleValidationService
 {
     public function validateSaleData(array $form, array $items, float $totalAmount): array
@@ -16,8 +18,12 @@ class SaleValidationService
             $errors['form.customer_id'] = 'Cannot create sale: Please select a customer or check walking customer';
         }
 
-        if (empty($form['warehouse_id']) && empty($form['branch_id'])) {
-            $errors['form.warehouse_id'] = 'Cannot create sale: Please select either a warehouse or branch';
+        // Only validate location if user doesn't have assigned location
+        $user = Auth::user();
+        if (!$user->warehouse_id && !$user->branch_id) {
+            if (empty($form['warehouse_id']) && empty($form['branch_id'])) {
+                $errors['form.warehouse_id'] = 'Cannot create sale: Please select either a warehouse or branch';
+            }
         }
 
         if ($form['payment_method'] === 'credit_advance') {

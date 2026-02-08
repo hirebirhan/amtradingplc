@@ -236,6 +236,9 @@ class TransferService
         }
 
         $transfer->approve($user);
+        
+        // Auto-complete transfer immediately after approval
+        $this->completeTransfer($transfer, $user);
     }
 
     /**
