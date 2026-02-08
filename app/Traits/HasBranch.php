@@ -11,10 +11,9 @@ trait HasBranch
     protected static function bootHasBranch()
     {
         static::creating(function ($model) {
-            // For Items and Categories, allow NULL branch_id (Global) if created by SuperAdmin/GM
-            if (($model instanceof \App\Models\Item || $model instanceof \App\Models\Category) && 
-                (auth()->user()?->isSuperAdmin() || auth()->user()?->isGeneralManager())) {
-                // Do not force branch_id if it's not set, allowing it to remain NULL (Global)
+            // Items and Categories are now global - always set branch_id to NULL
+            if ($model instanceof \App\Models\Item || $model instanceof \App\Models\Category) {
+                $model->branch_id = null;
                 return;
             }
 
@@ -32,12 +31,9 @@ trait HasBranch
     public function scopeForBranch(Builder $query, int $branchId): Builder
     {
         $model = $query->getModel();
-        // Allow Global Items and Categories (branch_id is null) to be visible
+        // Items and Categories are global - no branch filtering
         if ($model instanceof \App\Models\Item || $model instanceof \App\Models\Category) {
-            return $query->where(function($q) use ($branchId) {
-                $q->where('branch_id', $branchId)
-                  ->orWhereNull('branch_id');
-            });
+            return $query; // Return all items/categories
         }
         
         return $query->where('branch_id', $branchId);

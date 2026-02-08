@@ -57,10 +57,10 @@
                     <div class="alert alert-danger mb-3">
                         <div class="row">
                             <div class="col-6">
-                                <strong>Current Stock:</strong> {{ $stockWarningItem['stock'] ?? 0 }}
+                                <strong>Available Stock:</strong> {{ $stockWarningItem['available'] ?? 0 }}
                             </div>
                             <div class="col-6">
-                                <strong>Unit Price:</strong> ETB {{ number_format($stockWarningItem['price'] ?? 0, 2) }}
+                                <strong>Requested Qty:</strong> {{ $stockWarningItem['requested'] ?? 0 }}
                             </div>
                         </div>
                     </div>

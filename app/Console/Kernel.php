@@ -11,12 +11,13 @@ class Kernel extends ConsoleKernel
         Commands\ClearItemData::class,
         Commands\TestPurchaseScenarios::class,
         Commands\CleanupExpiredReservations::class,
+        Commands\CleanupOrphanedReservations::class,
         Commands\GenerateStockReport::class,
     ];
 
     protected function schedule(Schedule $schedule): void
     {
-        // Clean up expired stock reservations every hour
+        // Clean up expired and orphaned stock reservations every hour
         $schedule->command('stock:cleanup-reservations')
                  ->hourly()
                  ->withoutOverlapping()

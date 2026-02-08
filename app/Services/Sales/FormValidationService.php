@@ -17,6 +17,7 @@ class FormValidationService
 
     public function getRules(array $form, float $totalAmount): array
     {
+        $user = Auth::user();
         $isWalkingCustomer = !empty($form['is_walking_customer']) && $form['is_walking_customer'] !== '0' && $form['is_walking_customer'] !== 'false';
         
         $rules = [
@@ -28,7 +29,11 @@ class FormValidationService
             'items' => 'required|array|min:1',
         ];
 
-        $this->addLocationRules($rules);
+        // Only add location rules if user doesn't have assigned location
+        if (!$user->branch_id && !$user->warehouse_id) {
+            $this->addLocationRules($rules);
+        }
+        
         $this->addWarehousePermissionRules($rules);
         $this->addPaymentMethodRules($rules, $form, $totalAmount);
 
@@ -56,10 +61,16 @@ class FormValidationService
 
     private function addLocationRules(array &$rules): void
     {
-        if (!Auth::user()->branch_id && !Auth::user()->warehouse_id) {
-            $rules['form.branch_id'] = 'required_without:form.warehouse_id|nullable|exists:branches,id';
-            $rules['form.warehouse_id'] = 'required_without:form.branch_id|nullable|exists:warehouses,id';
+        $user = Auth::user();
+        
+        // If user has assigned branch/warehouse, don't require form selection
+        if ($user->branch_id || $user->warehouse_id) {
+            return;
         }
+        
+        // For users without assigned location, require either branch or warehouse
+        $rules['form.branch_id'] = 'required_without:form.warehouse_id|nullable|exists:branches,id';
+        $rules['form.warehouse_id'] = 'required_without:form.branch_id|nullable|exists:warehouses,id';
     }
 
     private function addWarehousePermissionRules(array &$rules): void

@@ -96,34 +96,31 @@ class Create extends Component
         $item = Item::find($itemId);
         if (!$item) return;
 
-        $warehouseId = (int)($this->form['warehouse_id'] ?? 0);
-        if (!$warehouseId) {
-            $this->addError('form.warehouse_id', 'Please select a warehouse first before adding items.');
-            return;
-        }
-
-        $this->setSelectedItem($item, $warehouseId);
+        // Allow item selection even without location - stock validation happens during add
+        $this->setSelectedItem($item, 0);
     }
 
     public function addItem(): void
     {
-        $this->validateItem();
-        if ($this->getErrorBag()->isNotEmpty()) return;
+        // Validate basic item data first
+        try {
+            $this->validateItem();
+        } catch (ValidationException $e) {
+            $this->addValidationErrors($e);
+            return;
+        }
+
+        // Check for stock warnings (out of stock, insufficient stock, below cost)
+        $this->validateStock();
         
-        // Check for warnings only if not already acknowledged
-        if (!$this->warningAcknowledged) {
-            $this->validateStock();
-            if ($this->getErrorBag()->isNotEmpty()) return;
-            
-            // If there's a warning, show modal and wait for acknowledgment
-            if ($this->stockWarningType) {
-                return;
-            }
+        // If there's a warning and it hasn't been acknowledged, show modal
+        if ($this->stockWarningType && !$this->warningAcknowledged) {
+            $this->dispatch('showStockWarning');
+            return;
         }
         
-        // Proceed to add item (either no warnings or warnings acknowledged)
+        // No warnings or already acknowledged - proceed with adding item
         $this->processAddItem();
-        $this->warningAcknowledged = false; // Reset for next item
     }
 
     public function editItem(int $index): void
@@ -173,8 +170,26 @@ class Create extends Component
 
     public function updatedFormTax(): void { $this->updateTotals(); }
     public function updatedFormShipping(): void { $this->updateTotals(); }
-    public function updatedFormBranchId($value): void { if ($value) $this->form['warehouse_id'] = ''; }
-    public function updatedFormWarehouseId($value): void { if ($value) $this->form['branch_id'] = ''; }
+    
+    public function updatedFormBranchId($value): void { 
+        if ($value) {
+            $this->form['warehouse_id'] = '';
+            // Refresh available stock if item is selected
+            if ($this->selectedItem) {
+                $this->availableStock = $this->getAvailableStockForUnit($this->newItem['sale_unit'] ?? 'each');
+            }
+        }
+    }
+    
+    public function updatedFormWarehouseId($value): void { 
+        if ($value) {
+            $this->form['branch_id'] = '';
+            // Refresh available stock if item is selected
+            if ($this->selectedItem) {
+                $this->availableStock = $this->getAvailableStockForUnit($this->newItem['sale_unit'] ?? 'each');
+            }
+        }
+    }
 
     // Validation & Error Handling
     public function updatedNewItemQuantity($value): void
@@ -423,8 +438,8 @@ class Create extends Component
             'quantity' => 1,
         ]);
 
-        // Use getPiecesInWarehouse to get actual stock from database
-        $this->availableStock = $item->getPiecesInWarehouse($warehouseId);
+        // Get available stock based on sale type (warehouse or branch)
+        $this->availableStock = $this->getAvailableStockForUnit('each');
         $this->itemSearch = $item->name;
     }
 
@@ -473,14 +488,8 @@ class Create extends Component
         if ($this->selectedItem && $price > 0 && !$this->warningAcknowledged) {
             $item = Item::find($this->selectedItem['id']);
             if ($item) {
-                // Determine cost price based on sale unit type
-                if ($saleUnit === 'each') {
-                    // Selling by piece - compare against cost_price per piece
-                    $costPrice = floatval($item->cost_price);
-                } else {
-                    // Selling by unit (kg, meter, etc.) - compare against cost_price_per_unit
-                    $costPrice = floatval($item->cost_price_per_unit ?: ($item->cost_price / max($item->unit_quantity, 1)));
-                }
+                // Use branch-specific cost calculation for proper branch isolation
+                $costPrice = $item->getCostPerPiece(); // This automatically uses user's branch context
                 
                 if ($costPrice > 0 && $price < $costPrice) {
                     $lossAmount = $costPrice - $price;
@@ -499,15 +508,27 @@ class Create extends Component
             }
         }
         
-        // Priority 2: Check quantity vs available stock (only when quantity > 0)
+        // Priority 2: Check quantity vs available stock - ALLOW out of stock sales with warning
         if ($quantity > $this->availableStock && $quantity > 0 && !$this->warningAcknowledged) {
-            $this->stockWarningType = 'insufficient_stock';
-            $this->stockWarningItem = [
-                'name' => $this->selectedItem['name'],
-                'available' => $this->availableStock,
-                'requested' => $quantity,
-                'deficit' => $quantity - $this->availableStock
-            ];
+            if ($this->availableStock <= 0) {
+                // Out of stock warning
+                $this->stockWarningType = 'out_of_stock';
+                $this->stockWarningItem = [
+                    'name' => $this->selectedItem['name'],
+                    'available' => $this->availableStock,
+                    'requested' => $quantity,
+                    'deficit' => $quantity
+                ];
+            } else {
+                // Insufficient stock warning
+                $this->stockWarningType = 'insufficient_stock';
+                $this->stockWarningItem = [
+                    'name' => $this->selectedItem['name'],
+                    'available' => $this->availableStock,
+                    'requested' => $quantity,
+                    'deficit' => $quantity - $this->availableStock
+                ];
+            }
             return;
         }
     }
@@ -576,15 +597,11 @@ class Create extends Component
     /**
      * Get available stock for selected sale unit.
      * Returns pieces for 'each' or total units for other unit types.
+     * Handles both warehouse-specific and branch-wide stock calculations.
      */
     public function getAvailableStockForUnit(string $saleUnit): float
     {
         if (!$this->selectedItem) {
-            return 0;
-        }
-        
-        $warehouseId = (int)($this->form['warehouse_id'] ?? 0);
-        if (!$warehouseId) {
             return 0;
         }
         
@@ -593,13 +610,28 @@ class Create extends Component
             return 0;
         }
         
+        $warehouseId = (int)($this->form['warehouse_id'] ?? 0);
+        $branchId = (int)($this->form['branch_id'] ?? 0);
+        
         // If selling by piece (each), return piece count
         if ($saleUnit === 'each') {
-            return $item->getPiecesInWarehouse($warehouseId);
+            if ($warehouseId) {
+                // Warehouse-specific sale
+                return $item->getPiecesInWarehouse($warehouseId);
+            } elseif ($branchId) {
+                // Branch-wide sale - sum all warehouses in branch
+                return $item->getPiecesInBranch($branchId);
+            }
+        } else {
+            // If selling by unit (kg, meter, etc.), return total units
+            if ($warehouseId) {
+                return $item->getUnitsInWarehouse($warehouseId);
+            } elseif ($branchId) {
+                return $item->getUnitsInBranch($branchId);
+            }
         }
         
-        // If selling by unit (kg, meter, etc.), return total units
-        return $item->getUnitsInWarehouse($warehouseId);
+        return 0;
     }
 
     private function setItemForEdit(int $index): void
@@ -633,20 +665,11 @@ class Create extends Component
     private function searchItems(): array
     {
         $warehouseId = (int)($this->form['warehouse_id'] ?? 0);
+        $branchId = (int)($this->form['branch_id'] ?? 0);
         $searchTerm = strtolower(trim($this->itemSearch));
         
         $user = Auth::user();
         $query = Item::where('is_active', true);
-        
-        // Apply branch filtering for non-admin users
-        if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
-            if ($user->branch_id) {
-                $query->where(function($q) use ($user) {
-                    $q->where('branch_id', $user->branch_id)
-                      ->orWhereNull('branch_id');
-                });
-            }
-        }
         
         return $query->where(function ($query) use ($searchTerm) {
                 $query->whereRaw('LOWER(name) LIKE ?', ["%{$searchTerm}%"])
@@ -658,7 +681,7 @@ class Create extends Component
                 'id' => $item->id,
                 'name' => $item->name,
                 'sku' => $item->sku,
-                'quantity' => $warehouseId ? $item->getStockInWarehouse($warehouseId) : 0,
+                'quantity' => $warehouseId ? $item->getStockInWarehouse($warehouseId) : ($branchId ? $item->getStockInBranch($branchId) : 0),
                 'selling_price_per_unit' => $item->selling_price_per_unit ?: ($item->selling_price / max($item->unit_quantity, 1)),
                 'unit_quantity' => $item->unit_quantity ?? 1,
                 'item_unit' => $item->item_unit ?? 'piece',

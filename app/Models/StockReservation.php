@@ -92,6 +92,14 @@ class StockReservation extends Model
     }
 
     /**
+     * Get the transfer (if reference_type is transfer)
+     */
+    public function transfer(): BelongsTo
+    {
+        return $this->belongsTo(Transfer::class, 'reference_id');
+    }
+
+    /**
      * Check if reservation is expired
      */
     public function isExpired(): bool

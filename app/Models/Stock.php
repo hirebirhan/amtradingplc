@@ -46,6 +46,35 @@ class Stock extends Model
     ];
 
     /**
+     * Boot the model to ensure proper branch assignment for stock records.
+     */
+    protected static function boot()
+    {
+        parent::boot();
+        
+        static::creating(function ($stock) {
+            // Auto-assign branch_id based on warehouse relationship
+            if (!$stock->branch_id && $stock->warehouse_id) {
+                $warehouse = \App\Models\Warehouse::with('branches')->find($stock->warehouse_id);
+                if ($warehouse && $warehouse->branches->isNotEmpty()) {
+                    $stock->branch_id = $warehouse->branches->first()->id;
+                }
+            }
+            
+            // Set audit fields
+            if (!$stock->created_by && auth()->id()) {
+                $stock->created_by = auth()->id();
+            }
+        });
+        
+        static::updating(function ($stock) {
+            if (!$stock->updated_by && auth()->id()) {
+                $stock->updated_by = auth()->id();
+            }
+        });
+    }
+
+    /**
      * Get the warehouse that owns the stock.
      */
     public function warehouse(): BelongsTo
@@ -71,18 +100,22 @@ class Stock extends Model
 
     /**
      * Add pieces to stock (Purchase flow)
+     * BUSINESS RULE: Purchases ALWAYS add to stock correctly
+     * If stock is negative (backorder), purchase fulfills the backorder first
      */
     public function addPieces(int $pieces, float $unitCapacity, string $referenceType, ?int $referenceId = null, ?string $description = null, ?int $userId = null): void
     {
         $piecesBefore = $this->piece_count;
         $unitsBefore = $this->total_units;
         
+        // CRITICAL FIX: Always ADD pieces correctly
+        // This handles negative stock (backorders) properly:
+        // Example: -1 + 20 = 19 pieces (19 available after fulfilling 1 backorder)
         $this->piece_count += $pieces;
         $this->total_units += ($pieces * $unitCapacity);
-        $this->quantity = $this->piece_count; // Stock level = piece count
+        $this->quantity = $this->piece_count;
         
-        // Initialize current_piece_units if null or set to full capacity
-        if ($this->current_piece_units === null || $this->piece_count === $pieces) {
+        if ($this->current_piece_units === null || $piecesBefore <= 0) {
             $this->current_piece_units = $unitCapacity;
         }
         
@@ -93,21 +126,18 @@ class Stock extends Model
     
     /**
      * Sell by piece (deduct whole pieces)
+     * BUSINESS RULE: Allow negative stock (backorder system)
      */
     public function sellByPiece(int $pieces, float $unitCapacity, string $referenceType, ?int $referenceId = null, ?string $description = null, ?int $userId = null): void
     {
-        // Allow negative stock - remove the insufficient stock checks
-        
         $piecesBefore = $this->piece_count;
         $unitsBefore = $this->total_units;
         
-        $unitsToDeduct = $pieces * $unitCapacity;
-        
+        // Allow negative stock for backorders
         $this->piece_count -= $pieces;
-        $this->total_units -= $unitsToDeduct;
-        $this->quantity = $this->piece_count; // Stock level = piece count
+        $this->total_units -= ($pieces * $unitCapacity);
+        $this->quantity = $this->piece_count;
         
-        // Reset current piece units to full capacity when selling whole pieces
         if ($this->piece_count > 0) {
             $this->current_piece_units = $unitCapacity;
         } else {
@@ -121,11 +151,10 @@ class Stock extends Model
     
     /**
      * Sell by unit (deduct units, auto-adjust pieces)
+     * BUSINESS RULE: Allow negative stock (backorder system)
      */
     public function sellByUnit(float $units, float $unitCapacity, string $referenceType, ?int $referenceId = null, ?string $description = null, ?int $userId = null): void
     {
-        // Allow negative stock - remove the insufficient stock check
-        
         $piecesBefore = $this->piece_count;
         $unitsBefore = $this->total_units;
         
@@ -169,19 +198,20 @@ class Stock extends Model
             }
         }
         
-        // Update total units (allow negative)
+        // Update total units (allow negative for backorders)
         $this->total_units -= $units;
         
         // If total_units goes negative, adjust piece_count accordingly
         if ($this->total_units < 0) {
-            $this->piece_count = 0;
+            // Calculate negative pieces (backorder)
+            $this->piece_count = ceil($this->total_units / $unitCapacity); // Negative value
             $this->current_piece_units = 0;
         } else {
             // Ensure piece_count reflects available pieces
             $this->piece_count = max(0, floor($this->total_units / $unitCapacity));
         }
         
-        $this->quantity = $this->piece_count; // Stock level = piece count
+        $this->quantity = $this->piece_count; // Stock level = piece count (can be negative)
         
         $this->save();
         

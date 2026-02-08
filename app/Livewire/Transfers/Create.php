@@ -201,9 +201,14 @@ class Create extends Component
         $this->availableStock = $item['available_stock'];
         $this->selectedItem = [
             'id'    => $item['item_id'],
-            'label' => $item['item_name'] . ' (' . $item['item_sku'] . ')',
+            'name'  => $item['item_name'],
+            'sku'   => $item['item_sku'],
+            'label' => $item['item_name'] . ' (' . config('app.sku_prefix', 'CODE-') . $item['item_sku'] . ')',
             'unit'  => $item['unit'] ?? 'pcs'
         ];
+        
+        // Reload available items to exclude others but include this one
+        $this->loadAvailableItems();
     }
 
     /**
@@ -326,20 +331,6 @@ class Create extends Component
             ->join('stocks', 'items.id', '=', 'stocks.item_id')
             ->whereIn('stocks.warehouse_id', $warehouseIds)
             ->where('items.is_active', true)
-            ->where(function($query) use ($user) {
-                if ($user->isSuperAdmin()) {
-                    // SuperAdmin sees all items
-                    return $query;
-                }
-                // Branch users see their branch items + global items
-                if ($user->branch_id) {
-                    return $query->where(function($q) use ($user) {
-                        $q->where('items.branch_id', $user->branch_id)
-                          ->orWhereNull('items.branch_id');
-                    });
-                }
-                return $query;
-            })
             ->groupBy('items.id', 'items.name', 'items.sku')
             ->havingRaw('SUM(stocks.quantity) > 0');
 
@@ -358,7 +349,7 @@ class Create extends Component
 
         // Exclude already added item IDs (unless we are editing that same item)
         $excludeIds = collect($this->items)->pluck('item_id')->toArray();
-        if ($this->editingItemIndex !== null) {
+        if ($this->editingItemIndex !== null && isset($this->items[$this->editingItemIndex])) {
             $excludeIds = array_diff($excludeIds, [$this->items[$this->editingItemIndex]['item_id']]);
         }
         if (!empty($excludeIds)) {
@@ -621,16 +612,26 @@ class Create extends Component
                 'user_id' => auth()->id()
             ]);
             
+            // If removing the item being edited, cancel edit mode
+            if ($this->editingItemIndex === $index) {
+                $this->editingItemIndex = null;
+            }
+            
             unset($this->items[$index]);
             $this->items = array_values($this->items); // Re-index array
+            
+            // Reset editing index if it's now out of bounds
+            if ($this->editingItemIndex !== null && $this->editingItemIndex >= count($this->items)) {
+                $this->editingItemIndex = null;
+            }
             
             $this->dispatch('showNotification', [
                 'type' => 'info',
                 'message' => "🗑️ {$removedItem['item_name']} removed from transfer"
             ]);
             
-            // Refresh available items to include the removed item again
-            $this->loadAvailableItems();
+            // Reset form and refresh available items
+            $this->resetNewItemForm();
         }
     }
 
@@ -748,10 +749,7 @@ class Create extends Component
             $executionTime = round((microtime(true) - $startTime) * 1000, 2);
             
             // Enhanced success message with stock movement confirmation
-            $successMessage = "Transfer {$transfer->reference_code} completed successfully! 🎉<br/>" .
-                             "✅ Stock deducted from {$this->sourceLocationName}<br/>" .
-                             "✅ Stock added to {$this->destinationLocationName}<br/>" .
-                             "✅ Inventory levels updated in real-time";
+            $successMessage = "Transfer {$transfer->reference_code} sent for approval successfully! 🎉";
 
             Log::info('Transfer Create: Transfer completed successfully', [
                 'user_id' => auth()->id(),
@@ -766,17 +764,11 @@ class Create extends Component
             $this->logStockMovementVerification($transfer);
 
             // Use standardized flash message
-            session()->flash('success', 'Transfer sent for approval successfully.');
+            session()->flash('success', $successMessage);
             
-            // Reset form for next transfer
-            $this->resetForm();
-            
-            // Dispatch success event for cleanup
-            $this->dispatch('transferCreated', ['transfer_id' => $transfer->id]);
-            
-            // Close the modal and redirect to create page to allow creating another transfer
-            $this->dispatch('closeModal');
-            return $this->redirect(route('admin.transfers.create'), navigate: true);
+            // Redirect to pending transfers page
+            return redirect()->route('admin.transfers.pending')
+                ->with('success', $successMessage);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
             $this->isSubmitting = false;

@@ -32,12 +32,17 @@
                         <div class="mb-2">
                             <span class="text-muted small">Customer:</span>
                             <span class="fw-semibold ms-1">
-                                @if($form['is_walking_customer'])
+                                @if(!empty($form['is_walking_customer']) && $form['is_walking_customer'])
                                     <span class="badge bg-info-subtle text-info-emphasis">
                                         <i class="bi bi-person-walking me-1"></i>Walking Customer
                                     </span>
                                 @elseif($selectedCustomer)
                                     {{ $selectedCustomer['name'] }}
+                                @elseif(!empty($form['customer_id']))
+                                    @php
+                                        $customer = collect($customers)->firstWhere('id', $form['customer_id']);
+                                    @endphp
+                                    {{ $customer['name'] ?? 'Customer #' . $form['customer_id'] }}
                                 @else
                                     <span class="text-muted">Not selected</span>
                                 @endif
@@ -47,20 +52,35 @@
                             <span class="text-muted small">Location:</span>
                             <span class="fw-semibold ms-1">
                                 @php
-                                    $selectedWarehouse = null;
-                                    if (isset($warehouses) && is_object($warehouses) && method_exists($warehouses, 'firstWhere')) {
-                                        $selectedWarehouse = $warehouses->firstWhere('id', $form['warehouse_id']);
+                                    $user = auth()->user();
+                                    $locationName = 'Not selected';
+                                    
+                                    if ($user->warehouse_id) {
+                                        // User has assigned warehouse
+                                        $warehouse = $user->warehouse;
+                                        $locationName = $warehouse->branch ? 
+                                            $warehouse->branch->name . ' - ' . $warehouse->name : 
+                                            $warehouse->name;
+                                    } elseif ($user->branch_id) {
+                                        // User has assigned branch
+                                        $locationName = $user->branch->name . ' (Branch)';
+                                    } elseif (!empty($form['warehouse_id'])) {
+                                        // Form warehouse selection
+                                        $selectedWarehouse = collect($warehouses)->firstWhere('id', $form['warehouse_id']);
+                                        if ($selectedWarehouse) {
+                                            $locationName = isset($selectedWarehouse['branch']) && $selectedWarehouse['branch'] ?
+                                                $selectedWarehouse['branch']['name'] . ' - ' . $selectedWarehouse['name'] :
+                                                $selectedWarehouse['name'];
+                                        }
+                                    } elseif (!empty($form['branch_id'])) {
+                                        // Form branch selection
+                                        $selectedBranch = collect($branches)->firstWhere('id', $form['branch_id']);
+                                        if ($selectedBranch) {
+                                            $locationName = $selectedBranch['name'] . ' (Branch)';
+                                        }
                                     }
                                 @endphp
-                                @if($selectedWarehouse)
-                                    @if(isset($selectedWarehouse->branch) && $selectedWarehouse->branch)
-                                        {{ $selectedWarehouse->branch->name }} - {{ $selectedWarehouse->name }}
-                                    @else
-                                        {{ $selectedWarehouse->name }}
-                                    @endif
-                                @else
-                                    <span class="text-muted">Not selected</span>
-                                @endif
+                                {{ $locationName }}
                             </span>
                         </div>
                     </div>

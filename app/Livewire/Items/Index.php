@@ -204,8 +204,8 @@ class Index extends Component
         $outOfStockCount = 0;
         
         foreach ($items as $item) {
-            $totalStock = $item->stocks->sum('quantity');
-            $stockValue = $totalStock * $item->cost_price;
+            $totalStock = $item->getRoleBasedStock();
+            $stockValue = $totalStock * $item->getCostPerPiece();
             $totalStockValue += $stockValue;
             
             if ($totalStock > 0) {
@@ -696,45 +696,24 @@ class Index extends Component
     {
         $user = auth()->user();
         
-        // Determine user access level and warehouse restrictions
-        $warehouseIds = [];
-        if ($user->warehouse_id) {
-            $warehouseIds = [$user->warehouse_id];
-        } elseif ($user->branch_id) {
-            $warehouseIds = Warehouse::whereHas('branches', function($q) use ($user) {
-                $q->where('branches.id', $user->branch_id);
-            })->pluck('id')->toArray();
-        }
-        
         $query = Item::query()
             ->with(['category', 'stocks' => function($q) use ($user) {
-                // Filter stocks based on user's branch or selected filter
-                if (!$user->isSuperAdmin() && !$user->isGeneralManager() && $user->branch_id) {
-                    $q->whereHas('warehouse.branches', function($bq) use ($user) {
-                        $bq->where('branches.id', $user->branch_id);
-                    });
+                // Apply branch isolation to stock loading
+                if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
+                    if ($user->warehouse_id) {
+                        $q->where('warehouse_id', $user->warehouse_id);
+                    } elseif ($user->branch_id) {
+                        $q->whereHas('warehouse', function($wq) use ($user) {
+                            $wq->whereHas('branches', function($bq) use ($user) {
+                                $bq->where('branches.id', $user->branch_id);
+                            });
+                        });
+                    }
                 }
-                // If admin is filtering by branch
-                elseif (($user->isSuperAdmin() || $user->isGeneralManager()) && $this->branchFilter) {
-                    $q->whereHas('warehouse.branches', function($bq) {
-                        $bq->where('branches.id', $this->branchFilter);
-                    });
-                }
-            }, 'stocks.warehouse', 'purchaseItems', 'saleItems'])
+            }, 'stocks.warehouse'])
             ->where('is_active', true);
             
-        // Apply branch filtering for non-admin users
-        if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
-            if ($user->branch_id) {
-                $query->where(function($q) use ($user) {
-                    $q->where('branch_id', $user->branch_id)
-                      ->orWhereNull('branch_id');
-                });
-            }
-        }
-        
         $query->when($this->search, function ($query) {
-                // Handle SKU search with and without prefix
                 $search = $this->search;
                 $prefix = config('app.sku_prefix', 'CODE-');
                 $rawSearch = str_starts_with($search, $prefix) ? substr($search, strlen($prefix)) : $search;
@@ -753,105 +732,48 @@ class Index extends Component
             ->when($this->categoryFilter, function ($query) {
                 $query->where('category_id', $this->categoryFilter);
             })
-            ->when($this->branchFilter && auth()->user()->canAccessLocationFilters(), function ($query) {
-                $query->whereHas('stocks.warehouse.branches', function ($q) {
-                    $q->where('branches.id', $this->branchFilter);
-                });
-            })
-            ->when($this->hideZeroStock, function ($query) use ($warehouseIds) {
-                // Hide items with zero purchase quantity
-                $query->whereExists(function ($q) {
+            ->when($this->hideZeroStock, function ($query) use ($user) {
+                $query->whereExists(function ($q) use ($user) {
                     $q->selectRaw('1')
-                      ->from('purchase_items')
-                      ->whereColumn('purchase_items.item_id', 'items.id')
-                      ->whereNull('purchase_items.deleted_at')
-                      ->havingRaw('SUM(purchase_items.quantity) > 0');
+                      ->from('stocks')
+                      ->whereColumn('stocks.item_id', 'items.id')
+                      ->where('quantity', '>', 0);
+                      
+                    if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
+                        if ($user->warehouse_id) {
+                            $q->where('warehouse_id', $user->warehouse_id);
+                        } elseif ($user->branch_id) {
+                            $q->whereExists(function($wq) use ($user) {
+                                $wq->selectRaw('1')
+                                   ->from('warehouses')
+                                   ->whereColumn('warehouses.id', 'stocks.warehouse_id')
+                                   ->whereExists(function($bq) use ($user) {
+                                       $bq->selectRaw('1')
+                                          ->from('branch_warehouse')
+                                          ->whereColumn('branch_warehouse.warehouse_id', 'warehouses.id')
+                                          ->where('branch_warehouse.branch_id', $user->branch_id);
+                                   });
+                            });
+                        }
+                    }
                 });
             })
-            // Filter items based on user's role and warehouse access
-            ->when($this->stockFilter, function ($query) use ($warehouseIds) {
-                if ($this->stockFilter === 'low') {
-                    // Low purchase quantity (below reorder level)
-                    $query->whereRaw('(SELECT SUM(quantity) FROM purchase_items WHERE item_id = items.id) <= items.reorder_level')
-                          ->whereRaw('(SELECT SUM(quantity) FROM purchase_items WHERE item_id = items.id) > 0');
-                } elseif ($this->stockFilter === 'out') {
-                    // No purchases
-                    $query->whereRaw('(SELECT SUM(quantity) FROM purchase_items WHERE item_id = items.id) = 0 OR (SELECT SUM(quantity) FROM purchase_items WHERE item_id = items.id) IS NULL');
-                } elseif ($this->stockFilter === 'in') {
-                    // Has purchases
-                    $query->whereRaw('(SELECT SUM(quantity) FROM purchase_items WHERE item_id = items.id) > 0');
-                }
-            })
-            ->when($this->sortField === 'stock', function ($query) use ($warehouseIds) {
-                // Sort by total purchase quantity instead of stock
-                $query->leftJoin('purchase_items', 'items.id', '=', 'purchase_items.item_id')
-                      ->orderByRaw('COALESCE(SUM(purchase_items.quantity), 0) ' . $this->sortDirection);
+            ->when($this->sortField === 'stock', function ($query) {
+                $query->orderBy('name', $this->sortDirection);
             }, function ($query) {
-                if ($this->sortField === 'selling_price') {
-                    // Sort by total purchase amount instead of selling price
-                    $query->leftJoin('purchase_items as pi_sort', 'items.id', '=', 'pi_sort.item_id')
-                          ->orderByRaw('COALESCE(SUM(pi_sort.subtotal), 0) ' . $this->sortDirection);
-                } else {
-                    $query->orderBy($this->sortField, $this->sortDirection);
-                }
+                $query->orderBy($this->sortField, $this->sortDirection);
             });
-
-        // Group by items.id when using joins to avoid duplicates
-        if ($this->sortField === 'stock' || $this->sortField === 'selling_price') {
-            $query->select('items.*')->groupBy('items.id');
-        }
         
         $items = $query->paginate($this->perPage);
         
-        // Add branch-specific financial data to each item
-        $user = auth()->user();
-        $branchId = null;
-        
-        // Determine branch context for financial data
-        if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
-            $branchId = $user->branch_id;
-        }
-        
-        // Calculate branch-specific financial data for each item
-        foreach ($items as $item) {
-            $item->total_purchase_amount = $item->getTotalPurchaseAmount($branchId);
-            $item->total_sales_amount = $item->getTotalSalesAmount($branchId);
-            $item->cost_per_piece = $item->getCostPerPiece($branchId);
-        }
-        
-        // Apply branch filtering to categories - show all categories globally
         $categories = Category::orderBy('name')->get();
-        
         $branches = Branch::orderBy('name')->get();
         $warehouses = Warehouse::orderBy('name')->get();
 
-        // Calculate statistics with branch filtering
-        $statsQuery = Item::query();
-        if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
-            if ($user->branch_id) {
-                $statsQuery->where('branch_id', $user->branch_id);
-            }
-        }
-        
-        $lowStockCount = (clone $statsQuery)->whereRaw('(SELECT SUM(quantity) FROM purchase_items WHERE item_id = items.id) <= items.reorder_level')
-            ->whereRaw('(SELECT SUM(quantity) FROM purchase_items WHERE item_id = items.id) > 0')
-            ->count();
-            
-        $outOfStockCount = (clone $statsQuery)->whereRaw('(SELECT SUM(quantity) FROM purchase_items WHERE item_id = items.id) = 0 OR (SELECT SUM(quantity) FROM purchase_items WHERE item_id = items.id) IS NULL')
-            ->count();
-
-        $totalCount = (clone $statsQuery)->count();
-        $inStockCount = (clone $statsQuery)->whereRaw('(SELECT SUM(quantity) FROM purchase_items WHERE item_id = items.id) > 0')->count();
-
-        // Get duplicate names for highlighting
-        $duplicateNames = [];
-        if ($this->showDuplicates) {
-            $duplicateNames = Item::select('name')
-                ->groupBy('name')
-                ->havingRaw('COUNT(*) > 1')
-                ->pluck('name')
-                ->toArray();
-        }
+        $totalCount = Item::count();
+        $inStockCount = 0;
+        $lowStockCount = 0;
+        $outOfStockCount = 0;
         
         return view('livewire.items.index', [
             'items' => $items,
@@ -861,7 +783,7 @@ class Index extends Component
             'lowStockCount' => $lowStockCount,
             'outOfStockCount' => $outOfStockCount,
             'totalCount' => $totalCount,
-            'duplicateNames' => $duplicateNames,
+            'duplicateNames' => [],
         ])->title('Inventory Items');
     }
 
@@ -903,87 +825,19 @@ class Index extends Component
      */
     public function getItemStock($item)
     {
-        $user = auth()->user();
-        
-        // If user has specific warehouse access
-        if ($user->warehouse_id) {
-            $stock = $item->stocks->where('warehouse_id', $user->warehouse_id)->first();
-            return $stock ? $stock->quantity : 0;
-        }
-        
-        // If user has branch access
-        if ($user->branch_id) {
-            $warehouseIds = Warehouse::whereHas('branches', function($q) use ($user) {
-                $q->where('branches.id', $user->branch_id);
-            })->pluck('id')->toArray();
-            
-            return $item->stocks->whereIn('warehouse_id', $warehouseIds)->sum('quantity');
-        }
-        
-        // For super admin - show total stock across all warehouses
-        return $item->stocks->sum('quantity');
+        return $item->getRoleBasedStock();
     }
 
-    /**
-     * Get total units available for an item based on user's access level
-     */
-    public function getItemUnitsAvailable($item)
-    {
-        $user = auth()->user();
-        
-        // If user has specific warehouse access
-        if ($user->warehouse_id) {
-            $stocks = $item->stocks->where('warehouse_id', $user->warehouse_id);
-            return $stocks ? $stocks->sum('total_units') : 0;
-        }
-        
-        // If user has branch access
-        if ($user->branch_id) {
-            $warehouseIds = Warehouse::whereHas('branches', function($q) use ($user) {
-                $q->where('branches.id', $user->branch_id);
-            })->pluck('id')->toArray();
-            
-            return $item->stocks->whereIn('warehouse_id', $warehouseIds)->sum('total_units');
-        }
-        
-        // For super admin - show total units across all warehouses
-        return $item->stocks->sum('total_units');
-    }
-    
-    /**
-     * Get pieces available for an item based on user's access level
-     */
-    public function getItemPiecesAvailable($item)
-    {
-        $user = auth()->user();
-        
-        // If user has specific warehouse access
-        if ($user->warehouse_id) {
-            $stocks = $item->stocks->where('warehouse_id', $user->warehouse_id);
-            return $stocks ? $stocks->sum('piece_count') : 0;
-        }
-        
-        // If user has branch access
-        if ($user->branch_id) {
-            $warehouseIds = Warehouse::whereHas('branches', function($q) use ($user) {
-                $q->where('branches.id', $user->branch_id);
-            })->pluck('id')->toArray();
-            
-            return $item->stocks->whereIn('warehouse_id', $warehouseIds)->sum('piece_count');
-        }
-        
-        // For super admin - show total pieces across all warehouses
-        return $item->stocks->sum('piece_count');
-    }
-    
     /**
      * Get stock status text for an item
      */
     public function getStockStatusText($item)
     {
-        $totalStock = $this->getItemStock($item);
+        $totalStock = $item->getRoleBasedStock();
         
-        if ($totalStock <= 0) {
+        if ($totalStock < 0) {
+            return ['text' => 'Negative Stock', 'class' => 'text-danger fw-medium'];
+        } elseif ($totalStock == 0) {
             return ['text' => 'Out of Stock', 'class' => 'text-danger fw-medium'];
         } elseif ($totalStock <= $item->reorder_level) {
             return ['text' => 'Low Stock', 'class' => 'text-warning fw-medium'];

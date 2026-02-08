@@ -119,44 +119,44 @@ class Item extends Model
     }
 
     /**
-     * Get the total quantity in stock across all warehouses (pieces).
+     * Get the total quantity in stock (respects branch isolation).
      *
      * @return float
      */
     public function getTotalStockAttribute(): float
     {
-        return $this->stocks()->sum('piece_count');
+        return $this->getRoleBasedStock();
     }
     
     /**
-     * Get the total pieces in stock across all warehouses.
+     * Get the total pieces in stock (respects branch isolation).
      *
      * @return int
      */
     public function getTotalPiecesAttribute(): int
     {
-        return $this->stocks()->sum('piece_count');
+        return (int) $this->getRoleBasedStock();
     }
     
     /**
-     * Get the total units in stock across all warehouses.
+     * Get the total units in stock (respects branch isolation).
      *
      * @return float
      */
     public function getTotalUnitsAttribute(): float
     {
-        return $this->stocks()->sum('total_units');
+        $totalQuantity = $this->getRoleBasedStock();
+        return $this->unit_quantity > 0 ? $totalQuantity / $this->unit_quantity : 0;
     }
 
     /**
-     * Get the total quantity in stock converted to individual items.
-     * This accounts for unit_quantity (e.g., if 1 box = 3 items, and you have 2 boxes, you have 6 items)
+     * Get the total quantity in stock converted to individual items (respects branch isolation).
      *
      * @return float
      */
     public function getTotalItemsAttribute(): float
     {
-        return $this->getTotalStockAttribute() * $this->unit_quantity;
+        return $this->getRoleBasedStock() * $this->unit_quantity;
     }
 
     /**
@@ -243,9 +243,7 @@ class Item extends Model
 
     /**
      * Get role-based stock quantity.
-     * For superadmin/manager: shows all stock
-     * For branch users: shows only branch stock (direct branch_id)
-     * For warehouse users: shows only warehouse stock
+     * Items are global but stock is branch-isolated through warehouse relationships
      *
      * @param User|null $user
      * @return float
@@ -257,26 +255,91 @@ class Item extends Model
         }
 
         if (!$user) {
-            return $this->getTotalStockAttribute();
+            // No user context - return global stock (for system operations)
+            return $this->stocks()->sum('quantity');
         }
 
-        // Super admin and General Manager - show all stock
+        // Super admin and General Manager - show all stock across all branches
         if ($user->isSuperAdmin() || $user->isGeneralManager()) {
-            return $this->getTotalStockAttribute();
+            return $this->stocks()->sum('quantity');
         }
 
-        // Warehouse user - show only assigned warehouse stock (highest priority)
+        // Warehouse user - show only assigned warehouse stock
         if ($user->warehouse_id) {
             return $this->getStockInWarehouse($user->warehouse_id);
         }
 
-        // Branch-assigned users (Branch Managers, Sales, etc.) - show branch stock directly
+        // Branch users - show only stock in their branch's warehouses
         if ($user->branch_id) {
             return $this->getStockInBranch($user->branch_id);
         }
 
-        // Default fallback - no specific assignment
         return 0;
+    }
+
+    /**
+     * Get available stock for display (includes negative values).
+     * This is used for inventory listings to show true stock levels.
+     *
+     * @param User|null $user
+     * @return float
+     */
+    public function getAvailableStock(?User $user = null): float
+    {
+        return $this->getRoleBasedStock($user);
+    }
+
+    /**
+     * Get available pieces attribute for inventory display.
+     * This ensures negative stock is shown in inventory lists.
+     *
+     * @return int
+     */
+    public function getAvailablePiecesAttribute(): int
+    {
+        return (int) $this->getRoleBasedStock();
+    }
+
+    /**
+     * Get current stock quantity (alias for available pieces).
+     * Forces display of actual stock including negatives.
+     *
+     * @return int
+     */
+    public function getCurrentStockAttribute(): int
+    {
+        return (int) $this->getRoleBasedStock();
+    }
+
+    /**
+     * Get quantity attribute (override for inventory display).
+     * This ensures templates show actual stock values.
+     *
+     * @return int
+     */
+    public function getQuantityAttribute(): int
+    {
+        return (int) $this->getRoleBasedStock();
+    }
+
+    /**
+     * Get stock status text based on current stock level.
+     *
+     * @return string
+     */
+    public function getStockStatusAttribute(): string
+    {
+        $stock = $this->getRoleBasedStock();
+        
+        if ($stock < 0) {
+            return 'Negative Stock';
+        } elseif ($stock == 0) {
+            return 'Out of Stock';
+        } elseif ($stock <= $this->reorder_level) {
+            return 'Low Stock';
+        } else {
+            return 'In Stock';
+        }
     }
 
     /**
@@ -328,7 +391,7 @@ class Item extends Model
     public function getStockInWarehouse(int $warehouseId): float
     {
         $stock = $this->stocks()->where('warehouse_id', $warehouseId)->first();
-        return $stock ? $stock->piece_count : 0;
+        return $stock ? $stock->quantity : 0;
     }
     
     /**
@@ -340,7 +403,7 @@ class Item extends Model
     public function getPiecesInWarehouse(int $warehouseId): int
     {
         $stock = $this->stocks()->where('warehouse_id', $warehouseId)->first();
-        return $stock ? $stock->piece_count : 0;
+        return $stock ? (int) $stock->quantity : 0;
     }
     
     /**
@@ -352,7 +415,9 @@ class Item extends Model
     public function getUnitsInWarehouse(int $warehouseId): float
     {
         $stock = $this->stocks()->where('warehouse_id', $warehouseId)->first();
-        return $stock ? $stock->total_units : 0;
+        if (!$stock) return 0;
+        
+        return $this->unit_quantity > 0 ? $stock->quantity / $this->unit_quantity : 0;
     }
 
     /**
@@ -372,7 +437,8 @@ class Item extends Model
                 ->whereIn('warehouse_id', $branch->warehouses->pluck('id'))
                 ->sum('quantity');
                 
-            if ($totalStock > 0) {
+            // Include all stock levels, including negative
+            if ($totalStock != 0) {
                 $branchStock[] = [
                     'id' => $branch->id,
                     'name' => $branch->name,
@@ -386,17 +452,21 @@ class Item extends Model
 
     /**
      * Get stock quantity for a specific branch (via warehouse relationships).
+     * This ensures branch isolation - each branch sees only their stock
      *
      * @param int $branchId
      * @return float
      */
     public function getStockInBranch(int $branchId): float
     {
+        $branch = \App\Models\Branch::find($branchId);
+        if (!$branch) {
+            return 0;
+        }
+
         return $this->stocks()
-            ->whereHas('warehouse.branches', function($query) use ($branchId) {
-                $query->where('branches.id', $branchId);
-            })
-            ->sum('piece_count');
+            ->whereIn('warehouse_id', $branch->warehouses->pluck('id'))
+            ->sum('quantity');
     }
     
     /**
@@ -407,11 +477,7 @@ class Item extends Model
      */
     public function getPiecesInBranch(int $branchId): int
     {
-        return $this->stocks()
-            ->whereHas('warehouse.branches', function($query) use ($branchId) {
-                $query->where('branches.id', $branchId);
-            })
-            ->sum('piece_count');
+        return (int) $this->getStockInBranch($branchId);
     }
     
     /**
@@ -422,11 +488,9 @@ class Item extends Model
      */
     public function getUnitsInBranch(int $branchId): float
     {
-        return $this->stocks()
-            ->whereHas('warehouse.branches', function($query) use ($branchId) {
-                $query->where('branches.id', $branchId);
-            })
-            ->sum('total_units');
+        $totalQuantity = $this->getStockInBranch($branchId);
+        
+        return $this->unit_quantity > 0 ? $totalQuantity / $this->unit_quantity : 0;
     }
 
     public function priceHistories()
@@ -473,7 +537,9 @@ class Item extends Model
                 if ($branchId) {
                     $q->where('branch_id', $branchId);
                 }
-            });
+                $q->whereNull('deleted_at');
+            })
+            ->whereNull('deleted_at');
         return $query->sum('subtotal') ?: 0;
     }
 
@@ -490,7 +556,9 @@ class Item extends Model
                 if ($branchId) {
                     $q->where('branch_id', $branchId);
                 }
-            });
+                $q->whereNull('deleted_at');
+            })
+            ->whereNull('deleted_at');
         return $query->sum('quantity') ?: 0;
     }
 
@@ -519,10 +587,53 @@ class Item extends Model
      */
     public function getCostPerPiece(?int $branchId = null): float
     {
+        // Use current user's branch if not specified
+        if ($branchId === null && auth()->user() && !auth()->user()->isSuperAdmin() && !auth()->user()->isGeneralManager()) {
+            $branchId = auth()->user()->branch_id;
+        }
+        
         $totalCost = $this->getTotalPurchaseAmount($branchId);
         $totalQty = $this->getTotalPurchaseQuantity($branchId);
         
         return $totalQty > 0 ? $totalCost / $totalQty : 0;
+    }
+
+    /**
+     * Get cost per piece attribute (branch-aware accessor).
+     *
+     * @return float
+     */
+    public function getCostPerPieceAttribute(): float
+    {
+        return $this->getCostPerPiece();
+    }
+
+    /**
+     * Get total purchase amount attribute (branch-aware accessor).
+     *
+     * @return float
+     */
+    public function getTotalPurchaseAmountAttribute(): float
+    {
+        $branchId = null;
+        if (auth()->user() && !auth()->user()->isSuperAdmin() && !auth()->user()->isGeneralManager()) {
+            $branchId = auth()->user()->branch_id;
+        }
+        return $this->getTotalPurchaseAmount($branchId);
+    }
+
+    /**
+     * Get total sales amount attribute (branch-aware accessor).
+     *
+     * @return float
+     */
+    public function getTotalSalesAmountAttribute(): float
+    {
+        $branchId = null;
+        if (auth()->user() && !auth()->user()->isSuperAdmin() && !auth()->user()->isGeneralManager()) {
+            $branchId = auth()->user()->branch_id;
+        }
+        return $this->getTotalSalesAmount($branchId);
     }
 
     /**

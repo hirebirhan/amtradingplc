@@ -20,7 +20,7 @@ class LocationService
                 'warehouses' => Warehouse::with('branches')->orderBy('name')->get()
             ];
         }
-        // Branch Manager sees warehouses in their branch
+        // Branch Manager sees their branch and warehouses in their branch
         elseif ($user->isBranchManager() && $user->branch_id) {
             return [
                 'branches' => Branch::where('id', $user->branch_id)->get(),
@@ -29,15 +29,30 @@ class LocationService
                 })->orderBy('name')->get()
             ];
         }
+        // Warehouse users see their warehouse and its branch
+        elseif ($user->warehouse_id) {
+            $warehouse = Warehouse::with('branches')->find($user->warehouse_id);
+            return [
+                'branches' => $warehouse ? $warehouse->branches : collect([]),
+                'warehouses' => $warehouse ? collect([$warehouse]) : collect([])
+            ];
+        }
+        // Other branch users see their branch and its warehouses
+        elseif ($user->branch_id) {
+            return [
+                'branches' => Branch::where('id', $user->branch_id)->get(),
+                'warehouses' => Warehouse::with('branches')->whereHas('branches', function($q) use ($user) {
+                    $q->where('branches.id', $user->branch_id);
+                })->orderBy('name')->get()
+            ];
+        }
         // Users not assigned to specific location see all
-        elseif (!$user->branch_id && !$user->warehouse_id) {
+        else {
             return [
                 'branches' => Branch::orderBy('name')->get(),
                 'warehouses' => Warehouse::with('branches')->orderBy('name')->get()
             ];
         }
-
-        return ['branches' => collect([]), 'warehouses' => collect([])];
     }
 
     public function autoSetUserLocation(): array
