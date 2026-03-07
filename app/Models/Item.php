@@ -146,7 +146,7 @@ class Item extends Model
     public function getTotalUnitsAttribute(): float
     {
         $totalQuantity = $this->getRoleBasedStock();
-        return $this->unit_quantity > 0 ? $totalQuantity / $this->unit_quantity : 0;
+        return $totalQuantity * max($this->unit_quantity ?? 1, 1);
     }
 
     /**
@@ -417,7 +417,7 @@ class Item extends Model
         $stock = $this->stocks()->where('warehouse_id', $warehouseId)->first();
         if (!$stock) return 0;
         
-        return $this->unit_quantity > 0 ? $stock->quantity / $this->unit_quantity : 0;
+        return $stock->quantity * max($this->unit_quantity ?? 1, 1);
     }
 
     /**
@@ -490,7 +490,7 @@ class Item extends Model
     {
         $totalQuantity = $this->getStockInBranch($branchId);
         
-        return $this->unit_quantity > 0 ? $totalQuantity / $this->unit_quantity : 0;
+        return $totalQuantity * max($this->unit_quantity ?? 1, 1);
     }
 
     public function priceHistories()

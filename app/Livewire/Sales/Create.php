@@ -623,11 +623,12 @@ class Create extends Component
                 return $item->getPiecesInBranch($branchId);
             }
         } else {
-            // If selling by unit (kg, meter, etc.), return total units
+            // If selling by unit (kg, meter, etc.), calculate total available units: pieces * unit_quantity
+            $unitMultiplier = max($item->unit_quantity ?? 1, 1);
             if ($warehouseId) {
-                return $item->getUnitsInWarehouse($warehouseId);
+                return $item->getPiecesInWarehouse($warehouseId) * $unitMultiplier;
             } elseif ($branchId) {
-                return $item->getUnitsInBranch($branchId);
+                return $item->getPiecesInBranch($branchId) * $unitMultiplier;
             }
         }
         

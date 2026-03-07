@@ -298,6 +298,13 @@ class Sale extends Model
         }
 
         $quantity = $saleItem->quantity;
+        
+        // If the item is sold by unit (e.g. grams/liters), calculate the piece equivalent
+        if ($saleItem->isSoldByUnit()) {
+            $unitCapacity = max($item->unit_quantity ?? 1, 1);
+            $quantity = $quantity / $unitCapacity;
+        }
+
         $quantityBefore = $stock->quantity;
         $pieceCountBefore = $stock->piece_count ?? 0;
         
@@ -357,6 +364,13 @@ class Sale extends Model
         }
 
         $quantity = $saleItem->quantity;
+        
+        // If the item is sold by unit (e.g. grams/liters), calculate the piece equivalent
+        if ($saleItem->isSoldByUnit()) {
+            $unitCapacity = max($item->unit_quantity ?? 1, 1);
+            $quantity = $quantity / $unitCapacity;
+        }
+
         $remainingQuantity = $quantity;
 
         // Deduct from warehouses with positive stock first, then allow negative

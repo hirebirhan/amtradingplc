@@ -212,7 +212,7 @@
                                         </div>
                                         @if($item->unit_quantity > 1)
                                         <div class="d-flex align-items-center gap-1 mt-1">
-                                            <small class="text-muted">{{ number_format($item->getRoleBasedStock() / max($item->unit_quantity, 1), 2) }} {{ $item->item_unit ?? 'units' }}</small>
+                                            <small class="text-muted">{{ number_format($this->getItemStock($item) * max($item->unit_quantity, 1), 2) }} {{ $item->item_unit ?? 'units' }}</small>
                                         </div>
                                         @endif
                                     </div>
