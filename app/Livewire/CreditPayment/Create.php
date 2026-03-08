@@ -117,9 +117,7 @@ class Create extends Component
     
     public function updatedAmount($value)
     {
-        // Remove all payment amount restrictions
-        // Allow any amount to be paid regardless of credit balance
-        // This enables flexible payment options including overpayment
+        // No explicit restrictions here; handled in submit validation 
     }
     
     /**
@@ -239,7 +237,11 @@ class Create extends Component
                 'required',
                 'numeric',
                 'min:0.01',
-                // Remove all balance restrictions to allow flexible payments
+                function ($attribute, $value, $fail) {
+                    if ($this->paymentType === 'down_payment' && (float)$value >= (float)$this->credit->balance) {
+                        $fail('You cannot pay the full amount for a partial down payment. Please select "Closing Payment" if you intend to pay the full balance.');
+                    }
+                },
             ],
             'payment_method' => 'required|string|in:cash,bank_transfer,telebirr,check',
             'payment_date' => 'required|date',
