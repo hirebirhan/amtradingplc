@@ -471,9 +471,9 @@
         });
         
         // Listen for custom notification events
-        Livewire.on('showNotification', (event) => {
-            showNotification(event.type || 'info', event.message || 'Action completed');
-        });
+        // Livewire.on('showNotification', (event) => {
+        //     showNotification(event.type || 'info', event.message || '');
+        // });
         
         // Enhanced error handling
         window.addEventListener('livewire:error', (event) => {
