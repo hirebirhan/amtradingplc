@@ -8,6 +8,8 @@ enum TransferStatus: string
 {
     case PENDING = 'pending';
     case APPROVED = 'approved';
+    case IN_TRANSIT = 'in_transit';
+    case COMPLETED = 'completed';
     case REJECTED = 'rejected';
     case CANCELLED = 'cancelled';
 
@@ -21,6 +23,8 @@ enum TransferStatus: string
         return match ($this) {
             self::PENDING => 'Pending',
             self::APPROVED => 'Approved',
+            self::IN_TRANSIT => 'In Transit',
+            self::COMPLETED => 'Completed',
             self::REJECTED => 'Rejected',
             self::CANCELLED => 'Cancelled',
         };
@@ -31,6 +35,8 @@ enum TransferStatus: string
         return match ($this) {
             self::PENDING => 'badge bg-warning',
             self::APPROVED => 'badge bg-success',
+            self::IN_TRANSIT => 'badge bg-info',
+            self::COMPLETED => 'badge bg-success',
             self::REJECTED => 'badge bg-danger',
             self::CANCELLED => 'badge bg-secondary',
         };

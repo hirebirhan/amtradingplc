@@ -6,7 +6,7 @@ use Exception;
 
 class TransferException extends Exception
 {
-    public function __construct(string $message = "", int $code = 0, ?Exception $previous = null)
+    public function __construct(string $message = '', int $code = 0, ?Exception $previous = null)
     {
         parent::__construct($message, $code, $previous);
     }
@@ -22,7 +22,7 @@ class TransferException extends Exception
             'user_id' => auth()->id(),
             'trace' => $this->getTraceAsString(),
         ]);
-        
+
         return false;
     }
 
@@ -31,13 +31,9 @@ class TransferException extends Exception
      */
     public function render($request)
     {
-        if ($request->expectsJson()) {
-            return response()->json([
-                'error' => 'Transfer Error',
-                'message' => $this->getMessage(),
-            ], 422);
-        }
-
-        return back()->with('error', $this->getMessage());
+        return response()->json([
+            'message' => $this->getMessage(),
+            'error' => 'Transfer Error',
+        ], 422);
     }
-} 
+}

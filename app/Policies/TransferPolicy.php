@@ -2,9 +2,9 @@
 
 namespace App\Policies;
 
+use App\Enums\AuthorizationLevel;
 use App\Models\Transfer;
 use App\Models\User;
-use App\Enums\AuthorizationLevel;
 
 class TransferPolicy
 {
@@ -15,6 +15,10 @@ class TransferPolicy
 
     public function view(User $user, Transfer $transfer): bool
     {
+        if (! $user->can('transfers.view')) {
+            return false;
+        }
+
         return match (AuthorizationLevel::fromUser($user)) {
             AuthorizationLevel::FULL_ACCESS => true,
             AuthorizationLevel::BRANCH_RESTRICTED => ($transfer->source_type === 'branch' && $transfer->source_id === $user->branch_id) ||
@@ -30,6 +34,10 @@ class TransferPolicy
 
     public function update(User $user, Transfer $transfer): bool
     {
+        if (! $user->can('transfers.edit')) {
+            return false;
+        }
+
         return match (AuthorizationLevel::fromUser($user)) {
             AuthorizationLevel::FULL_ACCESS => true,
             AuthorizationLevel::BRANCH_RESTRICTED => $transfer->source_type === 'branch' && $transfer->source_id === $user->branch_id,
@@ -39,6 +47,23 @@ class TransferPolicy
 
     public function approve(User $user, Transfer $transfer): bool
     {
+        if (! $user->can('transfers.approve')) {
+            return false;
+        }
+
+        return match (AuthorizationLevel::fromUser($user)) {
+            AuthorizationLevel::FULL_ACCESS => true,
+            AuthorizationLevel::BRANCH_RESTRICTED => $transfer->destination_type === 'branch' && $transfer->destination_id === $user->branch_id,
+            AuthorizationLevel::NO_ACCESS => false,
+        };
+    }
+
+    public function receive(User $user, Transfer $transfer): bool
+    {
+        if (! $user->can('transfers.receive')) {
+            return false;
+        }
+
         return match (AuthorizationLevel::fromUser($user)) {
             AuthorizationLevel::FULL_ACCESS => true,
             AuthorizationLevel::BRANCH_RESTRICTED => $transfer->destination_type === 'branch' && $transfer->destination_id === $user->branch_id,
@@ -48,6 +73,10 @@ class TransferPolicy
 
     public function delete(User $user, Transfer $transfer): bool
     {
+        if (! $user->can('transfers.delete')) {
+            return false;
+        }
+
         return match (AuthorizationLevel::fromUser($user)) {
             AuthorizationLevel::FULL_ACCESS => true,
             AuthorizationLevel::BRANCH_RESTRICTED => $transfer->status === 'pending' && $transfer->source_type === 'branch' && $transfer->source_id === $user->branch_id,

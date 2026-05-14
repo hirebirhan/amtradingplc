@@ -4,8 +4,8 @@ namespace App\Services;
 
 use App\Models\Item;
 use App\Models\Stock;
-use App\Models\Warehouse;
 use App\Models\User;
+use App\Models\Warehouse;
 use Illuminate\Support\Facades\DB;
 
 class BranchStockService
@@ -16,7 +16,7 @@ class BranchStockService
     public function getBranchStock(Item $item, int $branchId): float
     {
         return $item->stocks()
-            ->whereHas('warehouse.branches', function($query) use ($branchId) {
+            ->whereHas('warehouse.branches', function ($query) use ($branchId) {
                 $query->where('branches.id', $branchId);
             })
             ->sum('piece_count');
@@ -27,11 +27,11 @@ class BranchStockService
      */
     public function getAvailableStock(Item $item, ?User $user = null): float
     {
-        if (!$user) {
+        if (! $user) {
             $user = auth()->user();
         }
 
-        if (!$user) {
+        if (! $user) {
             return $item->getTotalStockAttribute();
         }
 
@@ -83,23 +83,23 @@ class BranchStockService
      */
     public function getItemsWithBranchStock(?User $user = null)
     {
-        if (!$user) {
+        if (! $user) {
             $user = auth()->user();
         }
 
         $query = Item::with(['category', 'stocks']);
 
         // Filter stocks based on user access
-        if ($user && !$user->isSuperAdmin() && !$user->isGeneralManager()) {
+        if ($user && ! $user->isSuperAdmin() && ! $user->isGeneralManager()) {
             if ($user->warehouse_id) {
                 // Warehouse user - only their warehouse
-                $query->with(['stocks' => function($q) use ($user) {
+                $query->with(['stocks' => function ($q) use ($user) {
                     $q->where('warehouse_id', $user->warehouse_id);
                 }]);
             } elseif ($user->branch_id) {
                 // Branch user - only their branch warehouses
-                $query->with(['stocks' => function($q) use ($user) {
-                    $q->whereHas('warehouse.branches', function($bq) use ($user) {
+                $query->with(['stocks' => function ($q) use ($user) {
+                    $q->whereHas('warehouse.branches', function ($bq) use ($user) {
                         $bq->where('branches.id', $user->branch_id);
                     });
                 }]);
@@ -115,6 +115,7 @@ class BranchStockService
     public function hasSufficientStock(Item $item, float $requiredQuantity, ?User $user = null): bool
     {
         $availableStock = $this->getAvailableStock($item, $user);
+
         return $availableStock >= $requiredQuantity;
     }
 
@@ -126,14 +127,14 @@ class BranchStockService
         return $item->stocks()
             ->with('warehouse.branches')
             ->get()
-            ->groupBy(function($stock) {
+            ->groupBy(function ($stock) {
                 return $stock->warehouse->branches->first()?->name ?? 'Unassigned';
             })
-            ->map(function($stocks) {
+            ->map(function ($stocks) {
                 return [
                     'pieces' => $stocks->sum('piece_count'),
                     'units' => $stocks->sum('total_units'),
-                    'warehouses' => $stocks->count()
+                    'warehouses' => $stocks->count(),
                 ];
             })
             ->toArray();
@@ -143,29 +144,44 @@ class BranchStockService
      * Transfer stock between warehouses (within or across branches)
      */
     public function transferStock(
-        Item $item, 
-        int $fromWarehouseId, 
-        int $toWarehouseId, 
-        int $pieces, 
+        Item $item,
+        int $fromWarehouseId,
+        int $toWarehouseId,
+        int $pieces,
         float $unitCapacity,
         string $referenceType = 'transfer',
         ?int $referenceId = null
     ): bool {
-        return DB::transaction(function() use ($item, $fromWarehouseId, $toWarehouseId, $pieces, $unitCapacity, $referenceType, $referenceId) {
+        return DB::transaction(function () use ($item, $fromWarehouseId, $toWarehouseId, $pieces, $unitCapacity, $referenceType, $referenceId) {
             // Get source stock
             $sourceStock = Stock::where('item_id', $item->id)
                 ->where('warehouse_id', $fromWarehouseId)
                 ->first();
 
-            if (!$sourceStock || $sourceStock->piece_count < $pieces) {
+            if (! $sourceStock || $sourceStock->piece_count < $pieces) {
                 throw new \Exception('Insufficient stock in source warehouse');
             }
 
             // Deduct from source
             $sourceStock->sellByPiece($pieces, $unitCapacity, $referenceType, $referenceId, 'Stock transfer out');
 
-            // Add to destination
-            $this->createOrUpdateStock($item, $toWarehouseId, $pieces, $unitCapacity);
+            $destinationWarehouse = Warehouse::with('branches')->findOrFail($toWarehouseId);
+            $destinationStock = Stock::firstOrCreate(
+                [
+                    'item_id' => $item->id,
+                    'warehouse_id' => $toWarehouseId,
+                ],
+                [
+                    'branch_id' => $destinationWarehouse->branches->first()?->id,
+                    'piece_count' => 0,
+                    'total_units' => 0,
+                    'quantity' => 0,
+                    'current_piece_units' => $unitCapacity,
+                    'created_by' => auth()->id(),
+                ]
+            );
+
+            $destinationStock->addPieces($pieces, $unitCapacity, $referenceType, $referenceId, 'Stock transfer in');
 
             return true;
         });

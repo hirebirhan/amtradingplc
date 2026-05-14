@@ -30,9 +30,16 @@ final class TransferController extends Controller
     {
         $this->authorize('viewAny', Transfer::class);
         $query = Transfer::with('creator')->forUser($request->user());
-        if ($status = $request->input('filter.status')) { $query->where('status', $status); }
-        if ($from = $request->input('filter.date_from')) { $query->whereDate('date_initiated', '>=', $from); }
-        if ($to = $request->input('filter.date_to')) { $query->whereDate('date_initiated', '<=', $to); }
+        if ($status = $request->input('filter.status')) {
+            $query->where('status', $status);
+        }
+        if ($from = $request->input('filter.date_from')) {
+            $query->whereDate('date_initiated', '>=', $from);
+        }
+        if ($to = $request->input('filter.date_to')) {
+            $query->whereDate('date_initiated', '<=', $to);
+        }
+
         return TransferResource::collection($query->latest()->paginate($request->integer('per_page', 20)));
     }
 
@@ -60,10 +67,11 @@ final class TransferController extends Controller
     )]
     public function store(StoreTransferRequest $request)
     {
-        $data  = $request->validated();
+        $data = $request->validated();
         $items = $data['items'];
         unset($data['items']);
         $transfer = $this->service->createTransfer(transferData: $data, items: $items, user: $request->user());
+
         return (new TransferResource($transfer->load('items.item', 'creator')))->response()->setStatusCode(201);
     }
 
@@ -76,6 +84,7 @@ final class TransferController extends Controller
     public function show(Request $request, Transfer $transfer): TransferResource
     {
         $this->authorize('view', $transfer);
+
         return new TransferResource($transfer->load('items.item', 'creator', 'approvedBy'));
     }
 
@@ -89,12 +98,14 @@ final class TransferController extends Controller
         $this->service->processTransferWorkflow($transfer, $request->user(), 'cancel');
         $transfer->update(['deleted_by' => $request->user()->id]);
         $transfer->delete();
+
         return response()->json(null, 204);
     }
 
     private function workflow(Request $request, Transfer $transfer, string $action): TransferResource
     {
         $this->service->processTransferWorkflow($transfer, $request->user(), $action);
+
         return new TransferResource($transfer->fresh()->load('items.item', 'creator', 'approvedBy'));
     }
 
@@ -104,7 +115,8 @@ final class TransferController extends Controller
     )]
     public function approve(Request $request, Transfer $transfer): TransferResource
     {
-        abort_unless($request->user()->can('transfers.approve'), 403);
+        $this->authorize('approve', $transfer);
+
         return $this->workflow($request, $transfer, 'approve');
     }
 
@@ -114,7 +126,8 @@ final class TransferController extends Controller
     )]
     public function reject(Request $request, Transfer $transfer): TransferResource
     {
-        abort_unless($request->user()->can('transfers.approve'), 403);
+        $this->authorize('approve', $transfer);
+
         return $this->workflow($request, $transfer, 'reject');
     }
 
@@ -125,6 +138,7 @@ final class TransferController extends Controller
     public function cancel(Request $request, Transfer $transfer): TransferResource
     {
         $this->authorize('delete', $transfer);
+
         return $this->workflow($request, $transfer, 'cancel');
     }
 
@@ -134,7 +148,8 @@ final class TransferController extends Controller
     )]
     public function markInTransit(Request $request, Transfer $transfer): TransferResource
     {
-        abort_unless($request->user()->can('transfers.edit'), 403);
+        $this->authorize('update', $transfer);
+
         return $this->workflow($request, $transfer, 'mark_in_transit');
     }
 
@@ -144,7 +159,8 @@ final class TransferController extends Controller
     )]
     public function complete(Request $request, Transfer $transfer): TransferResource
     {
-        abort_unless($request->user()->can('transfers.receive'), 403);
+        $this->authorize('receive', $transfer);
+
         return $this->workflow($request, $transfer, 'complete');
     }
 }

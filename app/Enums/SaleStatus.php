@@ -6,9 +6,9 @@ namespace App\Enums;
 
 enum SaleStatus: string
 {
-    case DRAFT = 'draft';
+    case PENDING = 'pending';
     case COMPLETED = 'completed';
-    case CANCELLED = 'cancelled';
+    case CANCELED = 'canceled';
 
     public static function values(): array
     {
@@ -18,18 +18,18 @@ enum SaleStatus: string
     public function label(): string
     {
         return match ($this) {
-            self::DRAFT => 'Draft',
+            self::PENDING => 'Pending',
             self::COMPLETED => 'Completed',
-            self::CANCELLED => 'Cancelled',
+            self::CANCELED => 'Canceled',
         };
     }
 
     public function badgeClass(): string
     {
         return match ($this) {
-            self::DRAFT => 'badge bg-secondary',
+            self::PENDING => 'badge bg-warning',
             self::COMPLETED => 'badge bg-success',
-            self::CANCELLED => 'badge bg-danger',
+            self::CANCELED => 'badge bg-danger',
         };
     }
 }

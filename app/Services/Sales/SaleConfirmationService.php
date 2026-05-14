@@ -7,23 +7,24 @@ use Illuminate\Support\Facades\DB;
 class SaleConfirmationService
 {
     private SaleValidationService $validationService;
+
     private SaleFormService $saleFormService;
 
     public function __construct()
     {
-        $this->validationService = new SaleValidationService();
-        $this->saleFormService = new SaleFormService();
+        $this->validationService = new SaleValidationService;
+        $this->saleFormService = new SaleFormService;
     }
 
     public function confirmSale(array $form, array $items, float $totalAmount, float $taxAmount, float $shippingAmount): array
     {
         $validationErrors = $this->validationService->validateSaleData($form, $items, $totalAmount);
 
-        if (!empty($validationErrors)) {
+        if (! empty($validationErrors)) {
             return [
                 'success' => false,
                 'type' => 'validation',
-                'errors' => $validationErrors
+                'errors' => $validationErrors,
             ];
         }
 
@@ -43,16 +44,16 @@ class SaleConfirmationService
             return [
                 'success' => true,
                 'sale' => $sale,
-                'redirect' => route('admin.sales.index')
+                'resource_url' => url("/api/v1/sales/{$sale->id}"),
             ];
 
         } catch (\Exception $e) {
             DB::rollBack();
-            
+
             return [
                 'success' => false,
                 'type' => 'exception',
-                'message' => $e->getMessage()
+                'message' => $e->getMessage(),
             ];
         }
     }

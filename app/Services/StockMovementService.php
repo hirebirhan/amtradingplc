@@ -2,22 +2,56 @@
 
 namespace App\Services;
 
+use App\Exceptions\TransferException;
+use App\Models\Branch;
+use App\Models\Item;
 use App\Models\Stock;
 use App\Models\StockHistory;
 use App\Models\StockReservation;
-use App\Models\Item;
+use App\Models\User;
 use App\Models\Warehouse;
-use App\Models\Branch;
-use App\Exceptions\TransferException;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 
 class StockMovementService
 {
+    public function addPurchaseStock(User $actor, int $warehouseId, int $itemId, int $pieces, ?int $purchaseId = null): void
+    {
+        $item = Item::findOrFail($itemId);
+        $warehouse = Warehouse::with('branches')->findOrFail($warehouseId);
+        $unitCapacity = $item->unit_quantity ?? 1;
+
+        $stock = Stock::where('warehouse_id', $warehouseId)
+            ->where('item_id', $itemId)
+            ->lockForUpdate()
+            ->first();
+
+        if (! $stock) {
+            $stock = Stock::create([
+                'warehouse_id' => $warehouseId,
+                'branch_id' => $warehouse->branches->first()?->id,
+                'item_id' => $itemId,
+                'quantity' => 0,
+                'piece_count' => 0,
+                'total_units' => 0,
+                'current_piece_units' => $unitCapacity,
+                'created_by' => $actor->id,
+            ]);
+        }
+
+        $stock->addPieces(
+            pieces: $pieces,
+            unitCapacity: $unitCapacity,
+            referenceType: 'purchase',
+            referenceId: $purchaseId,
+            description: 'Stock added from purchase',
+            userId: $actor->id,
+        );
+    }
+
     public function ensureBranchWarehouse(int $branchId): Warehouse
     {
         $branch = Branch::with('warehouses')->find($branchId);
-        if (!$branch) {
+        if (! $branch) {
             throw new TransferException('Branch not found.');
         }
         $warehouse = $branch->warehouses->first();
@@ -25,8 +59,8 @@ class StockMovementService
             return $warehouse;
         }
         // Create a default internal warehouse for this branch
-        $code = 'WH-BR-' . $branch->id;
-        $name = 'Default Warehouse - ' . ($branch->name ?? ('Branch ' . $branch->id));
+        $code = 'WH-BR-'.$branch->id;
+        $name = 'Default Warehouse - '.($branch->name ?? ('Branch '.$branch->id));
         $warehouse = Warehouse::firstOrCreate(
             ['code' => $code],
             [
@@ -38,8 +72,10 @@ class StockMovementService
         );
         // Attach to branch via pivot
         $warehouse->branches()->syncWithoutDetaching([$branch->id]);
+
         return $warehouse;
     }
+
     /**
      * Reserve stock for a transfer
      */
@@ -123,7 +159,7 @@ class StockMovementService
         if ($actualAvailable < $quantity) {
             $item = Item::find($itemId);
             throw new TransferException(
-                "Insufficient available stock for {$item->name}. " .
+                "Insufficient available stock for {$item->name}. ".
                 "Available: {$actualAvailable}, Required: {$quantity}, Reserved: {$reservedStock}"
             );
         }
@@ -157,7 +193,7 @@ class StockMovementService
     ): void {
         // Remove from source with locking
         $sourceMovements = $this->removeStockFromLocation($itemId, $quantity, $sourceType, $sourceId);
-        
+
         // Add to destination
         $destinationMovements = $this->addStockToLocation($itemId, $quantity, $destinationType, $destinationId);
 
@@ -225,18 +261,18 @@ class StockMovementService
             ->lockForUpdate() // Pessimistic lock
             ->first();
 
-        if (!$stock || $stock->quantity < $quantity) {
+        if (! $stock || $stock->quantity < $quantity) {
             $item = Item::find($itemId);
             $warehouse = Warehouse::find($warehouseId);
             throw new TransferException(
-                "Insufficient stock of {$item->name} in {$warehouse->name}. " .
-                "Available: " . ($stock->quantity ?? 0) . ", Required: {$quantity}"
+                "Insufficient stock of {$item->name} in {$warehouse->name}. ".
+                'Available: '.($stock->quantity ?? 0).", Required: {$quantity}"
             );
         }
 
         $quantityBefore = $stock->quantity;
         $pieceCountBefore = $stock->piece_count ?? 0;
-        
+
         // CRITICAL: Update both quantity AND piece_count
         $stock->quantity -= $quantity;
         $stock->piece_count -= $quantity;
@@ -259,7 +295,7 @@ class StockMovementService
         $item = Item::find($itemId);
         $warehouse = Warehouse::with('branches')->find($warehouseId);
         $branchId = $warehouse->branches->first()?->id;
-        
+
         // CRITICAL FIX: Use firstOrCreate to avoid overwriting existing stock
         $stock = Stock::firstOrCreate(
             [
@@ -278,7 +314,7 @@ class StockMovementService
 
         $quantityBefore = $stock->quantity;
         $pieceCountBefore = $stock->piece_count ?? 0;
-        
+
         // CRITICAL: ADD to existing stock (not replace)
         $stock->quantity += $quantity;
         $stock->piece_count += $quantity;
@@ -299,7 +335,7 @@ class StockMovementService
     private function removeStockFromBranch(int $itemId, float $quantity, int $branchId): array
     {
         $branch = Branch::with('warehouses')->find($branchId);
-        if (!$branch || $branch->warehouses->isEmpty()) {
+        if (! $branch || $branch->warehouses->isEmpty()) {
             $wh = $this->ensureBranchWarehouse($branchId);
             // refresh relation
             $branch = Branch::with('warehouses')->find($branchId);
@@ -314,11 +350,11 @@ class StockMovementService
             ->get();
 
         $totalAvailable = $stocks->sum('quantity');
-        
+
         if ($totalAvailable < $quantity) {
             $item = Item::find($itemId);
             throw new TransferException(
-                "Insufficient stock of {$item->name} in branch. " .
+                "Insufficient stock of {$item->name} in branch. ".
                 "Available: {$totalAvailable}, Required: {$quantity}"
             );
         }
@@ -327,12 +363,14 @@ class StockMovementService
         $remainingQuantity = $quantity;
 
         foreach ($stocks as $stock) {
-            if ($remainingQuantity <= 0) break;
+            if ($remainingQuantity <= 0) {
+                break;
+            }
 
             $takeQuantity = min($stock->quantity, $remainingQuantity);
             $quantityBefore = $stock->quantity;
             $pieceCountBefore = $stock->piece_count ?? 0;
-            
+
             // CRITICAL: Update both quantity AND piece_count
             $stock->quantity -= $takeQuantity;
             $stock->piece_count -= $takeQuantity;
@@ -358,7 +396,7 @@ class StockMovementService
     private function addStockToBranch(int $itemId, float $quantity, int $branchId): array
     {
         $branch = Branch::with('warehouses')->find($branchId);
-        if (!$branch || $branch->warehouses->isEmpty()) {
+        if (! $branch || $branch->warehouses->isEmpty()) {
             $wh = $this->ensureBranchWarehouse($branchId);
             $branch = Branch::with('warehouses')->find($branchId);
         }
@@ -375,6 +413,7 @@ class StockMovementService
         } else {
             // Add to primary warehouse (first one)
             $warehouse = $branch->warehouses->first();
+
             return $this->addStockToWarehouse($itemId, $quantity, $warehouse->id);
         }
     }
@@ -392,11 +431,15 @@ class StockMovementService
 
         // For branch, sum all warehouses
         $branch = Branch::with('warehouses')->find($locationId);
-        if (!$branch) return 0;
+        if (! $branch) {
+            return 0;
+        }
         if ($branch->warehouses->isEmpty()) {
             $this->ensureBranchWarehouse($locationId);
             $branch = Branch::with('warehouses')->find($locationId);
-            if (!$branch) return 0;
+            if (! $branch) {
+                return 0;
+            }
         }
 
         return Stock::whereIn('warehouse_id', $branch->warehouses->pluck('id'))
@@ -474,4 +517,4 @@ class StockMovementService
 
         return $query->orderBy('created_at', 'desc')->get();
     }
-} 
+}

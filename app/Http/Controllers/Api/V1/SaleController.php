@@ -21,7 +21,7 @@ final class SaleController extends Controller
         parameters: [
             new OA\Parameter(name: 'filter[customer_id]', in: 'query', schema: new OA\Schema(type: 'integer')),
             new OA\Parameter(name: 'filter[branch_id]', in: 'query', schema: new OA\Schema(type: 'integer')),
-            new OA\Parameter(name: 'filter[payment_status]', in: 'query', schema: new OA\Schema(type: 'string', enum: ['paid', 'partial', 'credit', 'unpaid'])),
+            new OA\Parameter(name: 'filter[payment_status]', in: 'query', schema: new OA\Schema(type: 'string', enum: ['paid', 'partial', 'pending', 'due'])),
             new OA\Parameter(name: 'filter[date_from]', in: 'query', schema: new OA\Schema(type: 'string', format: 'date')),
             new OA\Parameter(name: 'filter[date_to]', in: 'query', schema: new OA\Schema(type: 'string', format: 'date')),
             new OA\Parameter(name: 'per_page', in: 'query', schema: new OA\Schema(type: 'integer', default: 20)),
@@ -32,13 +32,29 @@ final class SaleController extends Controller
     {
         $this->authorize('viewAny', Sale::class);
         $query = Sale::with('customer', 'branch', 'warehouse')->forUser($request->user());
-        if ($customerId = $request->integer('filter.customer_id') ?: null) { $query->where('customer_id', $customerId); }
-        if ($branchId = $request->integer('filter.branch_id') ?: null) { $query->where('branch_id', $branchId); }
-        if ($status = $request->input('filter.payment_status')) { $query->where('payment_status', $status); }
-        if ($from = $request->input('filter.date_from')) { $query->whereDate('sale_date', '>=', $from); }
-        if ($to = $request->input('filter.date_to')) { $query->whereDate('sale_date', '<=', $to); }
+        if ($customerId = $request->integer('filter.customer_id') ?: null) {
+            $query->where('customer_id', $customerId);
+        }
+        if ($branchId = $request->integer('filter.branch_id') ?: null) {
+            $query->where('branch_id', $branchId);
+        }
+        if ($status = $request->input('filter.payment_status')) {
+            $query->where('payment_status', $status);
+        }
+        if ($from = $request->input('filter.date_from')) {
+            $query->whereDate('sale_date', '>=', $from);
+        }
+        if ($to = $request->input('filter.date_to')) {
+            $query->whereDate('sale_date', '<=', $to);
+        }
         $sort = $request->input('sort', '-created_at');
-        $query->orderBy(ltrim($sort, '-'), str_starts_with($sort, '-') ? 'desc' : 'asc');
+        $sortColumn = ltrim($sort, '-');
+        $allowedSorts = ['created_at', 'sale_date', 'total_amount', 'paid_amount', 'due_amount'];
+        if (! in_array($sortColumn, $allowedSorts, true)) {
+            $sortColumn = 'created_at';
+        }
+        $query->orderBy($sortColumn, str_starts_with($sort, '-') ? 'desc' : 'asc');
+
         return SaleResource::collection($query->paginate($request->integer('per_page', 20)));
     }
 
@@ -50,7 +66,7 @@ final class SaleController extends Controller
                 new OA\Property(property: 'warehouse_id', type: 'integer'),
                 new OA\Property(property: 'customer_id', type: 'integer', nullable: true),
                 new OA\Property(property: 'sale_date', type: 'string', format: 'date'),
-                new OA\Property(property: 'payment_method', type: 'string', enum: ['cash', 'bank_transfer', 'telebirr', 'credit_card', 'check', 'full_credit', 'credit_advance']),
+                new OA\Property(property: 'payment_method', type: 'string', enum: ['cash', 'bank_transfer', 'telebirr', 'credit_advance', 'full_credit']),
                 new OA\Property(property: 'advance_amount', type: 'number'),
                 new OA\Property(property: 'note', type: 'string'),
                 new OA\Property(property: 'items', type: 'array', items: new OA\Items(
@@ -70,6 +86,7 @@ final class SaleController extends Controller
     public function store(StoreSaleRequest $request)
     {
         $sale = $this->service->createSale(actor: $request->user(), data: $request->validated());
+
         return (new SaleResource($sale->load('customer', 'branch', 'warehouse', 'items.item', 'credit')))->response()->setStatusCode(201);
     }
 
@@ -82,6 +99,7 @@ final class SaleController extends Controller
     public function show(Request $request, Sale $sale): SaleResource
     {
         $this->authorize('view', $sale);
+
         return new SaleResource($sale->load('customer', 'branch', 'warehouse', 'items.item', 'credit'));
     }
 
@@ -94,6 +112,7 @@ final class SaleController extends Controller
         $this->authorize('delete', $sale);
         $sale->update(['deleted_by' => $request->user()->id]);
         $sale->delete();
+
         return response()->json(null, 204);
     }
 }

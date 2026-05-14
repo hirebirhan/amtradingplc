@@ -61,4 +61,5 @@ fi
 
 # Start Laravel dev server
 echo "Starting Laravel dev server on http://0.0.0.0:8000"
-exec php artisan serve --host=0.0.0.0 --port=8000
+cd public
+exec php -S 0.0.0.0:8000 ../vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php

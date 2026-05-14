@@ -1,5 +1,5 @@
 # Use official PHP image with required extensions
-FROM php:8.2-cli
+FROM php:8.4-cli
 
 # Install system dependencies and PHP extensions
 RUN apt-get update && \
@@ -15,4 +15,3 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 WORKDIR /app
 
 EXPOSE 8000
-

@@ -2,10 +2,10 @@
 
 namespace App\Http\Controllers\Api\V1;
 
-use App\Helpers\UserHelper;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\V1\StockResource;
 use App\Models\Stock;
+use App\Support\Access\UserAccess;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\ResourceCollection;
 use OpenApi\Attributes as OA;
@@ -27,16 +27,20 @@ final class StockController extends Controller
     {
         $user = $request->user();
         abort_unless($user->can('stock.view'), 403);
-        $query = Stock::with('item', 'warehouse', 'branch');
-        if (! $user->isSuperAdmin() && ! $user->isGeneralManager()) {
-            $query->whereIn('warehouse_id', UserHelper::getAccessibleWarehouseIds());
+        $query = UserAccess::scopeToWarehouses(Stock::with('item', 'warehouse', 'branch'), $user);
+        if ($branchId = $request->integer('filter.branch_id') ?: null) {
+            $query->where('branch_id', $branchId);
         }
-        if ($branchId = $request->integer('filter.branch_id') ?: null) { $query->where('branch_id', $branchId); }
-        if ($warehouseId = $request->integer('filter.warehouse_id') ?: null) { $query->where('warehouse_id', $warehouseId); }
-        if ($itemId = $request->integer('filter.item_id') ?: null) { $query->where('item_id', $itemId); }
+        if ($warehouseId = $request->integer('filter.warehouse_id') ?: null) {
+            $query->where('warehouse_id', $warehouseId);
+        }
+        if ($itemId = $request->integer('filter.item_id') ?: null) {
+            $query->where('item_id', $itemId);
+        }
         if ($request->boolean('filter.below_reorder')) {
             $query->whereHas('item', fn ($q) => $q->whereColumn('reorder_level', '>', 'stocks.piece_count')->where('reorder_level', '>', 0));
         }
+
         return StockResource::collection($query->paginate($request->integer('per_page', 20)));
     }
 
@@ -47,6 +51,8 @@ final class StockController extends Controller
     public function show(Request $request, Stock $stock): StockResource
     {
         abort_unless($request->user()->can('stock.view'), 403);
+        abort_unless(UserAccess::canAccessLocation($request->user(), $stock->branch_id, $stock->warehouse_id), 403);
+
         return new StockResource($stock->load('item', 'warehouse', 'branch'));
     }
 }

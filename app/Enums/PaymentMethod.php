@@ -11,7 +11,9 @@ enum PaymentMethod: string
     case TELEBIRR = 'telebirr';
     case CREDIT_ADVANCE = 'credit_advance';
     case FULL_CREDIT = 'full_credit';
-    // Add more as needed (e.g., CHECK, MOBILE_MONEY, etc.)
+    case CREDIT_CARD = 'credit_card';
+    case CHECK = 'check';
+    case OTHER = 'other';
 
     /**
      * Get all payment method values as array
@@ -35,6 +37,11 @@ enum PaymentMethod: string
         ];
     }
 
+    public static function forPurchasesValues(): array
+    {
+        return array_map(fn (self $method) => $method->value, self::forPurchases());
+    }
+
     /**
      * Get ordered payment methods for sales (Cash first, then Bank Transfer, etc.)
      */
@@ -47,6 +54,31 @@ enum PaymentMethod: string
             self::CREDIT_ADVANCE,
             self::FULL_CREDIT,
         ];
+    }
+
+    public static function forSalesValues(): array
+    {
+        return array_map(fn (self $method) => $method->value, self::forSales());
+    }
+
+    /**
+     * Payment methods allowed for credit/expense payment records.
+     */
+    public static function forOperationalPayments(): array
+    {
+        return [
+            self::CASH,
+            self::BANK_TRANSFER,
+            self::TELEBIRR,
+            self::CREDIT_CARD,
+            self::CHECK,
+            self::OTHER,
+        ];
+    }
+
+    public static function forOperationalPaymentValues(): array
+    {
+        return array_map(fn (self $method) => $method->value, self::forOperationalPayments());
     }
 
     /**
@@ -70,12 +102,15 @@ enum PaymentMethod: string
      */
     public function label(): string
     {
-        return match($this) {
+        return match ($this) {
             self::CASH => 'Cash Payment',
             self::BANK_TRANSFER => 'Bank Transfer',
             self::TELEBIRR => 'Telebirr',
             self::CREDIT_ADVANCE => 'Credit with Advance',
             self::FULL_CREDIT => 'Full Credit',
+            self::CREDIT_CARD => 'Credit Card',
+            self::CHECK => 'Check',
+            self::OTHER => 'Other',
         };
     }
-} 
+}

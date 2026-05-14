@@ -24,6 +24,7 @@ class ReferenceDataTest extends TestCase
         $user = User::factory()->create(['is_active' => true]);
         $role = Role::findOrCreate('SuperAdmin', 'web');
         $user->assignRole($role);
+
         return $user;
     }
 
@@ -33,12 +34,13 @@ class ReferenceDataTest extends TestCase
         $role = Role::findOrCreate('BranchManager', 'web');
 
         foreach (['branches.view', 'branches.create', 'categories.view', 'categories.create',
-                  'items.view', 'items.create', 'customers.view', 'customers.create',
-                  'suppliers.view', 'suppliers.create'] as $perm) {
+            'items.view', 'items.create', 'customers.view', 'customers.create',
+            'suppliers.view', 'suppliers.create'] as $perm) {
             Permission::findOrCreate($perm, 'web');
         }
 
         $user->assignRole($role);
+
         return $user;
     }
 
@@ -67,8 +69,8 @@ class ReferenceDataTest extends TestCase
         Sanctum::actingAs($this->superAdmin());
 
         $this->postJson('/api/v1/branches', ['name' => 'Duplicate', 'code' => 'XYZ'])
-             ->assertUnprocessable()
-             ->assertJsonValidationErrors(['name']);
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['name']);
     }
 
     public function test_branch_manager_cannot_create_branch(): void
@@ -80,7 +82,7 @@ class ReferenceDataTest extends TestCase
         // BranchManager role has no branches.create permission unless explicitly given
         // The Gate::before in AuthServiceProvider only fires for SuperAdmin/GeneralManager
         $this->postJson('/api/v1/branches', ['name' => 'New', 'code' => 'NW1'])
-             ->assertForbidden();
+            ->assertForbidden();
     }
 
     public function test_can_update_branch(): void
@@ -89,8 +91,8 @@ class ReferenceDataTest extends TestCase
         Sanctum::actingAs($this->superAdmin());
 
         $this->patchJson("/api/v1/branches/{$branch->id}", ['name' => 'Updated Name'])
-             ->assertOk()
-             ->assertJsonPath('data.name', 'Updated Name');
+            ->assertOk()
+            ->assertJsonPath('data.name', 'Updated Name');
     }
 
     public function test_can_delete_branch(): void
@@ -127,15 +129,15 @@ class ReferenceDataTest extends TestCase
         Sanctum::actingAs($this->superAdmin());
 
         $response = $this->postJson('/api/v1/warehouses', [
-            'name'       => 'Branch Warehouse',
-            'code'       => 'BW01',
+            'name' => 'Branch Warehouse',
+            'code' => 'BW01',
             'branch_ids' => [$branch->id],
         ]);
 
         $response->assertCreated();
         $this->assertDatabaseHas('branch_warehouse', [
             'warehouse_id' => $response->json('data.id'),
-            'branch_id'    => $branch->id,
+            'branch_id' => $branch->id,
         ]);
     }
 
@@ -146,11 +148,11 @@ class ReferenceDataTest extends TestCase
         Sanctum::actingAs($this->superAdmin());
 
         $this->postJson('/api/v1/categories', ['name' => 'Electronics'])
-             ->assertCreated();
+            ->assertCreated();
 
         $this->getJson('/api/v1/categories')
-             ->assertOk()
-             ->assertJsonFragment(['name' => 'Electronics']);
+            ->assertOk()
+            ->assertJsonFragment(['name' => 'Electronics']);
     }
 
     public function test_category_supports_parent_child_hierarchy(): void
@@ -159,13 +161,13 @@ class ReferenceDataTest extends TestCase
         Sanctum::actingAs($this->superAdmin());
 
         $response = $this->postJson('/api/v1/categories', [
-            'name'      => 'Phones',
+            'name' => 'Phones',
             'parent_id' => $parent->id,
         ]);
 
         $response->assertCreated();
         $this->assertDatabaseHas('categories', [
-            'name'      => 'Phones',
+            'name' => 'Phones',
             'parent_id' => $parent->id,
         ]);
     }
@@ -178,20 +180,20 @@ class ReferenceDataTest extends TestCase
         Sanctum::actingAs($this->superAdmin());
 
         $response = $this->postJson('/api/v1/items', [
-            'name'          => 'Widget A',
-            'sku'           => 'WGT-001',
+            'name' => 'Widget A',
+            'sku' => 'WGT-001',
             'selling_price' => 9.99,
-            'cost_price'    => 5.00,
-            'category_id'   => $category->id,
+            'cost_price' => 5.00,
+            'category_id' => $category->id,
         ]);
 
         $response->assertCreated()
-                 ->assertJsonPath('data.name', 'Widget A');
+            ->assertJsonPath('data.name', 'Widget A');
 
         $id = $response->json('data.id');
         $this->getJson("/api/v1/items/{$id}")
-             ->assertOk()
-             ->assertJsonPath('data.sku', 'WGT-001');
+            ->assertOk()
+            ->assertJsonPath('data.sku', 'WGT-001');
     }
 
     public function test_item_sku_must_be_unique(): void
@@ -200,8 +202,8 @@ class ReferenceDataTest extends TestCase
         Sanctum::actingAs($this->superAdmin());
 
         $this->postJson('/api/v1/items', ['name' => 'Another', 'sku' => 'DUPLICATE'])
-             ->assertUnprocessable()
-             ->assertJsonValidationErrors(['sku']);
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['sku']);
     }
 
     public function test_item_search_returns_matching_results(): void
@@ -211,9 +213,9 @@ class ReferenceDataTest extends TestCase
         Sanctum::actingAs($this->superAdmin());
 
         $this->getJson('/api/v1/items/search?q=widget')
-             ->assertOk()
-             ->assertJsonFragment(['name' => 'Blue Widget'])
-             ->assertJsonMissing(['name' => 'Red Gadget']);
+            ->assertOk()
+            ->assertJsonFragment(['name' => 'Blue Widget'])
+            ->assertJsonMissing(['name' => 'Red Gadget']);
     }
 
     // ── Customers ────────────────────────────────────────────────────────────
@@ -223,18 +225,18 @@ class ReferenceDataTest extends TestCase
         Sanctum::actingAs($this->superAdmin());
 
         $this->postJson('/api/v1/customers', [
-            'name'  => 'Acme Corp',
+            'name' => 'Acme Corp',
             'phone' => '0912345678',
         ])->assertCreated()->assertJsonPath('data.name', 'Acme Corp');
 
         $this->getJson('/api/v1/customers')
-             ->assertOk()
-             ->assertJsonFragment(['name' => 'Acme Corp']);
+            ->assertOk()
+            ->assertJsonFragment(['name' => 'Acme Corp']);
     }
 
     public function test_branch_manager_cannot_see_other_branch_customers(): void
     {
-        $ownBranch   = Branch::factory()->create();
+        $ownBranch = Branch::factory()->create();
         $otherBranch = Branch::factory()->create();
 
         Customer::factory()->create(['name' => 'Own Customer',   'branch_id' => $ownBranch->id]);
@@ -248,8 +250,7 @@ class ReferenceDataTest extends TestCase
         $response = $this->getJson('/api/v1/customers')->assertOk();
         $names = collect($response->json('data'))->pluck('name');
         $this->assertContains('Own Customer', $names->toArray());
-        // Other branch customers: the controller doesn't scope by branch yet for non-managers
-        // This just confirms we get a 200 response
+        $this->assertNotContains('Other Customer', $names->toArray());
     }
 
     // ── Suppliers ────────────────────────────────────────────────────────────
@@ -259,13 +260,34 @@ class ReferenceDataTest extends TestCase
         Sanctum::actingAs($this->superAdmin());
 
         $this->postJson('/api/v1/suppliers', [
-            'name'  => 'Best Supplier Ltd',
+            'name' => 'Best Supplier Ltd',
             'phone' => '0911111111',
         ])->assertCreated()->assertJsonPath('data.name', 'Best Supplier Ltd');
 
         $this->getJson('/api/v1/suppliers')
-             ->assertOk()
-             ->assertJsonFragment(['name' => 'Best Supplier Ltd']);
+            ->assertOk()
+            ->assertJsonFragment(['name' => 'Best Supplier Ltd']);
+    }
+
+    public function test_branch_user_cannot_see_other_branch_suppliers(): void
+    {
+        $ownBranch = Branch::factory()->create();
+        $otherBranch = Branch::factory()->create();
+
+        Supplier::factory()->create(['name' => 'Own Supplier', 'branch_id' => $ownBranch->id]);
+        $otherSupplier = Supplier::factory()->create(['name' => 'Other Supplier', 'branch_id' => $otherBranch->id]);
+
+        $user = User::factory()->create(['is_active' => true, 'branch_id' => $ownBranch->id]);
+        Permission::findOrCreate('suppliers.view', 'web');
+        $user->givePermissionTo('suppliers.view');
+        Sanctum::actingAs($user);
+
+        $response = $this->getJson('/api/v1/suppliers')->assertOk();
+        $names = collect($response->json('data'))->pluck('name');
+
+        $this->assertContains('Own Supplier', $names->toArray());
+        $this->assertNotContains('Other Supplier', $names->toArray());
+        $this->getJson("/api/v1/suppliers/{$otherSupplier->id}")->assertForbidden();
     }
 
     // ── Users & Roles ────────────────────────────────────────────────────────
@@ -275,8 +297,8 @@ class ReferenceDataTest extends TestCase
         Sanctum::actingAs($this->superAdmin());
 
         $this->postJson('/api/v1/users', [
-            'name'     => 'New Staff',
-            'email'    => 'staff@example.com',
+            'name' => 'New Staff',
+            'email' => 'staff@example.com',
             'password' => 'secret1234',
         ])->assertCreated()->assertJsonPath('data.email', 'staff@example.com');
 
@@ -289,7 +311,7 @@ class ReferenceDataTest extends TestCase
         Sanctum::actingAs($this->superAdmin());
 
         $this->getJson('/api/v1/permissions')
-             ->assertOk()
-             ->assertJsonFragment(['items.view']);
+            ->assertOk()
+            ->assertJsonFragment(['items.view']);
     }
 }

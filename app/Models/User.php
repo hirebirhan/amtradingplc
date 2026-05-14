@@ -3,18 +3,18 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Enums\UserRole;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use App\Enums\UserRole;
 
 class User extends Authenticatable
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasApiTokens, HasFactory, Notifiable, HasRoles;
+    use HasApiTokens, HasFactory, HasRoles, Notifiable;
 
     /**
      * The attributes that are mass assignable.
@@ -123,6 +123,20 @@ class User extends Authenticatable
     }
 
     /**
+     * Determine if the user has an operational manager role.
+     */
+    public function isManager(): bool
+    {
+        return $this->hasAnyRole([
+            UserRole::SUPER_ADMIN->value,
+            UserRole::GENERAL_MANAGER->value,
+            UserRole::BRANCH_MANAGER->value,
+            UserRole::WAREHOUSE_MANAGER->value,
+            UserRole::MANAGER->value,
+        ]);
+    }
+
+    /**
      * Determine if the user can manage stock reservations.
      */
     public function canManageStockReservations(): bool
@@ -145,16 +159,16 @@ class User extends Authenticatable
     {
         // Get current user's role names
         $userRoles = $this->getRoleNames();
-        
+
         // Define roles that can access location filters
         $adminRoles = [
             UserRole::SUPER_ADMIN->value,
             UserRole::BRANCH_MANAGER->value,
-            UserRole::WAREHOUSE_MANAGER->value
+            UserRole::WAREHOUSE_MANAGER->value,
         ];
-        
+
         // Check if user has any admin role
-        return !empty(array_intersect($userRoles, $adminRoles));
+        return ! empty(array_intersect($userRoles, $adminRoles));
     }
 
     /**
@@ -169,7 +183,7 @@ class User extends Authenticatable
         } elseif ($this->warehouse) {
             return "Warehouse: {$this->warehouse->name}";
         }
-        
+
         return 'No assignment';
     }
 
@@ -178,10 +192,10 @@ class User extends Authenticatable
      */
     public function canAccessBranch(?int $branchId): bool
     {
-        if (!$branchId) {
+        if (! $branchId) {
             return true; // Global items accessible to all
         }
-        
+
         return $this->hasAccessToBranch($branchId);
     }
 
@@ -190,7 +204,7 @@ class User extends Authenticatable
      */
     public function hasAccessToBranch(?int $branchId): bool
     {
-        if (!$branchId) {
+        if (! $branchId) {
             return true;
         }
 

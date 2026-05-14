@@ -7,6 +7,7 @@ use App\Http\Requests\Api\V1\Suppliers\StoreSupplierRequest;
 use App\Http\Requests\Api\V1\Suppliers\UpdateSupplierRequest;
 use App\Http\Resources\Api\V1\SupplierResource;
 use App\Models\Supplier;
+use App\Support\Access\UserAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\ResourceCollection;
@@ -25,11 +26,14 @@ final class SupplierController extends Controller
     public function index(Request $request): ResourceCollection
     {
         $this->authorize('viewAny', Supplier::class);
-        $query = Supplier::query();
-        if ($branchId = $request->integer('filter.branch_id') ?: null) { $query->where('branch_id', $branchId); }
+        $query = UserAccess::scopeToBranches(Supplier::query(), $request->user());
+        if ($branchId = $request->integer('filter.branch_id') ?: null) {
+            $query->where('branch_id', $branchId);
+        }
         if ($search = $request->string('search')->trim()) {
             $query->where(fn ($q) => $q->where('name', 'like', "%{$search}%")->orWhere('phone', 'like', "%{$search}%")->orWhere('email', 'like', "%{$search}%"));
         }
+
         return SupplierResource::collection($query->orderBy('name')->paginate($request->integer('per_page', 20)));
     }
 
@@ -48,6 +52,7 @@ final class SupplierController extends Controller
     public function store(StoreSupplierRequest $request)
     {
         $supplier = Supplier::create([...$request->validated(), 'created_by' => $request->user()->id]);
+
         return (new SupplierResource($supplier))->response()->setStatusCode(201);
     }
 
@@ -58,6 +63,7 @@ final class SupplierController extends Controller
     public function show(Supplier $supplier): SupplierResource
     {
         $this->authorize('view', $supplier);
+
         return new SupplierResource($supplier->load('branch'));
     }
 
@@ -71,6 +77,7 @@ final class SupplierController extends Controller
     public function update(UpdateSupplierRequest $request, Supplier $supplier): SupplierResource
     {
         $supplier->update([...$request->validated(), 'updated_by' => $request->user()->id]);
+
         return new SupplierResource($supplier->fresh()->load('branch'));
     }
 
@@ -83,6 +90,7 @@ final class SupplierController extends Controller
         $this->authorize('delete', $supplier);
         $supplier->update(['deleted_by' => $request->user()->id]);
         $supplier->delete();
+
         return response()->json(null, 204);
     }
 }

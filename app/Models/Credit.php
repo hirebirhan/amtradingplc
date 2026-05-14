@@ -2,19 +2,17 @@
 
 namespace App\Models;
 
+use App\Traits\HasBranch;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
-use App\Models\User;
-
-use App\Traits\HasBranch;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Credit extends Model
 {
-    use HasFactory, SoftDeletes, HasBranch;
+    use HasBranch, HasFactory, SoftDeletes;
 
     protected $fillable = [
         'customer_id',
@@ -44,7 +42,7 @@ class Credit extends Model
     protected static function boot()
     {
         parent::boot();
-        
+
         static::creating(function ($credit) {
             // Ensure branch_id is set
             if (empty($credit->branch_id)) {
@@ -62,7 +60,7 @@ class Credit extends Model
         if (auth()->check() && auth()->user()->branch_id) {
             return auth()->user()->branch_id;
         }
-        
+
         // Try user's warehouse branch
         if (auth()->check() && auth()->user()->warehouse_id) {
             $warehouse = \App\Models\Warehouse::with('branches')->find(auth()->user()->warehouse_id);
@@ -70,9 +68,10 @@ class Credit extends Model
                 return $warehouse->branches->first()->id;
             }
         }
-        
+
         // Fallback to first active branch
         $branch = \App\Models\Branch::where('is_active', true)->first();
+
         return $branch ? $branch->id : null;
     }
 
@@ -129,13 +128,13 @@ class Credit extends Model
      */
     public function getReferenceUrlAttribute(): ?string
     {
-        if (!$this->reference_type || !$this->reference_id) {
+        if (! $this->reference_type || ! $this->reference_id) {
             return null;
         }
-        
-        return match($this->reference_type) {
-            'purchase' => route('admin.purchases.show', $this->reference_id),
-            'sale' => route('admin.sales.show', $this->reference_id),
+
+        return match ($this->reference_type) {
+            'purchase' => url("/api/v1/purchases/{$this->reference_id}"),
+            'sale' => url("/api/v1/sales/{$this->reference_id}"),
             default => null,
         };
     }
@@ -197,21 +196,21 @@ class Credit extends Model
         // Update credit amounts
         $this->paid_amount += $amount;
         $this->balance = max(0, $this->amount - $this->paid_amount);
-        
+
         // Update credit status based on balance
         if ($this->balance <= 0) {
             $this->status = 'paid';
         } else {
             $this->status = 'partial';
         }
-        
+
         $this->save();
-        
+
         // Update related purchase payment status if this is a purchase credit
         if ($this->reference_type === 'purchase' && $this->reference_id) {
             $this->updatePurchasePaymentStatus();
         }
-        
+
         // Update related sale payment status if this is a sale credit
         if ($this->reference_type === 'sale' && $this->reference_id) {
             $this->updateSalePaymentStatus();
@@ -219,45 +218,45 @@ class Credit extends Model
 
         return $payment;
     }
-    
+
     /**
      * Close credit with negotiated prices
      */
     public function closeWithNegotiatedPrices(array $negotiatedPrices, string $paymentMethod, ?string $reference = null, ?string $notes = null, ?string $paymentDate = null): CreditPayment
     {
-        if ($this->reference_type !== 'purchase' || !$this->reference_id) {
+        if ($this->reference_type !== 'purchase' || ! $this->reference_id) {
             throw new \Exception('Credit must be linked to a purchase for closing with negotiated prices.');
         }
-        
+
         $purchase = $this->purchase;
-        if (!$purchase) {
+        if (! $purchase) {
             throw new \Exception('Purchase not found for this credit.');
         }
-        
+
         // Calculate new total cost based on negotiated prices
         $totalClosingCost = 0;
         foreach ($purchase->items as $item) {
             if (isset($negotiatedPrices[$item->item_id])) {
                 $closingPricePerUnit = (float) $negotiatedPrices[$item->item_id];
                 $totalClosingCost += $closingPricePerUnit * $item->quantity;
-                
+
                 // Update purchase item with closing price
                 $item->update([
                     'closing_unit_price' => $closingPricePerUnit,
                     'total_closing_cost' => $closingPricePerUnit * $item->quantity,
-                    'profit_loss_per_item' => ($item->unit_cost - $closingPricePerUnit) * $item->quantity
+                    'profit_loss_per_item' => ($item->unit_cost - $closingPricePerUnit) * $item->quantity,
                 ]);
             }
         }
-        
+
         // Calculate remaining payment needed
         $remainingToPay = max(0, $totalClosingCost - $this->paid_amount);
-        
+
         // Update credit amount to new closing cost
         $this->amount = $totalClosingCost;
         $this->balance = $remainingToPay;
         $this->save();
-        
+
         // Make final payment if needed
         if ($remainingToPay > 0) {
             return $this->addPayment($remainingToPay, $paymentMethod, $reference, $notes, $paymentDate);
@@ -266,17 +265,18 @@ class Credit extends Model
             $this->status = 'paid';
             $this->balance = 0;
             $this->save();
-            
+
             // Create a zero payment record for tracking
             $payment = new CreditPayment([
                 'amount' => 0,
                 'payment_method' => $paymentMethod,
                 'reference_no' => $reference,
                 'payment_date' => $paymentDate ? date('Y-m-d', strtotime($paymentDate)) : now(),
-                'notes' => $notes . ' (Credit closed with negotiated prices)',
+                'notes' => $notes.' (Credit closed with negotiated prices)',
                 'user_id' => auth()->id(),
             ]);
             $this->payments()->save($payment);
+
             return $payment;
         }
     }
@@ -288,15 +288,15 @@ class Credit extends Model
     {
         return $this->balance;
     }
-    
+
     /**
      * Scope a query to only include active credits.
      */
     public function scopeActive($query)
     {
-        return $query->where(function($q) {
+        return $query->where(function ($q) {
             $q->whereIn('status', ['active', 'partial', 'overdue'])
-              ->where('balance', '>', 0);
+                ->where('balance', '>', 0);
         });
     }
 
@@ -305,9 +305,9 @@ class Credit extends Model
      */
     public function scopePaid($query)
     {
-        return $query->where(function($q) {
+        return $query->where(function ($q) {
             $q->where('status', 'paid')
-              ->orWhere('balance', '<=', 0);
+                ->orWhere('balance', '<=', 0);
         });
     }
 
@@ -364,19 +364,19 @@ class Credit extends Model
      */
     private function updatePurchasePaymentStatus(): void
     {
-        if ($this->reference_type !== 'purchase' || !$this->reference_id) {
+        if ($this->reference_type !== 'purchase' || ! $this->reference_id) {
             return;
         }
 
         $purchase = $this->purchase;
-        if (!$purchase) {
+        if (! $purchase) {
             return;
         }
 
         // Update purchase paid amount and status based on credit payments
         $purchase->paid_amount = $this->paid_amount;
         $purchase->due_amount = $this->balance;
-        
+
         // Update purchase payment status and method
         if ($this->balance <= 0) {
             $purchase->payment_status = 'paid';
@@ -389,28 +389,28 @@ class Credit extends Model
         } else {
             $purchase->payment_status = 'due';
         }
-        
+
         $purchase->save();
     }
-    
+
     /**
      * Update the related sale payment status when credit payments are made
      */
     private function updateSalePaymentStatus(): void
     {
-        if ($this->reference_type !== 'sale' || !$this->reference_id) {
+        if ($this->reference_type !== 'sale' || ! $this->reference_id) {
             return;
         }
 
         $sale = $this->sale;
-        if (!$sale) {
+        if (! $sale) {
             return;
         }
 
         // Update sale paid amount and status based on credit payments
         $sale->paid_amount = $this->paid_amount;
         $sale->due_amount = $this->balance;
-        
+
         // Update sale payment status
         if ($this->balance <= 0) {
             $sale->payment_status = 'paid';
@@ -419,7 +419,7 @@ class Credit extends Model
         } else {
             $sale->payment_status = 'due';
         }
-        
+
         $sale->save();
     }
 }

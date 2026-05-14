@@ -7,6 +7,7 @@ use App\Http\Requests\Api\V1\Customers\StoreCustomerRequest;
 use App\Http\Requests\Api\V1\Customers\UpdateCustomerRequest;
 use App\Http\Resources\Api\V1\CustomerResource;
 use App\Models\Customer;
+use App\Support\Access\UserAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\ResourceCollection;
@@ -26,11 +27,14 @@ final class CustomerController extends Controller
     public function index(Request $request): ResourceCollection
     {
         $this->authorize('viewAny', Customer::class);
-        $query = Customer::query();
-        if ($branchId = $request->integer('filter.branch_id') ?: null) { $query->where('branch_id', $branchId); }
+        $query = UserAccess::scopeToBranches(Customer::query(), $request->user());
+        if ($branchId = $request->integer('filter.branch_id') ?: null) {
+            $query->where('branch_id', $branchId);
+        }
         if ($search = $request->string('search')->trim()) {
             $query->where(fn ($q) => $q->where('name', 'like', "%{$search}%")->orWhere('phone', 'like', "%{$search}%")->orWhere('email', 'like', "%{$search}%"));
         }
+
         return CustomerResource::collection($query->orderBy('name')->paginate($request->integer('per_page', 20)));
     }
 
@@ -50,6 +54,7 @@ final class CustomerController extends Controller
     public function store(StoreCustomerRequest $request)
     {
         $customer = Customer::create([...$request->validated(), 'created_by' => $request->user()->id]);
+
         return (new CustomerResource($customer))->response()->setStatusCode(201);
     }
 
@@ -60,6 +65,7 @@ final class CustomerController extends Controller
     public function show(Customer $customer): CustomerResource
     {
         $this->authorize('view', $customer);
+
         return new CustomerResource($customer->load('branch'));
     }
 
@@ -73,6 +79,7 @@ final class CustomerController extends Controller
     public function update(UpdateCustomerRequest $request, Customer $customer): CustomerResource
     {
         $customer->update([...$request->validated(), 'updated_by' => $request->user()->id]);
+
         return new CustomerResource($customer->fresh()->load('branch'));
     }
 
@@ -85,6 +92,7 @@ final class CustomerController extends Controller
         $this->authorize('delete', $customer);
         $customer->update(['deleted_by' => $request->user()->id]);
         $customer->delete();
+
         return response()->json(null, 204);
     }
 }

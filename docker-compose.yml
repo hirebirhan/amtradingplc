@@ -15,6 +15,7 @@ services:
                 condition: service_started
         environment:
             - DB_HOST=db
+            - DB_PORT=3306
             - DB_DATABASE=amtradingplc
             - DB_USERNAME=root
             - DB_PASSWORD=root
@@ -51,7 +52,7 @@ services:
             MYSQL_DATABASE: amtradingplc
             MYSQL_ROOT_PASSWORD: root
         ports:
-            - "3306:3306"
+            - "3307:3306"
         volumes:
             - db_data:/var/lib/mysql
             - ./docker/mysql/my.cnf:/etc/mysql/conf.d/dev.cnf:ro

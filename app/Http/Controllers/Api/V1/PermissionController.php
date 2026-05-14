@@ -7,6 +7,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use OpenApi\Attributes as OA;
 use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 
 #[OA\Tag(name: 'Roles')]
 final class PermissionController extends Controller
@@ -20,8 +21,9 @@ final class PermissionController extends Controller
     )]
     public function index(Request $request): JsonResponse
     {
-        $this->authorize('viewAny', \App\Models\Role::class);
+        $this->authorize('viewAny', Role::class);
         $permissions = Permission::orderBy('name')->pluck('name');
+
         return response()->json(['data' => $permissions]);
     }
 }

@@ -2,9 +2,10 @@
 
 namespace App\Services\Sales;
 
-use Illuminate\Support\Facades\Auth;
 use App\Enums\PaymentMethod;
 use App\Models\User;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
 
 class FormValidationService
 {
@@ -18,22 +19,22 @@ class FormValidationService
     public function getRules(array $form, float $totalAmount): array
     {
         $user = Auth::user();
-        $isWalkingCustomer = !empty($form['is_walking_customer']) && $form['is_walking_customer'] !== '0' && $form['is_walking_customer'] !== 'false';
-        
+        $isWalkingCustomer = ! empty($form['is_walking_customer']) && $form['is_walking_customer'] !== '0' && $form['is_walking_customer'] !== 'false';
+
         $rules = [
             'form.sale_date' => 'required|date|before_or_equal:today',
             'form.customer_id' => $isWalkingCustomer ? 'nullable' : 'required|exists:customers,id',
-            'form.payment_method' => ['required', \Illuminate\Validation\Rule::enum(PaymentMethod::class)],
+            'form.payment_method' => ['required', Rule::in(PaymentMethod::forSalesValues())],
             'form.tax' => 'nullable|numeric|min:0|max:100',
             'form.shipping' => 'nullable|numeric|min:0',
             'items' => 'required|array|min:1',
         ];
 
         // Only add location rules if user doesn't have assigned location
-        if (!$user->branch_id && !$user->warehouse_id) {
+        if (! $user->branch_id && ! $user->warehouse_id) {
             $this->addLocationRules($rules);
         }
-        
+
         $this->addWarehousePermissionRules($rules);
         $this->addPaymentMethodRules($rules, $form, $totalAmount);
 
@@ -62,12 +63,12 @@ class FormValidationService
     private function addLocationRules(array &$rules): void
     {
         $user = Auth::user();
-        
+
         // If user has assigned branch/warehouse, don't require form selection
         if ($user->branch_id || $user->warehouse_id) {
             return;
         }
-        
+
         // For users without assigned location, require either branch or warehouse
         $rules['form.branch_id'] = 'required_without:form.warehouse_id|nullable|exists:branches,id';
         $rules['form.warehouse_id'] = 'required_without:form.branch_id|nullable|exists:warehouses,id';
@@ -77,14 +78,14 @@ class FormValidationService
     {
         /** @var User $user */
         $user = Auth::user();
-        if (!$user->isSuperAdmin() && !$user->isGeneralManager()) {
+        if (! $user->isSuperAdmin() && ! $user->isGeneralManager()) {
             $rules['form.warehouse_id'] = [
                 $rules['form.warehouse_id'] ?? 'nullable',
                 function ($attribute, $value, $fail) {
-                    if (!empty($value) && !\App\Facades\UserHelperFacade::hasAccessToWarehouse((int) $value)) {
+                    if (! empty($value) && ! \App\Facades\UserHelperFacade::hasAccessToWarehouse((int) $value)) {
                         $fail('You do not have permission to access this warehouse.');
                     }
-                }
+                },
             ];
         }
     }
@@ -101,7 +102,7 @@ class FormValidationService
         }
 
         if ($form['payment_method'] === 'credit_advance') {
-            $rules['form.advance_amount'] = 'required|numeric|min:0.01|lt:' . $totalAmount;
+            $rules['form.advance_amount'] = 'required|numeric|min:0.01|lt:'.$totalAmount;
         }
     }
 }

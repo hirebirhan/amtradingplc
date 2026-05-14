@@ -4,6 +4,7 @@ namespace App\Policies;
 
 use App\Models\Supplier;
 use App\Models\User;
+use App\Support\Access\UserAccess;
 use Illuminate\Auth\Access\HandlesAuthorization;
 
 class SupplierPolicy
@@ -17,7 +18,8 @@ class SupplierPolicy
 
     public function view(User $user, Supplier $supplier): bool
     {
-        return $user->hasPermissionTo('suppliers.view');
+        return $user->hasPermissionTo('suppliers.view')
+            && UserAccess::canAccessLocation($user, $supplier->branch_id);
     }
 
     public function create(User $user): bool
@@ -27,14 +29,13 @@ class SupplierPolicy
 
     public function update(User $user, Supplier $supplier): bool
     {
-        return $user->hasPermissionTo('suppliers.edit');
+        return $user->hasPermissionTo('suppliers.edit')
+            && UserAccess::canAccessLocation($user, $supplier->branch_id);
     }
 
     public function delete(User $user, Supplier $supplier): bool
     {
-        if ($user->isManager()) {
-            return true;
-        }
-        return $user->hasPermissionTo('suppliers.delete');
+        return $user->hasPermissionTo('suppliers.delete')
+            && UserAccess::canAccessLocation($user, $supplier->branch_id);
     }
 }

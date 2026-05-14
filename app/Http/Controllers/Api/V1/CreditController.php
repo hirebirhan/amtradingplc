@@ -8,6 +8,7 @@ use App\Http\Resources\Api\V1\CreditPaymentResource;
 use App\Http\Resources\Api\V1\CreditResource;
 use App\Models\Credit;
 use App\Services\CreditPaymentService;
+use App\Support\Access\UserAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\ResourceCollection;
@@ -21,7 +22,7 @@ final class CreditController extends Controller
     #[OA\Get(path: '/credits', summary: 'List credits', security: [['sanctum' => []]], tags: ['Credits'],
         parameters: [
             new OA\Parameter(name: 'filter[credit_type]', in: 'query', schema: new OA\Schema(type: 'string', enum: ['receivable', 'payable'])),
-            new OA\Parameter(name: 'filter[status]', in: 'query', schema: new OA\Schema(type: 'string', enum: ['open', 'partial', 'paid', 'closed'])),
+            new OA\Parameter(name: 'filter[status]', in: 'query', schema: new OA\Schema(type: 'string', enum: ['active', 'partial', 'paid', 'overdue', 'cancelled'])),
             new OA\Parameter(name: 'filter[branch_id]', in: 'query', schema: new OA\Schema(type: 'integer')),
             new OA\Parameter(name: 'per_page', in: 'query', schema: new OA\Schema(type: 'integer', default: 20)),
         ],
@@ -30,10 +31,17 @@ final class CreditController extends Controller
     public function index(Request $request): ResourceCollection
     {
         $this->authorize('viewAny', Credit::class);
-        $query = Credit::with('customer', 'supplier');
-        if ($type = $request->input('filter.credit_type')) { $query->where('credit_type', $type); }
-        if ($status = $request->input('filter.status')) { $query->where('status', $status); }
-        if ($branchId = $request->integer('filter.branch_id') ?: null) { $query->where('branch_id', $branchId); }
+        $query = UserAccess::scopeToLocation(Credit::with('customer', 'supplier'), $request->user());
+        if ($type = $request->input('filter.credit_type')) {
+            $query->where('credit_type', $type);
+        }
+        if ($status = $request->input('filter.status')) {
+            $query->where('status', $status);
+        }
+        if ($branchId = $request->integer('filter.branch_id') ?: null) {
+            $query->where('branch_id', $branchId);
+        }
+
         return CreditResource::collection($query->latest()->paginate($request->integer('per_page', 20)));
     }
 
@@ -46,6 +54,7 @@ final class CreditController extends Controller
     public function show(Request $request, Credit $credit): CreditResource
     {
         $this->authorize('view', $credit);
+
         return new CreditResource($credit->load('customer', 'supplier', 'payments'));
     }
 
@@ -56,6 +65,7 @@ final class CreditController extends Controller
     public function payments(Request $request, Credit $credit): ResourceCollection
     {
         $this->authorize('view', $credit);
+
         return CreditPaymentResource::collection($credit->payments()->latest()->paginate(20));
     }
 
@@ -76,7 +86,7 @@ final class CreditController extends Controller
     public function addPayment(StoreCreditPaymentRequest $request, Credit $credit): CreditPaymentResource
     {
         $this->authorize('update', $credit);
-        $request->validate(['amount' => ['max:' . $credit->balance]]);
+        $request->validate(['amount' => ['max:'.$credit->balance]]);
         $payment = $credit->addPayment(
             amount: (float) $request->input('amount'),
             paymentMethod: $request->input('payment_method'),
@@ -84,6 +94,7 @@ final class CreditController extends Controller
             notes: $request->input('notes'),
             paymentDate: $request->input('payment_date'),
         );
+
         return (new CreditPaymentResource($payment))->response()->setStatusCode(201);
     }
 
@@ -96,6 +107,7 @@ final class CreditController extends Controller
         $this->authorize('view', $credit);
         abort_unless($this->service->isEligibleForClosingOffer($credit), 403, 'Credit is not eligible for a closing offer.');
         $offer = $this->service->calculateClosingOffer($credit);
+
         return response()->json(['data' => $offer]);
     }
 
@@ -116,6 +128,7 @@ final class CreditController extends Controller
         abort_unless($this->service->isEligibleForClosingOffer($credit), 403, 'Credit is not eligible for a closing offer.');
         $request->validate(['negotiated_prices' => ['required', 'array'], 'negotiated_prices.*.item_id' => ['required', 'exists:items,id'], 'negotiated_prices.*.price' => ['required', 'numeric', 'min:0']]);
         $result = $this->service->calculateProfitLossFromNegotiatedPrices($credit, $request->input('negotiated_prices'));
+
         return response()->json(['data' => $result]);
     }
 
@@ -136,6 +149,7 @@ final class CreditController extends Controller
         abort_unless($this->service->isEligibleForClosingOffer($credit), 403, 'Credit is not eligible for a closing offer.');
         $request->validate(['negotiated_prices' => ['required', 'array'], 'negotiated_prices.*.item_id' => ['required', 'exists:items,id'], 'negotiated_prices.*.price' => ['required', 'numeric', 'min:0']]);
         $result = $this->service->processEarlyClosureWithNegotiatedPrices($credit, $request->input('negotiated_prices'), forceClose: false);
+
         return response()->json(['data' => $result]);
     }
 }

@@ -9,9 +9,9 @@ use App\Models\Item;
 use App\Models\Purchase;
 use App\Models\Sale;
 use App\Models\Stock;
+use App\Support\Access\UserAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use OpenApi\Attributes as OA;
 
 #[OA\Tag(name: 'Reports')]
@@ -31,12 +31,14 @@ final class ReportController extends Controller
     public function summary(Request $request): JsonResponse
     {
         abort_unless($request->user()->can('reports.view'), 403);
+        $user = $request->user();
+
         return response()->json(['data' => [
-            'total_items'     => Item::count(),
-            'total_sales'     => Sale::count(),
-            'total_purchases' => Purchase::count(),
-            'total_credits'   => Credit::sum('balance'),
-            'total_expenses'  => Expense::sum('amount'),
+            'total_items' => Item::count(),
+            'total_sales' => UserAccess::scopeToLocation(Sale::query(), $user)->count(),
+            'total_purchases' => UserAccess::scopeToLocation(Purchase::query(), $user)->count(),
+            'total_credits' => UserAccess::scopeToLocation(Credit::query(), $user)->sum('balance'),
+            'total_expenses' => UserAccess::scopeToBranches(Expense::query(), $user)->sum('amount'),
         ]]);
     }
 
@@ -50,11 +52,16 @@ final class ReportController extends Controller
     public function inventory(Request $request): JsonResponse
     {
         abort_unless($request->user()->can('reports.view'), 403);
-        $branchId    = $request->integer('branch_id') ?: null;
+        $branchId = $request->integer('branch_id') ?: null;
         $warehouseId = $request->integer('warehouse_id') ?: null;
-        $query = Stock::with('item.category', 'warehouse', 'branch');
-        if ($branchId)    { $query->where('branch_id', $branchId); }
-        if ($warehouseId) { $query->where('warehouse_id', $warehouseId); }
+        $query = UserAccess::scopeToWarehouses(Stock::with('item.category', 'warehouse', 'branch'), $request->user());
+        if ($branchId) {
+            $query->where('branch_id', $branchId);
+        }
+        if ($warehouseId) {
+            $query->where('warehouse_id', $warehouseId);
+        }
+
         return response()->json(['data' => $query->get()]);
     }
 
@@ -76,9 +83,10 @@ final class ReportController extends Controller
     {
         abort_unless($request->user()->can('reports.view'), 403);
         $from = $request->input('date_from', now()->startOfMonth()->toDateString());
-        $to   = $request->input('date_to', now()->toDateString());
-        $data = Sale::query()->whereBetween('sale_date', [$from, $to])
+        $to = $request->input('date_to', now()->toDateString());
+        $data = UserAccess::scopeToLocation(Sale::query(), $request->user())->whereBetween('sale_date', [$from, $to])
             ->selectRaw('COUNT(*) as count, SUM(total_amount) as total_revenue, SUM(paid_amount) as paid, SUM(due_amount) as outstanding')->first();
+
         return response()->json(['data' => $data]);
     }
 
@@ -93,9 +101,10 @@ final class ReportController extends Controller
     {
         abort_unless($request->user()->can('reports.view'), 403);
         $from = $request->input('date_from', now()->startOfMonth()->toDateString());
-        $to   = $request->input('date_to', now()->toDateString());
-        $data = Purchase::query()->whereBetween('purchase_date', [$from, $to])
+        $to = $request->input('date_to', now()->toDateString());
+        $data = UserAccess::scopeToLocation(Purchase::query(), $request->user())->whereBetween('purchase_date', [$from, $to])
             ->selectRaw('COUNT(*) as count, SUM(total_amount) as total_cost, SUM(paid_amount) as paid, SUM(due_amount) as outstanding')->first();
+
         return response()->json(['data' => $data]);
     }
 
@@ -125,16 +134,23 @@ final class ReportController extends Controller
             403, 'Financial reports require a finance role.'
         );
         $from = $request->input('date_from', now()->startOfMonth()->toDateString());
-        $to   = $request->input('date_to', now()->toDateString());
-        $revenue  = Sale::whereBetween('sale_date', [$from, $to])->sum('paid_amount');
-        $costs    = Purchase::whereBetween('purchase_date', [$from, $to])->sum('total_amount');
-        $expenses = Expense::whereBetween('expense_date', [$from, $to])->sum('amount');
+        $to = $request->input('date_to', now()->toDateString());
+        $revenue = UserAccess::scopeToLocation(Sale::query(), $request->user())
+            ->whereBetween('sale_date', [$from, $to])
+            ->sum('paid_amount');
+        $costs = UserAccess::scopeToLocation(Purchase::query(), $request->user())
+            ->whereBetween('purchase_date', [$from, $to])
+            ->sum('total_amount');
+        $expenses = UserAccess::scopeToBranches(Expense::query(), $request->user())
+            ->whereBetween('expense_date', [$from, $to])
+            ->sum('amount');
+
         return response()->json(['data' => [
-            'revenue'      => (float) $revenue,
-            'costs'        => (float) $costs,
-            'expenses'     => (float) $expenses,
+            'revenue' => (float) $revenue,
+            'costs' => (float) $costs,
+            'expenses' => (float) $expenses,
             'gross_profit' => (float) ($revenue - $costs),
-            'net_profit'   => (float) ($revenue - $costs - $expenses),
+            'net_profit' => (float) ($revenue - $costs - $expenses),
         ]]);
     }
 }

@@ -2,9 +2,9 @@
 
 namespace App\Http\Controllers\Api\V1;
 
-use App\Helpers\UserHelper;
 use App\Http\Controllers\Controller;
 use App\Models\Stock;
+use App\Support\Access\UserAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use OpenApi\Attributes as OA;
@@ -26,17 +26,21 @@ final class StockReportController extends Controller
     {
         abort_unless($request->user()->can('items.view'), 403);
         $user = $request->user();
-        $query = Stock::with('item.category', 'warehouse', 'branch');
-        if (! $user->isSuperAdmin() && ! $user->isGeneralManager()) {
-            $query->whereIn('warehouse_id', UserHelper::getAccessibleWarehouseIds());
+        $query = UserAccess::scopeToWarehouses(Stock::with('item.category', 'warehouse', 'branch'), $user);
+        if ($warehouseId = $request->integer('filter.warehouse_id') ?: null) {
+            $query->where('warehouse_id', $warehouseId);
         }
-        if ($warehouseId = $request->integer('filter.warehouse_id') ?: null) { $query->where('warehouse_id', $warehouseId); }
-        if ($branchId = $request->integer('filter.branch_id') ?: null) { $query->where('branch_id', $branchId); }
-        if ($categoryId = $request->integer('filter.category_id') ?: null) { $query->whereHas('item', fn ($q) => $q->where('category_id', $categoryId)); }
+        if ($branchId = $request->integer('filter.branch_id') ?: null) {
+            $query->where('branch_id', $branchId);
+        }
+        if ($categoryId = $request->integer('filter.category_id') ?: null) {
+            $query->whereHas('item', fn ($q) => $q->where('category_id', $categoryId));
+        }
         if ($request->boolean('filter.below_reorder')) {
             $query->whereHas('item', fn ($q) => $q->whereColumn('reorder_level', '>', 'stocks.piece_count')->where('reorder_level', '>', 0));
         }
         $stocks = $query->orderBy('warehouse_id')->paginate($request->integer('per_page', 50));
+
         return response()->json($stocks);
     }
 
@@ -51,10 +55,7 @@ final class StockReportController extends Controller
     {
         abort_unless($request->user()->can('items.view'), 403);
         $user = $request->user();
-        $query = Stock::with('item', 'warehouse', 'branch');
-        if (! $user->isSuperAdmin() && ! $user->isGeneralManager()) {
-            $query->whereIn('warehouse_id', UserHelper::getAccessibleWarehouseIds());
-        }
+        $query = UserAccess::scopeToWarehouses(Stock::with('item', 'warehouse', 'branch'), $user);
         $stocks = $query->get();
         $headers = ['Content-Type' => 'text/csv', 'Content-Disposition' => 'attachment; filename="stock-report.csv"'];
         $callback = function () use ($stocks) {
@@ -65,6 +66,7 @@ final class StockReportController extends Controller
             }
             fclose($handle);
         };
+
         return response()->stream($callback, 200, $headers);
     }
 }

@@ -3,10 +3,10 @@
 namespace App\Services;
 
 use App\Enums\PaymentMethod;
+use App\Models\CreditPayment;
 use App\Models\Purchase;
 use App\Models\Sale;
 use App\Models\SalePayment;
-use App\Models\CreditPayment;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 
@@ -16,17 +16,17 @@ class PurchaseValidationService
     {
         $rules = $this->buildValidationRules($formData, $totalAmount);
         $messages = $this->getValidationMessages();
-        
+
         $validator = Validator::make([
             'form' => $formData,
-            'items' => $items
+            'items' => $items,
         ], $rules, $messages);
 
         if ($validator->fails()) {
             return [
                 'success' => false,
                 'errors' => $validator->errors()->toArray(),
-                'messages' => $validator->errors()->all()
+                'messages' => $validator->errors()->all(),
             ];
         }
 
@@ -39,7 +39,7 @@ class PurchaseValidationService
             'form.purchase_date' => 'required|date',
             'form.supplier_id' => 'required|exists:suppliers,id',
             'form.branch_id' => 'required|exists:branches,id',
-            'form.payment_method' => ['required', Rule::enum(PaymentMethod::class)],
+            'form.payment_method' => ['required', Rule::in(PaymentMethod::forPurchasesValues())],
             'form.tax' => 'nullable|numeric|min:0|max:100',
             'items' => 'required|array|min:1',
         ];
@@ -68,7 +68,7 @@ class PurchaseValidationService
 
         // Advance amount validation for Credit with Advance
         if ($paymentMethod === PaymentMethod::CREDIT_ADVANCE->value) {
-            $rules['form.advance_amount'] = 'required|numeric|min:0.01|max:' . $totalAmount;
+            $rules['form.advance_amount'] = 'required|numeric|min:0.01|max:'.$totalAmount;
         }
 
         return $rules;

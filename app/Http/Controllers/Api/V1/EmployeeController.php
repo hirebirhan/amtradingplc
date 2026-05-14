@@ -7,6 +7,7 @@ use App\Http\Requests\Api\V1\Employees\StoreEmployeeRequest;
 use App\Http\Requests\Api\V1\Employees\UpdateEmployeeRequest;
 use App\Http\Resources\Api\V1\EmployeeResource;
 use App\Models\Employee;
+use App\Support\Access\UserAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\ResourceCollection;
@@ -25,11 +26,14 @@ final class EmployeeController extends Controller
     public function index(Request $request): ResourceCollection
     {
         $this->authorize('viewAny', Employee::class);
-        $query = Employee::with('branch', 'warehouse');
-        if ($branchId = $request->integer('filter.branch_id') ?: null) { $query->where('branch_id', $branchId); }
+        $query = UserAccess::scopeToLocation(Employee::with('branch', 'warehouse'), $request->user());
+        if ($branchId = $request->integer('filter.branch_id') ?: null) {
+            $query->where('branch_id', $branchId);
+        }
         if ($search = $request->string('search')->trim()) {
             $query->where(fn ($q) => $q->where('first_name', 'like', "%{$search}%")->orWhere('last_name', 'like', "%{$search}%")->orWhere('email', 'like', "%{$search}%"));
         }
+
         return EmployeeResource::collection($query->orderBy('first_name')->paginate($request->integer('per_page', 20)));
     }
 
@@ -49,6 +53,7 @@ final class EmployeeController extends Controller
     public function store(StoreEmployeeRequest $request)
     {
         $employee = Employee::create($request->validated());
+
         return (new EmployeeResource($employee->load('branch', 'warehouse')))->response()->setStatusCode(201);
     }
 
@@ -59,6 +64,7 @@ final class EmployeeController extends Controller
     public function show(Employee $employee): EmployeeResource
     {
         $this->authorize('view', $employee);
+
         return new EmployeeResource($employee->load('branch', 'warehouse'));
     }
 
@@ -72,6 +78,7 @@ final class EmployeeController extends Controller
     public function update(UpdateEmployeeRequest $request, Employee $employee): EmployeeResource
     {
         $employee->update($request->validated());
+
         return new EmployeeResource($employee->fresh()->load('branch', 'warehouse'));
     }
 
@@ -83,6 +90,7 @@ final class EmployeeController extends Controller
     {
         $this->authorize('delete', $employee);
         $employee->delete();
+
         return response()->json(null, 204);
     }
 }
