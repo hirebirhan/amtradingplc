@@ -3,8 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Traits\HasControllerFlashMessages;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use Illuminate\Foundation\Validation\ValidatesRequests;
 
 abstract class Controller
 {
-    use HasControllerFlashMessages;
+    use AuthorizesRequests, ValidatesRequests, HasControllerFlashMessages;
 }

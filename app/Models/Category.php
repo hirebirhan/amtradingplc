@@ -33,7 +33,20 @@ class Category extends Model
     protected static function boot()
     {
         parent::boot();
-        
+
+        static::creating(function ($category) {
+            // Auto-generate a unique code from the name if none provided
+            if (empty($category->code)) {
+                $base = strtoupper(Str::substr(Str::slug($category->name, ''), 0, 8));
+                $code = $base;
+                $i    = 1;
+                while (static::where('code', $code)->exists()) {
+                    $code = $base . $i++;
+                }
+                $category->code = $code;
+            }
+        });
+
         static::deleting(function ($category) {
             if ($category->items()->exists()) {
                 throw new \Exception('Cannot delete category: It contains items. Please move or delete all items first.');

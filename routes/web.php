@@ -524,9 +524,11 @@ Route::prefix('admin')->middleware(['auth', 'active'])->group(function () {
     // Transfers Management
 });
 
-// Stock Card Routes
-Route::get('/stock-card', [App\Http\Controllers\StockCardController::class, 'index'])->name('stock-card.index');
-Route::get('/stock-card/print', [App\Http\Controllers\StockCardController::class, 'print'])->name('stock-card.print');
+// Stock Card Routes — require auth + stock-card.view permission
+Route::middleware(['auth', 'active', 'permission:stock-card.view'])->group(function () {
+    Route::get('/stock-card', [App\Http\Controllers\StockCardController::class, 'index'])->name('stock-card.index');
+    Route::get('/stock-card/print', [App\Http\Controllers\StockCardController::class, 'print'])->name('stock-card.print');
+});
 
 
 
