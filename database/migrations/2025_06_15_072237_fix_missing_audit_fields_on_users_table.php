@@ -77,6 +77,18 @@ return new class extends Migration
      */
     private function hasIndex(string $table, string $indexName): bool
     {
+        $driver = config('database.default');
+
+        if ($driver === 'sqlite') {
+            $indexes = \Illuminate\Support\Facades\DB::select("PRAGMA index_list({$table})");
+            foreach ($indexes as $index) {
+                if ($index->name === $indexName) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         $indexes = \Illuminate\Support\Facades\DB::select("SHOW INDEX FROM {$table}");
         foreach ($indexes as $index) {
             if ($index->Key_name === $indexName) {

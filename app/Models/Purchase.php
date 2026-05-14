@@ -351,32 +351,37 @@ class Purchase extends Model
         DB::transaction(function () {
             // Create credit record
             $credit = Credit::create([
-                'supplier_id' => $this->supplier_id,
-                'amount' => $this->total_amount,
-                'paid_amount' => $this->paid_amount,
-                'balance' => $this->due_amount,
-                'reference_no' => $this->reference_no,
+                'supplier_id'    => $this->supplier_id,
+                'amount'         => $this->total_amount,
+                'paid_amount'    => 0,
+                'balance'        => $this->total_amount,
+                'reference_no'   => $this->reference_no,
                 'reference_type' => 'purchase',
-                'reference_id' => $this->id,
-                'credit_type' => 'payable',
-                'description' => 'Credit for purchase #' . $this->reference_no,
-                'credit_date' => $this->purchase_date,
-                'due_date' => now()->addDays(30),
-                'status' => $this->paid_amount > 0 ? 'partial' : 'active',
-                'user_id' => $this->user_id,
-                'branch_id' => $this->branch_id,
-                'warehouse_id' => $this->warehouse_id,
+                'reference_id'   => $this->id,
+                'credit_type'    => 'payable',
+                'description'    => 'Credit for purchase #' . $this->reference_no,
+                'credit_date'    => $this->purchase_date,
+                'due_date'       => now()->addDays(30),
+                'status'         => 'active',
+                'user_id'        => $this->user_id,
+                'branch_id'      => $this->branch_id,
+                'warehouse_id'   => $this->warehouse_id,
             ]);
 
             // Create advance payment record if advance was made
             if ($this->advance_amount > 0) {
+                $validCreditPaymentMethods = ['cash', 'bank_transfer', 'telebirr', 'credit_card', 'check', 'other'];
+                $advanceMethod = in_array($this->payment_method, $validCreditPaymentMethods, true)
+                    ? $this->payment_method
+                    : 'cash';
+
                 $credit->addPayment(
                     $this->advance_amount,
-                    $this->payment_method ?? 'cash',
+                    $advanceMethod,
                     $this->transaction_number,
                     'Advance payment for purchase #' . $this->reference_no,
-                    null, // payment_date (use default)
-                    'advance' // kind
+                    null,
+                    'advance'
                 );
             }
         });

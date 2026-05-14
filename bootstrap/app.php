@@ -7,24 +7,21 @@ use Illuminate\Foundation\Configuration\Middleware;
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web: __DIR__.'/../routes/web.php',
+        api: __DIR__.'/../routes/api.php',
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->alias([
-            'active' => \App\Http\Middleware\EnsureUserIsActive::class,
-            'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,
-            'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
+            'active'           => \App\Http\Middleware\EnsureUserIsActive::class,
+            'api.active'       => \App\Http\Middleware\EnsureApiUserIsActive::class,
+            'role'             => \Spatie\Permission\Middleware\RoleMiddleware::class,
+            'permission'       => \Spatie\Permission\Middleware\PermissionMiddleware::class,
             'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        $exceptions->reportable(function (\Throwable $e) {
-            // Global reportable handler
-        });
-        
-        $exceptions->renderable(function (\Throwable $e) {
-            // Let our custom handler in App\Exceptions\Handler handle everything
-            return null;
-        });
+        $exceptions->shouldRenderJsonWhen(
+            fn ($request, \Throwable $e) => $request->is('api/*') || $request->expectsJson()
+        );
     })->create();

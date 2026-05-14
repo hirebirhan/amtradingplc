@@ -23,7 +23,7 @@ class PaymentValidationService
                     $form['advance_amount'] = round($totalAmount * 0.2, 2); // Default 20%
                 }
                 break;
-            case 'credit_full':
+            case 'full_credit':
                 $form['payment_status'] = 'due';
                 break;
         }

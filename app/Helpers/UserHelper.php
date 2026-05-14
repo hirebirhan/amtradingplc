@@ -202,4 +202,28 @@ class UserHelper
 
         return $user->canManageStockReservations();
     }
+
+    /**
+     * Get warehouse IDs accessible to the current user.
+     * Super admins / General Managers get all warehouse IDs.
+     * Branch managers get IDs of warehouses in their branch.
+     * Other users get only their directly assigned warehouse (if any).
+     */
+    public static function getAccessibleWarehouseIds(): array
+    {
+        $user = self::currentUser();
+        if (!$user) {
+            return [];
+        }
+
+        if ($user->isSuperAdmin() || $user->isGeneralManager()) {
+            return \App\Models\Warehouse::pluck('id')->toArray();
+        }
+
+        if ($user->isBranchManager() && $user->branch) {
+            return $user->branch->warehouses()->pluck('warehouses.id')->toArray();
+        }
+
+        return $user->warehouse_id ? [$user->warehouse_id] : [];
+    }
 }

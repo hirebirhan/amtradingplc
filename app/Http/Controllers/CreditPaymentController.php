@@ -37,7 +37,7 @@ class CreditPaymentController extends Controller
             // Validate the payment data
             $validatedData = $request->validate([
                 'amount' => 'required|numeric|min:0.01|max:' . $credit->remaining_amount,
-                'payment_method' => 'required|in:cash,bank_transfer,check,mobile_money',
+                'payment_method' => 'required|in:cash,bank_transfer,telebirr,credit_card,check,other',
                 'payment_date' => 'required|date',
                 'notes' => 'nullable|string|max:500',
                 'reference_no' => 'nullable|string|max:100',

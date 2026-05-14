@@ -2,12 +2,13 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Helpers\UserHelper;
 use App\Http\Controllers\Controller;
 use App\Models\StockReservation;
+use App\Models\Warehouse;
 use App\Services\StockMovementService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
-use UserHelper;
 
 class StockReservationController extends Controller
 {
@@ -26,35 +27,47 @@ class StockReservationController extends Controller
     {
         // Start building the query
         $activeQuery = StockReservation::active()->with(['item', 'creator']);
-        
-        // Filter by warehouse if user doesn't have global access
+
+        // Filter by accessible locations if user doesn't have global access
         if (!UserHelper::canManageStockReservations()) {
             $warehouseIds = UserHelper::getAccessibleWarehouseIds();
-            $activeQuery->whereIn('warehouse_id', $warehouseIds);
+            $activeQuery->where(function ($q) use ($warehouseIds) {
+                $q->where(function ($sq) use ($warehouseIds) {
+                    $sq->where('location_type', 'warehouse')
+                       ->whereIn('location_id', $warehouseIds);
+                });
+            });
         }
-        
+
         $activeReservations = $activeQuery->orderBy('expires_at', 'asc')
             ->paginate(20);
 
         // Get expired reservations (last 50)
         $expiredQuery = StockReservation::expired()->with(['item', 'creator']);
-        
-        // Filter by warehouse if user doesn't have global access
+
         if (!UserHelper::canManageStockReservations()) {
             $warehouseIds = UserHelper::getAccessibleWarehouseIds();
-            $expiredQuery->whereIn('warehouse_id', $warehouseIds);
+            $expiredQuery->where(function ($q) use ($warehouseIds) {
+                $q->where(function ($sq) use ($warehouseIds) {
+                    $sq->where('location_type', 'warehouse')
+                       ->whereIn('location_id', $warehouseIds);
+                });
+            });
         }
-        
+
         $expiredReservations = $expiredQuery->orderBy('expires_at', 'desc')
             ->limit(50)
             ->get();
 
         // Calculate statistics with access control
         $statsQuery = StockReservation::query();
-        
+
         if (!UserHelper::canManageStockReservations()) {
             $warehouseIds = UserHelper::getAccessibleWarehouseIds();
-            $statsQuery->whereIn('warehouse_id', $warehouseIds);
+            $statsQuery->where(function ($q) use ($warehouseIds) {
+                $q->where('location_type', 'warehouse')
+                  ->whereIn('location_id', $warehouseIds);
+            });
         }
         
         $activeQuery = (clone $statsQuery)->active();

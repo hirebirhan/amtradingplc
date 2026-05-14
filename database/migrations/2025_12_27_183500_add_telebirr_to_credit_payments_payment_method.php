@@ -12,16 +12,15 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // Alter the enum to include telebirr
-        DB::statement("ALTER TABLE credit_payments MODIFY COLUMN payment_method ENUM('cash', 'bank_transfer', 'telebirr', 'credit_card', 'check', 'other') DEFAULT 'cash'");
+        if (config('database.default') === 'mysql') {
+            DB::statement("ALTER TABLE credit_payments MODIFY COLUMN payment_method ENUM('cash', 'bank_transfer', 'telebirr', 'credit_card', 'check', 'other') DEFAULT 'cash'");
+        }
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
-        // Revert back to original enum
-        DB::statement("ALTER TABLE credit_payments MODIFY COLUMN payment_method ENUM('cash', 'bank_transfer', 'credit_card', 'check', 'other') DEFAULT 'cash'");
+        if (config('database.default') === 'mysql') {
+            DB::statement("ALTER TABLE credit_payments MODIFY COLUMN payment_method ENUM('cash', 'bank_transfer', 'credit_card', 'check', 'other') DEFAULT 'cash'");
+        }
     }
 };

@@ -178,7 +178,7 @@ class SaleFormService
                 $sale->due_amount = $totalAmount - $form['advance_amount'];
                 $sale->payment_status = 'partial';
                 break;
-            case 'credit_full':
+            case 'full_credit':
                 $sale->paid_amount = 0;
                 $sale->due_amount = $totalAmount;
                 $sale->payment_status = 'due';

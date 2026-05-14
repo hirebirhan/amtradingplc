@@ -22,10 +22,10 @@ class TransferController extends Controller
 
             // Load necessary relationships for printing
             $transfer->load([
-                'transferItems.item',
+                'items.item',
                 'sourceLocation',
                 'destinationLocation',
-                'createdBy'
+                'creator',
             ]);
 
             return view('pdf.transfer', [

@@ -14,6 +14,7 @@ use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
 use App\Models\User;
 use App\Models\Credit;
+use App\Models\CreditPayment;
 use App\Models\Stock;
 use App\Enums\PaymentStatus;
 use App\Traits\HasBranch;
@@ -430,8 +431,8 @@ class Sale extends Model
         // Create credit for any sale with outstanding balance
         if ($this->due_amount > 0 && !$this->is_walking_customer) {
             $status = ($this->paid_amount ?? 0) > 0 ? 'partial' : 'active';
-            
-            Credit::create([
+
+            $credit = Credit::create([
                 'customer_id' => $this->customer_id,
                 'amount' => $this->total_amount,
                 'paid_amount' => $this->paid_amount ?? 0,
@@ -448,6 +449,24 @@ class Sale extends Model
                 'branch_id' => $this->branch_id,
                 'warehouse_id' => $this->warehouse_id,
             ]);
+
+            // Record advance payment if one was made
+            if (($this->advance_amount ?? 0) > 0) {
+                $validCreditPaymentMethods = ['cash', 'bank_transfer', 'telebirr', 'credit_card', 'check', 'other'];
+                $advanceMethod = in_array($this->payment_method, $validCreditPaymentMethods, true)
+                    ? $this->payment_method
+                    : 'cash';
+
+                CreditPayment::create([
+                    'credit_id'      => $credit->id,
+                    'amount'         => $this->advance_amount,
+                    'kind'           => 'advance',
+                    'payment_method' => $advanceMethod,
+                    'payment_date'   => $this->sale_date,
+                    'notes'          => 'Advance payment for sale #' . $this->reference_no,
+                    'user_id'        => $this->user_id,
+                ]);
+            }
         }
     }
 

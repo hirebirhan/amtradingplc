@@ -48,8 +48,8 @@ class PurchaseStatusWorkflowTest extends TestCase
         ]);
 
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage("Cannot process purchase with status 'draft'. Only confirmed purchases can be processed.");
-        
+        $this->expectExceptionMessage("Cannot process purchase with status 'draft' and payment status");
+
         $purchase->processPurchase();
     }
 
