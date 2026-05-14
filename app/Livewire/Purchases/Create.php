@@ -218,6 +218,7 @@ class Create extends Component
         
         try {
             (new PurchaseService())->createPurchase(
+                auth()->user(),
                 $this->form,
                 $this->items,
                 $this->totalAmount,

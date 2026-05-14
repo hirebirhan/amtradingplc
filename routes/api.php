@@ -3,6 +3,8 @@
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\BankAccountController;
 use App\Http\Controllers\Api\V1\BranchController;
+use App\Http\Controllers\Api\V1\PurchaseController;
+use App\Http\Controllers\Api\V1\SaleController;
 use App\Http\Controllers\Api\V1\CategoryController;
 use App\Http\Controllers\Api\V1\CustomerController;
 use App\Http\Controllers\Api\V1\EmployeeController;
@@ -17,6 +19,12 @@ use App\Http\Controllers\Api\V1\StockReportController;
 use App\Http\Controllers\Api\V1\StockReservationController;
 use App\Http\Controllers\Api\V1\SupplierController;
 use App\Http\Controllers\Api\V1\UserController;
+use App\Http\Controllers\Api\V1\CreditController;
+use App\Http\Controllers\Api\V1\DashboardController;
+use App\Http\Controllers\Api\V1\ExpenseController;
+use App\Http\Controllers\Api\V1\PriceHistoryController;
+use App\Http\Controllers\Api\V1\ReportController;
+use App\Http\Controllers\Api\V1\TransferController;
 use App\Http\Controllers\Api\V1\WarehouseController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -63,6 +71,29 @@ Route::prefix('v1')->group(function () {
         Route::apiResource('employees',    EmployeeController::class);
         Route::apiResource('bank-accounts', BankAccountController::class);
 
+        // ── Purchases ────────────────────────────────────────────────────────
+        Route::apiResource('purchases', PurchaseController::class)->except(['update']);
+
+        // ── Sales ────────────────────────────────────────────────────────────
+        Route::apiResource('sales', SaleController::class)->except(['update']);
+
+        // ── Credits ──────────────────────────────────────────────────────────
+        Route::get('credits',                                              [CreditController::class, 'index']);
+        Route::get('credits/{credit}',                                     [CreditController::class, 'show']);
+        Route::get('credits/{credit}/payments',                            [CreditController::class, 'payments']);
+        Route::post('credits/{credit}/payments',                           [CreditController::class, 'addPayment']);
+        Route::get('credits/{credit}/closing-offer',                       [CreditController::class, 'closingOffer']);
+        Route::post('credits/{credit}/closing-offer/calculate',            [CreditController::class, 'calculateClosingOffer']);
+        Route::post('credits/{credit}/closing-offer/accept',               [CreditController::class, 'acceptClosingOffer']);
+
+        // ── Transfers ────────────────────────────────────────────────────────
+        Route::apiResource('transfers', TransferController::class)->except(['update']);
+        Route::post('transfers/{transfer}/approve',         [TransferController::class, 'approve']);
+        Route::post('transfers/{transfer}/reject',          [TransferController::class, 'reject']);
+        Route::post('transfers/{transfer}/cancel',          [TransferController::class, 'cancel']);
+        Route::post('transfers/{transfer}/mark-in-transit', [TransferController::class, 'markInTransit']);
+        Route::post('transfers/{transfer}/complete',        [TransferController::class, 'complete']);
+
         // ── Stock ────────────────────────────────────────────────────────────
         Route::get('stocks',             [StockController::class, 'index']);
         Route::get('stocks/{stock}',     [StockController::class, 'show']);
@@ -77,5 +108,19 @@ Route::prefix('v1')->group(function () {
 
         Route::get('stock-reports',         [StockReportController::class, 'index']);
         Route::get('stock-reports/export',  [StockReportController::class, 'export']);
+
+        // ── Expenses & Price History ──────────────────────────────────────────
+        Route::apiResource('expenses',       ExpenseController::class);
+        Route::get('price-histories',        [PriceHistoryController::class, 'index']);
+        Route::get('items/{item}/price-histories', [PriceHistoryController::class, 'forItem']);
+
+        // ── Dashboard & Reports ───────────────────────────────────────────────
+        Route::get('dashboard',              [DashboardController::class, 'index']);
+        Route::get('dashboard/charts/{range}', [DashboardController::class, 'charts']);
+        Route::get('reports/summary',        [ReportController::class, 'summary']);
+        Route::get('reports/inventory',      [ReportController::class, 'inventory']);
+        Route::get('reports/sales',          [ReportController::class, 'sales']);
+        Route::get('reports/purchases',      [ReportController::class, 'purchases']);
+        Route::get('reports/financial',      [ReportController::class, 'financial']);
     });
 });
