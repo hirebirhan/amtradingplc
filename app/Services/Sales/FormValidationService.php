@@ -92,16 +92,16 @@ class FormValidationService
 
     private function addPaymentMethodRules(array &$rules, array $form, float $totalAmount): void
     {
-        if ($form['payment_method'] === 'telebirr') {
+        if ($form['payment_method'] === PaymentMethod::TELEBIRR->value) {
             $rules['form.transaction_number'] = 'required|string|min:5|max:255|unique:sales,transaction_number';
         }
 
-        if ($form['payment_method'] === 'bank_transfer') {
+        if ($form['payment_method'] === PaymentMethod::BANK_TRANSFER->value) {
             $rules['form.bank_account_id'] = 'required|exists:bank_accounts,id';
             $rules['form.transaction_number'] = 'required|string|min:5|max:255|unique:sales,transaction_number';
         }
 
-        if ($form['payment_method'] === 'credit_advance') {
+        if ($form['payment_method'] === PaymentMethod::CREDIT_ADVANCE->value) {
             $rules['form.advance_amount'] = 'required|numeric|min:0.01|lt:'.$totalAmount;
         }
     }

@@ -2,17 +2,18 @@
 
 namespace App\Services;
 
-use App\Models\Transfer;
-use App\Models\TransferItem;
+use App\Enums\TransferStatus;
+use App\Exceptions\TransferException;
+use App\Models\Branch;
 use App\Models\Item;
 use App\Models\Stock;
-use App\Models\Warehouse;
-use App\Models\Branch;
+use App\Models\Transfer;
+use App\Models\TransferItem;
 use App\Models\User;
+use App\Models\Warehouse;
 use App\Services\StockMovementService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use App\Exceptions\TransferException;
 
 class TransferService
 {
@@ -218,7 +219,7 @@ class TransferService
      */
     private function approveTransfer(Transfer $transfer, User $user): void
     {
-        if ($transfer->status !== 'pending') {
+        if ($transfer->status !== TransferStatus::PENDING->value) {
             throw new TransferException('Only pending transfers can be approved.');
         }
 
@@ -246,7 +247,7 @@ class TransferService
      */
     private function completeTransfer(Transfer $transfer, User $user): void
     {
-        if (!in_array($transfer->status, ['approved', 'in_transit'])) {
+        if (!in_array($transfer->status, [TransferStatus::APPROVED->value, TransferStatus::IN_TRANSIT->value])) {
             throw new TransferException('Transfer must be approved or in transit before completion.');
         }
 
@@ -289,7 +290,7 @@ class TransferService
      */
     private function markInTransit(Transfer $transfer, User $user): void
     {
-        if ($transfer->status !== 'approved') {
+        if ($transfer->status !== TransferStatus::APPROVED->value) {
             throw new TransferException('Only approved transfers can be marked in transit.');
         }
 

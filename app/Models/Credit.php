@@ -2,6 +2,10 @@
 
 namespace App\Models;
 
+use App\Enums\CreditStatus;
+use App\Enums\CreditType;
+use App\Enums\PaymentMethod;
+use App\Enums\PaymentStatus;
 use App\Traits\HasBranch;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -295,7 +299,7 @@ class Credit extends Model
     public function scopeActive($query)
     {
         return $query->where(function ($q) {
-            $q->whereIn('status', ['active', 'partial', 'overdue'])
+            $q->whereIn('status', CreditStatus::openStatuses())
                 ->where('balance', '>', 0);
         });
     }
@@ -306,7 +310,7 @@ class Credit extends Model
     public function scopePaid($query)
     {
         return $query->where(function ($q) {
-            $q->where('status', 'paid')
+            $q->where('status', CreditStatus::PAID->value)
                 ->orWhere('balance', '<=', 0);
         });
     }
@@ -316,7 +320,7 @@ class Credit extends Model
      */
     public function scopeReceivables($query)
     {
-        return $query->where('credit_type', 'receivable');
+        return $query->where('credit_type', CreditType::RECEIVABLE->value);
     }
 
     /**
@@ -324,7 +328,7 @@ class Credit extends Model
      */
     public function scopePayables($query)
     {
-        return $query->where('credit_type', 'payable');
+        return $query->where('credit_type', CreditType::PAYABLE->value);
     }
 
     /**
@@ -332,7 +336,7 @@ class Credit extends Model
      */
     public function scopeOverdue($query)
     {
-        return $query->where('due_date', '<', now())->whereIn('status', ['active', 'partial']);
+        return $query->where('due_date', '<', now())->whereIn('status', [CreditStatus::ACTIVE->value, CreditStatus::PARTIAL->value]);
     }
 
     /**
@@ -379,15 +383,15 @@ class Credit extends Model
 
         // Update purchase payment status and method
         if ($this->balance <= 0) {
-            $purchase->payment_status = 'paid';
+            $purchase->payment_status = PaymentStatus::PAID->value;
             // Change payment method from full_credit to cash when fully paid
-            if ($purchase->payment_method === 'full_credit') {
-                $purchase->payment_method = 'cash';
+            if ($purchase->payment_method === PaymentMethod::FULL_CREDIT->value) {
+                $purchase->payment_method = PaymentMethod::CASH->value;
             }
         } elseif ($this->paid_amount > 0) {
-            $purchase->payment_status = 'partial';
+            $purchase->payment_status = PaymentStatus::PARTIAL->value;
         } else {
-            $purchase->payment_status = 'due';
+            $purchase->payment_status = PaymentStatus::DUE->value;
         }
 
         $purchase->save();
@@ -413,11 +417,11 @@ class Credit extends Model
 
         // Update sale payment status
         if ($this->balance <= 0) {
-            $sale->payment_status = 'paid';
+            $sale->payment_status = PaymentStatus::PAID->value;
         } elseif ($this->paid_amount > 0) {
-            $sale->payment_status = 'partial';
+            $sale->payment_status = PaymentStatus::PARTIAL->value;
         } else {
-            $sale->payment_status = 'due';
+            $sale->payment_status = PaymentStatus::DUE->value;
         }
 
         $sale->save();

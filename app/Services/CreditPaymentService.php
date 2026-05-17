@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Enums\CreditStatus;
+use App\Enums\CreditType;
+use App\Enums\PaymentMethod;
 use App\Models\Credit;
 use App\Models\Item;
 use App\Models\Purchase;
@@ -32,7 +35,7 @@ class CreditPaymentService
     public function isEligibleForClosingOffer(Credit $credit): bool
     {
         // Only apply to payable credits (we owe the supplier)
-        if ($credit->credit_type !== 'payable') {
+        if ($credit->credit_type !== CreditType::PAYABLE->value) {
             return false;
         }
         
@@ -56,7 +59,7 @@ class CreditPaymentService
     public function requiresClosingPricesForFullPayment(Credit $credit): bool
     {
         // Only apply to payable credits
-        if ($credit->credit_type !== 'payable') {
+        if ($credit->credit_type !== CreditType::PAYABLE->value) {
             return false;
         }
         
@@ -75,7 +78,7 @@ class CreditPaymentService
     public function calculateClosingOffer(Credit $credit): array
     {
         // Only for payable credits
-        if ($credit->credit_type !== 'payable') {
+        if ($credit->credit_type !== CreditType::PAYABLE->value) {
             return [
                 'eligible' => false,
                 'message' => 'Closing offers are only available for payable credits (supplier debts)'
@@ -226,7 +229,7 @@ class CreditPaymentService
     public function processEarlyClosureWithNegotiatedPrices(Credit $credit, array $negotiatedPrices, bool $forceClose = false): array
     {
         // Only for payable credits
-        if ($credit->credit_type !== 'payable') {
+        if ($credit->credit_type !== CreditType::PAYABLE->value) {
             return [
                 'success' => false,
                 'message' => 'Early closure is only available for payable credits'
@@ -234,16 +237,16 @@ class CreditPaymentService
         }
         
         // Check if credit is already fully paid or closed
-        if ($credit->status === 'paid' || $credit->balance <= 0) {
+        if ($credit->status === CreditStatus::PAID->value || $credit->balance <= 0) {
             return [
                 'success' => false,
                 'message' => 'Credit is already fully paid or closed'
             ];
         }
-        
+
         // Check if closing payment already exists
         $existingClosingPayment = $credit->payments()
-            ->where('payment_method', 'other')
+            ->where('payment_method', PaymentMethod::OTHER->value)
             ->where('reference_no', 'LIKE', 'EARLY-CLOSURE-%')
             ->first();
             
@@ -283,17 +286,17 @@ class CreditPaymentService
                 // Lock the credit row so concurrent closure attempts block until this commit
                 $locked = Credit::lockForUpdate()->find($credit->id);
 
-                if ($locked->status === 'paid' || $locked->balance <= 0) {
+                if ($locked->status === CreditStatus::PAID->value || $locked->balance <= 0) {
                     throw new \RuntimeException('Credit was already closed by a concurrent request.');
                 }
 
-                if ($locked->payments()->where('payment_method', 'other')->where('reference_no', 'LIKE', 'EARLY-CLOSURE-%')->exists()) {
+                if ($locked->payments()->where('payment_method', PaymentMethod::OTHER->value)->where('reference_no', 'LIKE', 'EARLY-CLOSURE-%')->exists()) {
                     throw new \RuntimeException('Closing payment has already been processed for this credit.');
                 }
 
                 $payment = $locked->addPayment(
                     $actualPaymentAmount,
-                    'other',
+                    PaymentMethod::OTHER->value,
                     'EARLY-CLOSURE-' . $locked->reference_no,
                     'Early closure payment with negotiated prices - Savings: ' . number_format($totalSavings, 2) . ' ETB',
                     now()->format('Y-m-d')
@@ -303,7 +306,7 @@ class CreditPaymentService
                 $locked->amount = $totalClosingCost;
                 $locked->paid_amount = $locked->payments()->sum('amount');
                 $locked->balance = max(0, $totalClosingCost - $locked->paid_amount);
-                $locked->status = $locked->balance <= 0 ? 'paid' : ($locked->paid_amount > 0 ? 'partial' : 'active');
+                $locked->status = $locked->balance <= 0 ? CreditStatus::PAID->value : ($locked->paid_amount > 0 ? CreditStatus::PARTIAL->value : CreditStatus::ACTIVE->value);
                 $locked->save();
 
                 // Sync in-memory model so callers see current state
@@ -358,7 +361,7 @@ class CreditPaymentService
     public function validateFullPaymentWithoutClosingPrices(Credit $credit, float $paymentAmount): array
     {
         // Only check payable credits
-        if ($credit->credit_type !== 'payable') {
+        if ($credit->credit_type !== CreditType::PAYABLE->value) {
             return [
                 'valid' => true,
                 'message' => ''
@@ -391,14 +394,14 @@ class CreditPaymentService
 
         // Find all credits with closing payments
         $creditsWithClosingPayments = \App\Models\Credit::whereHas('payments', function($query) {
-            $query->where('payment_method', 'other')
+            $query->where('payment_method', PaymentMethod::OTHER->value)
                   ->where('reference_no', 'LIKE', 'EARLY-CLOSURE-%');
         })->with(['purchase.items', 'payments'])->get();
 
         foreach ($creditsWithClosingPayments as $credit) {
             try {
                 // Only process payable credits with purchase references
-                if ($credit->credit_type !== 'payable' || $credit->reference_type !== 'purchase' || !$credit->purchase) {
+                if ($credit->credit_type !== CreditType::PAYABLE->value || $credit->reference_type !== 'purchase' || !$credit->purchase) {
                     continue;
                 }
 
@@ -432,11 +435,11 @@ class CreditPaymentService
                 
                 // Update status following documented flow
                 if ($credit->balance <= 0) {
-                    $credit->status = 'paid';
+                    $credit->status = CreditStatus::PAID->value;
                 } elseif ($credit->paid_amount > 0) {
-                    $credit->status = 'partial';
+                    $credit->status = CreditStatus::PARTIAL->value;
                 } else {
-                    $credit->status = 'active';
+                    $credit->status = CreditStatus::ACTIVE->value;
                 }
                 
                 $credit->save();

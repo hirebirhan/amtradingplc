@@ -2,10 +2,13 @@
 
 namespace App\Services\Sales;
 
+use App\Enums\PaymentMethod;
+use App\Enums\PaymentStatus;
+use App\Enums\SaleStatus;
+use App\Models\Branch;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\Warehouse;
-use App\Models\Branch;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
@@ -28,8 +31,8 @@ class SaleFormService
             'is_walking_customer' => false,
             'warehouse_id' => '',
             'branch_id' => '',
-            'payment_method' => 'cash',
-            'payment_status' => 'paid',
+            'payment_method' => PaymentMethod::CASH->value,
+            'payment_status' => PaymentStatus::PAID->value,
             'tax' => 0,
             'shipping' => 0,
             'transaction_number' => '',
@@ -165,31 +168,31 @@ class SaleFormService
     private function setPaymentFields(Sale $sale, array $form, float $totalAmount): void
     {
         switch ($form['payment_method']) {
-            case 'cash':
-            case 'bank_transfer':
-            case 'telebirr':
+            case PaymentMethod::CASH->value:
+            case PaymentMethod::BANK_TRANSFER->value:
+            case PaymentMethod::TELEBIRR->value:
                 $sale->paid_amount = $totalAmount;
                 $sale->due_amount = 0;
-                $sale->payment_status = 'paid';
+                $sale->payment_status = PaymentStatus::PAID->value;
                 break;
-            case 'credit_advance':
+            case PaymentMethod::CREDIT_ADVANCE->value:
                 $sale->paid_amount = $form['advance_amount'];
                 $sale->advance_amount = $form['advance_amount'];
                 $sale->due_amount = $totalAmount - $form['advance_amount'];
-                $sale->payment_status = 'partial';
+                $sale->payment_status = PaymentStatus::PARTIAL->value;
                 break;
-            case 'full_credit':
+            case PaymentMethod::FULL_CREDIT->value:
                 $sale->paid_amount = 0;
                 $sale->due_amount = $totalAmount;
-                $sale->payment_status = 'due';
+                $sale->payment_status = PaymentStatus::DUE->value;
                 break;
         }
 
-        if (in_array($form['payment_method'], ['telebirr', 'bank_transfer'], true)) {
+        if (in_array($form['payment_method'], [PaymentMethod::TELEBIRR->value, PaymentMethod::BANK_TRANSFER->value], true)) {
             $sale->transaction_number = $form['transaction_number'];
         }
 
-        if ($form['payment_method'] === 'bank_transfer') {
+        if ($form['payment_method'] === PaymentMethod::BANK_TRANSFER->value) {
             $sale->bank_account_id = $form['bank_account_id'] ?? null;
         }
     }

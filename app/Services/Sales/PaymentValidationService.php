@@ -2,29 +2,31 @@
 
 namespace App\Services\Sales;
 
-use App\Models\Sale;
-use App\Models\Purchase;
-use App\Models\SalePayment;
+use App\Enums\PaymentMethod;
+use App\Enums\PaymentStatus;
 use App\Models\CreditPayment;
+use App\Models\Purchase;
+use App\Models\Sale;
+use App\Models\SalePayment;
 
 class PaymentValidationService
 {
     public function updatePaymentStatus(array &$form, float $totalAmount): void
     {
         switch ($form['payment_method']) {
-            case 'cash':
-            case 'bank_transfer':
-            case 'telebirr':
-                $form['payment_status'] = 'paid';
+            case PaymentMethod::CASH->value:
+            case PaymentMethod::BANK_TRANSFER->value:
+            case PaymentMethod::TELEBIRR->value:
+                $form['payment_status'] = PaymentStatus::PAID->value;
                 break;
-            case 'credit_advance':
-                $form['payment_status'] = 'partial';
+            case PaymentMethod::CREDIT_ADVANCE->value:
+                $form['payment_status'] = PaymentStatus::PARTIAL->value;
                 if ($totalAmount > 0 && (empty($form['advance_amount']) || $form['advance_amount'] == 0)) {
-                    $form['advance_amount'] = round($totalAmount * 0.2, 2); // Default 20%
+                    $form['advance_amount'] = round($totalAmount * 0.2, 2);
                 }
                 break;
-            case 'full_credit':
-                $form['payment_status'] = 'due';
+            case PaymentMethod::FULL_CREDIT->value:
+                $form['payment_status'] = PaymentStatus::DUE->value;
                 break;
         }
     }
@@ -32,15 +34,15 @@ class PaymentValidationService
     public function isPaymentMethodValid(array $form, float $totalAmount): bool
     {
         switch ($form['payment_method']) {
-            case 'telebirr':
-                return !empty($form['transaction_number']) && 
+            case PaymentMethod::TELEBIRR->value:
+                return !empty($form['transaction_number']) &&
                        strlen((string) $form['transaction_number']) >= 5;
-            case 'bank_transfer':
-                return !empty($form['transaction_number']) && 
+            case PaymentMethod::BANK_TRANSFER->value:
+                return !empty($form['transaction_number']) &&
                        strlen((string) $form['transaction_number']) >= 5 &&
                        !empty($form['bank_account_id']);
-            case 'credit_advance':
-                return $form['advance_amount'] > 0 && 
+            case PaymentMethod::CREDIT_ADVANCE->value:
+                return $form['advance_amount'] > 0 &&
                        $form['advance_amount'] < $totalAmount;
             default:
                 return true;

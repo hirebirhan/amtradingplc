@@ -2,6 +2,7 @@
 
 namespace App\Services\Sales;
 
+use App\Enums\PaymentMethod;
 use Illuminate\Support\Facades\Auth;
 
 class SaleValidationService
@@ -26,7 +27,7 @@ class SaleValidationService
             }
         }
 
-        if ($form['payment_method'] === 'credit_advance') {
+        if ($form['payment_method'] === PaymentMethod::CREDIT_ADVANCE->value) {
             if (empty($form['advance_amount']) || $form['advance_amount'] <= 0) {
                 $errors['form.advance_amount'] = 'Advance amount is required and must be greater than zero';
             } elseif ($form['advance_amount'] > $totalAmount) {
