@@ -224,41 +224,29 @@ class Sale extends Model
     public function processSale(): bool
     {
         if ($this->status === 'completed') {
-            return false; // Already processed
+            return false;
         }
 
-        // Start a transaction
-        DB::beginTransaction();
-
-        try {
-            // Update stock for each item based on sale type
+        return DB::transaction(function () {
             foreach ($this->items as $saleItem) {
                 $item = $saleItem->item;
 
                 if ($this->warehouse_id) {
-                    // Warehouse sale - deduct from specific warehouse
                     $this->processWarehouseSaleItem($item, $saleItem);
                 } else {
-                    // Branch sale - deduct from warehouses serving the branch
                     $this->processBranchSaleItem($item, $saleItem);
                 }
             }
 
-            // Update sale status
             $this->status = 'completed';
             $this->save();
 
-            // Create credit record for credit-based payment methods
             if (in_array($this->payment_method, ['full_credit', 'credit_advance'], true)) {
                 $this->createCreditRecord();
             }
 
-            DB::commit();
             return true;
-        } catch (\Exception $e) {
-            DB::rollBack();
-            throw $e;
-        }
+        });
     }
 
     /**
@@ -281,9 +269,10 @@ class Sale extends Model
             throw new \Exception('Branch isolation violation: Warehouse does not belong to sale branch');
         }
         
-        // Get existing stock or create with 0 if doesn't exist
+        // Get existing stock with a row lock to prevent concurrent sales from reading stale quantity
         $stock = Stock::where('warehouse_id', $this->warehouse_id)
             ->where('item_id', $item->id)
+            ->lockForUpdate()
             ->first();
             
         if (!$stock) {
@@ -336,10 +325,11 @@ class Sale extends Model
      */
     private function processBranchSaleItem($item, $saleItem): void
     {
-        // Get all stocks from warehouses in this branch (including zero/negative)
+        // Get all stocks from warehouses in this branch with row locks to prevent concurrent overselling
         $stocks = Stock::where('item_id', $item->id)
             ->where('branch_id', $this->branch_id)
             ->orderBy('quantity', 'desc')
+            ->lockForUpdate()
             ->get();
 
         if ($stocks->isEmpty()) {

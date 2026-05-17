@@ -8,6 +8,7 @@ use App\Models\Credit;
 use App\Models\Item;
 use App\Models\Purchase;
 use App\Models\Sale;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Collection;
 
 class CreditPaymentService
@@ -278,64 +279,64 @@ class CreditPaymentService
         $willBeFullyPaid = ($totalSavings >= $credit->balance);
 
         try {
-            // Create the closing payment
-            $payment = $credit->addPayment(
-                $actualPaymentAmount,
-                'other',
-                'EARLY-CLOSURE-' . $credit->reference_no,
-                'Early closure payment with negotiated prices - Savings: ' . number_format($totalSavings, 2) . ' ETB',
-                now()->format('Y-m-d')
-            );
+            $result = DB::transaction(function () use ($credit, $savingsCalculation, $totalSavings, $actualPaymentAmount) {
+                // Lock the credit row so concurrent closure attempts block until this commit
+                $locked = Credit::lockForUpdate()->find($credit->id);
 
-            // For closing payments, we need to adjust the credit amount to reflect negotiated prices
-            // This ensures the credit is properly marked as paid
-            $totalClosingCost = $savingsCalculation['total_closing_cost'];
-            $effectiveAmount = $totalClosingCost; // The actual amount we need to pay
-            
-            // Update credit to reflect the negotiated total
-            $credit->amount = $effectiveAmount;
-            $credit->paid_amount = $credit->payments()->sum('amount');
-            $credit->balance = max(0, $effectiveAmount - $credit->paid_amount);
-            
-            // Update status following documented flow
-            if ($credit->balance <= 0) {
-                $credit->status = 'paid';
-            } elseif ($credit->paid_amount > 0) {
-                $credit->status = 'partial';
-            } else {
-                $credit->status = 'active';
-            }
-            
-            $credit->save();
+                if ($locked->status === 'paid' || $locked->balance <= 0) {
+                    throw new \RuntimeException('Credit was already closed by a concurrent request.');
+                }
 
-            // Update purchase items with closing prices and profit/loss calculations
-            if ($credit->reference_type === 'purchase' && $credit->reference_id) {
-                $purchase = $credit->purchase;
-                if ($purchase) {
-                    // Store total savings in the purchase record
-                    $purchase->discount = $totalSavings;
-                    $purchase->save();
-                    
-                    // Update each purchase item with closing prices and profit/loss
-                    foreach ($savingsCalculation['items'] as $itemData) {
-                        $purchaseItem = $purchase->items()->where('item_id', $itemData['item_id'])->first();
-                        if ($purchaseItem) {
-                            // Store the negotiated unit price (per base unit)
-                            $purchaseItem->closing_unit_price = $itemData['closing_price_per_item'];
-                            // Store the total closing cost for this item
-                            $purchaseItem->total_closing_cost = $itemData['closing_total_cost'];
-                            // Store the profit/loss for this item
-                            $purchaseItem->profit_loss_per_item = $itemData['profit_loss'];
-                            $purchaseItem->save();
+                if ($locked->payments()->where('payment_method', 'other')->where('reference_no', 'LIKE', 'EARLY-CLOSURE-%')->exists()) {
+                    throw new \RuntimeException('Closing payment has already been processed for this credit.');
+                }
+
+                $payment = $locked->addPayment(
+                    $actualPaymentAmount,
+                    'other',
+                    'EARLY-CLOSURE-' . $locked->reference_no,
+                    'Early closure payment with negotiated prices - Savings: ' . number_format($totalSavings, 2) . ' ETB',
+                    now()->format('Y-m-d')
+                );
+
+                $totalClosingCost = $savingsCalculation['total_closing_cost'];
+                $locked->amount = $totalClosingCost;
+                $locked->paid_amount = $locked->payments()->sum('amount');
+                $locked->balance = max(0, $totalClosingCost - $locked->paid_amount);
+                $locked->status = $locked->balance <= 0 ? 'paid' : ($locked->paid_amount > 0 ? 'partial' : 'active');
+                $locked->save();
+
+                // Sync in-memory model so callers see current state
+                $credit->amount      = $locked->amount;
+                $credit->paid_amount = $locked->paid_amount;
+                $credit->balance     = $locked->balance;
+                $credit->status      = $locked->status;
+
+                if ($locked->reference_type === 'purchase' && $locked->reference_id) {
+                    $purchase = $locked->purchase;
+                    if ($purchase) {
+                        $purchase->discount = $totalSavings;
+                        $purchase->save();
+
+                        foreach ($savingsCalculation['items'] as $itemData) {
+                            $purchaseItem = $purchase->items()->where('item_id', $itemData['item_id'])->first();
+                            if ($purchaseItem) {
+                                $purchaseItem->closing_unit_price   = $itemData['closing_price_per_item'];
+                                $purchaseItem->total_closing_cost   = $itemData['closing_total_cost'];
+                                $purchaseItem->profit_loss_per_item = $itemData['profit_loss'];
+                                $purchaseItem->save();
+                            }
                         }
                     }
                 }
-            }
+
+                return $payment;
+            });
 
             return [
                 'success' => true,
                 'message' => 'Credit closed successfully with negotiated prices. Savings: ' . number_format($totalSavings, 2) . ' ETB',
-                'payment' => $payment,
+                'payment' => $result,
                 'final_balance' => (float) $credit->balance,
                 'savings' => $totalSavings,
                 'actual_payment_amount' => $actualPaymentAmount,

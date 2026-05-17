@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\DB;
 
 class Credit extends Model
 {
@@ -176,47 +177,46 @@ class Credit extends Model
      */
     public function addPayment(float $amount, string $paymentMethod, ?string $reference = null, ?string $notes = null, ?string $paymentDate = null, ?string $kind = 'regular', ?string $referenceField = null, ?string $receiverBankName = null, ?string $receiverAccountHolder = null, ?string $receiverAccountNumber = null): CreditPayment
     {
+        return DB::transaction(function () use ($amount, $paymentMethod, $reference, $notes, $paymentDate, $kind, $referenceField, $receiverBankName, $receiverAccountHolder, $receiverAccountNumber) {
+            // Lock the credit row so concurrent payments read the committed balance
+            $locked = static::lockForUpdate()->find($this->id);
 
-        $payment = new CreditPayment([
-            'amount' => $amount,
-            'kind' => $kind,
-            'payment_method' => $paymentMethod,
-            'reference_no' => $reference,
-            'payment_date' => $paymentDate ? date('Y-m-d', strtotime($paymentDate)) : now(),
-            'notes' => $notes,
-            'reference' => $referenceField,
-            'receiver_bank_name' => $receiverBankName,
-            'receiver_account_holder' => $receiverAccountHolder,
-            'receiver_account_number' => $receiverAccountNumber,
-            'user_id' => auth()->id(),
-        ]);
+            $payment = new CreditPayment([
+                'amount' => $amount,
+                'kind' => $kind,
+                'payment_method' => $paymentMethod,
+                'reference_no' => $reference,
+                'payment_date' => $paymentDate ? date('Y-m-d', strtotime($paymentDate)) : now(),
+                'notes' => $notes,
+                'reference' => $referenceField,
+                'receiver_bank_name' => $receiverBankName,
+                'receiver_account_holder' => $receiverAccountHolder,
+                'receiver_account_number' => $receiverAccountNumber,
+                'user_id' => auth()->id(),
+            ]);
 
-        $this->payments()->save($payment);
+            $locked->payments()->save($payment);
 
-        // Update credit amounts
-        $this->paid_amount += $amount;
-        $this->balance = max(0, $this->amount - $this->paid_amount);
+            $locked->paid_amount += $amount;
+            $locked->balance = max(0, $locked->amount - $locked->paid_amount);
+            $locked->status = $locked->balance <= 0 ? 'paid' : 'partial';
+            $locked->save();
 
-        // Update credit status based on balance
-        if ($this->balance <= 0) {
-            $this->status = 'paid';
-        } else {
-            $this->status = 'partial';
-        }
+            // Sync in-memory model to match persisted state
+            $this->paid_amount = $locked->paid_amount;
+            $this->balance = $locked->balance;
+            $this->status = $locked->status;
 
-        $this->save();
+            if ($locked->reference_type === 'purchase' && $locked->reference_id) {
+                $locked->updatePurchasePaymentStatus();
+            }
 
-        // Update related purchase payment status if this is a purchase credit
-        if ($this->reference_type === 'purchase' && $this->reference_id) {
-            $this->updatePurchasePaymentStatus();
-        }
+            if ($locked->reference_type === 'sale' && $locked->reference_id) {
+                $locked->updateSalePaymentStatus();
+            }
 
-        // Update related sale payment status if this is a sale credit
-        if ($this->reference_type === 'sale' && $this->reference_id) {
-            $this->updateSalePaymentStatus();
-        }
-
-        return $payment;
+            return $payment;
+        });
     }
 
     /**
