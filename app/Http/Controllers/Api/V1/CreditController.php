@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\V1\Credits\ClosingOfferRequest;
 use App\Http\Requests\Api\V1\Credits\StoreCreditPaymentRequest;
 use App\Http\Resources\Api\V1\CreditPaymentResource;
 use App\Http\Resources\Api\V1\CreditResource;
@@ -86,7 +87,6 @@ final class CreditController extends Controller
     public function addPayment(StoreCreditPaymentRequest $request, Credit $credit): CreditPaymentResource
     {
         $this->authorize('update', $credit);
-        $request->validate(['amount' => ['max:'.$credit->balance]]);
         $payment = $credit->addPayment(
             amount: (float) $request->input('amount'),
             paymentMethod: $request->input('payment_method'),
@@ -122,11 +122,10 @@ final class CreditController extends Controller
         )),
         responses: [new OA\Response(response: 200, description: 'Profit/loss calculation')]
     )]
-    public function calculateClosingOffer(Request $request, Credit $credit): JsonResponse
+    public function calculateClosingOffer(ClosingOfferRequest $request, Credit $credit): JsonResponse
     {
         $this->authorize('update', $credit);
         abort_unless($this->service->isEligibleForClosingOffer($credit), 403, 'Credit is not eligible for a closing offer.');
-        $request->validate(['negotiated_prices' => ['required', 'array'], 'negotiated_prices.*.item_id' => ['required', 'exists:items,id'], 'negotiated_prices.*.price' => ['required', 'numeric', 'min:0']]);
         $result = $this->service->calculateProfitLossFromNegotiatedPrices($credit, $request->input('negotiated_prices'));
 
         return response()->json(['data' => $result]);
@@ -143,11 +142,10 @@ final class CreditController extends Controller
         )),
         responses: [new OA\Response(response: 200, description: 'Closing offer accepted')]
     )]
-    public function acceptClosingOffer(Request $request, Credit $credit): JsonResponse
+    public function acceptClosingOffer(ClosingOfferRequest $request, Credit $credit): JsonResponse
     {
         $this->authorize('update', $credit);
         abort_unless($this->service->isEligibleForClosingOffer($credit), 403, 'Credit is not eligible for a closing offer.');
-        $request->validate(['negotiated_prices' => ['required', 'array'], 'negotiated_prices.*.item_id' => ['required', 'exists:items,id'], 'negotiated_prices.*.price' => ['required', 'numeric', 'min:0']]);
         $result = $this->service->processEarlyClosureWithNegotiatedPrices($credit, $request->input('negotiated_prices'), forceClose: false);
 
         return response()->json(['data' => $result]);

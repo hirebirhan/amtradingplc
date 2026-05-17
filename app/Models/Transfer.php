@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\TransferStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -58,7 +59,7 @@ class Transfer extends Model
                 $transfer->destination_type = 'branch';
             }
             if (empty($transfer->status)) {
-                $transfer->status = 'pending';
+                $transfer->status = TransferStatus::PENDING->value;
             }
         });
 
@@ -294,12 +295,12 @@ class Transfer extends Model
      */
     public function approve(User $user): void
     {
-        if ($this->status !== 'pending') {
+        if ($this->status !== TransferStatus::PENDING->value) {
             throw new \Exception('Only pending transfers can be approved.');
         }
 
         $this->update([
-            'status'       => 'approved',
+            'status'       => TransferStatus::APPROVED->value,
             'approved_by'  => $user->id,
             'approved_at'  => now(),
         ]);
@@ -310,11 +311,11 @@ class Transfer extends Model
      */
     public function reject(User $user): void
     {
-        if ($this->status !== 'pending') {
+        if ($this->status !== TransferStatus::PENDING->value) {
             throw new \Exception('Only pending transfers can be rejected.');
         }
         $this->update([
-            'status'       => 'rejected',
+            'status'       => TransferStatus::REJECTED->value,
             'approved_by'  => $user->id,
             'approved_at'  => now(),
         ]);
@@ -325,11 +326,11 @@ class Transfer extends Model
      */
     public function cancel(User $user): void
     {
-        if (!in_array($this->status, ['pending', 'approved'])) {
+        if (!in_array($this->status, [TransferStatus::PENDING->value, TransferStatus::APPROVED->value])) {
             throw new \Exception('Only pending or approved transfers can be cancelled.');
         }
         $this->update([
-            'status' => 'cancelled',
+            'status' => TransferStatus::CANCELLED->value,
         ]);
     }
 

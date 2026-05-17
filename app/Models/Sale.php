@@ -16,7 +16,11 @@ use App\Models\User;
 use App\Models\Credit;
 use App\Models\CreditPayment;
 use App\Models\Stock;
+use App\Enums\CreditStatus;
+use App\Enums\CreditType;
+use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
+use App\Enums\SaleStatus;
 use App\Traits\HasBranch;
 use App\Traits\HasBranchAuthorization;
 
@@ -223,42 +227,30 @@ class Sale extends Model
      */
     public function processSale(): bool
     {
-        if ($this->status === 'completed') {
-            return false; // Already processed
+        if ($this->status === SaleStatus::COMPLETED->value) {
+            return false;
         }
 
-        // Start a transaction
-        DB::beginTransaction();
-
-        try {
-            // Update stock for each item based on sale type
+        return DB::transaction(function () {
             foreach ($this->items as $saleItem) {
                 $item = $saleItem->item;
 
                 if ($this->warehouse_id) {
-                    // Warehouse sale - deduct from specific warehouse
                     $this->processWarehouseSaleItem($item, $saleItem);
                 } else {
-                    // Branch sale - deduct from warehouses serving the branch
                     $this->processBranchSaleItem($item, $saleItem);
                 }
             }
 
-            // Update sale status
-            $this->status = 'completed';
+            $this->status = SaleStatus::COMPLETED->value;
             $this->save();
 
-            // Create credit record for credit-based payment methods
-            if (in_array($this->payment_method, ['full_credit', 'credit_advance'], true)) {
+            if (in_array($this->payment_method, [PaymentMethod::FULL_CREDIT->value, PaymentMethod::CREDIT_ADVANCE->value], true)) {
                 $this->createCreditRecord();
             }
 
-            DB::commit();
             return true;
-        } catch (\Exception $e) {
-            DB::rollBack();
-            throw $e;
-        }
+        });
     }
 
     /**
@@ -281,9 +273,10 @@ class Sale extends Model
             throw new \Exception('Branch isolation violation: Warehouse does not belong to sale branch');
         }
         
-        // Get existing stock or create with 0 if doesn't exist
+        // Get existing stock with a row lock to prevent concurrent sales from reading stale quantity
         $stock = Stock::where('warehouse_id', $this->warehouse_id)
             ->where('item_id', $item->id)
+            ->lockForUpdate()
             ->first();
             
         if (!$stock) {
@@ -336,10 +329,11 @@ class Sale extends Model
      */
     private function processBranchSaleItem($item, $saleItem): void
     {
-        // Get all stocks from warehouses in this branch (including zero/negative)
+        // Get all stocks from warehouses in this branch with row locks to prevent concurrent overselling
         $stocks = Stock::where('item_id', $item->id)
             ->where('branch_id', $this->branch_id)
             ->orderBy('quantity', 'desc')
+            ->lockForUpdate()
             ->get();
 
         if ($stocks->isEmpty()) {
@@ -423,14 +417,14 @@ class Sale extends Model
         }
         
         // Skip credit creation for walking customers with credit payment methods
-        if ($this->is_walking_customer && in_array($this->payment_method, ['full_credit', 'credit_advance'])) {
+        if ($this->is_walking_customer && in_array($this->payment_method, [PaymentMethod::FULL_CREDIT->value, PaymentMethod::CREDIT_ADVANCE->value])) {
             \Log::warning("Attempted to create credit for walking customer sale #{$this->reference_no}. Credits not allowed for walking customers.");
             return;
         }
         
         // Create credit for any sale with outstanding balance
         if ($this->due_amount > 0 && !$this->is_walking_customer) {
-            $status = ($this->paid_amount ?? 0) > 0 ? 'partial' : 'active';
+            $status = ($this->paid_amount ?? 0) > 0 ? CreditStatus::PARTIAL->value : CreditStatus::ACTIVE->value;
 
             $credit = Credit::create([
                 'customer_id' => $this->customer_id,
@@ -440,7 +434,7 @@ class Sale extends Model
                 'reference_no' => $this->reference_no,
                 'reference_type' => 'sale',
                 'reference_id' => $this->id,
-                'credit_type' => 'receivable',
+                'credit_type' => CreditType::RECEIVABLE->value,
                 'description' => 'Credit for sale #' . $this->reference_no,
                 'credit_date' => $this->sale_date,
                 'due_date' => $this->sale_date->addDays(30),
@@ -452,10 +446,9 @@ class Sale extends Model
 
             // Record advance payment if one was made
             if (($this->advance_amount ?? 0) > 0) {
-                $validCreditPaymentMethods = ['cash', 'bank_transfer', 'telebirr', 'credit_card', 'check', 'other'];
-                $advanceMethod = in_array($this->payment_method, $validCreditPaymentMethods, true)
+                $advanceMethod = in_array($this->payment_method, PaymentMethod::forOperationalPaymentValues(), true)
                     ? $this->payment_method
-                    : 'cash';
+                    : PaymentMethod::CASH->value;
 
                 CreditPayment::create([
                     'credit_id'      => $credit->id,
@@ -530,16 +523,16 @@ class Sale extends Model
             
             // Update credit status following documented flow
             if ($credit->balance <= 0) {
-                $credit->status = 'paid';
+                $credit->status = CreditStatus::PAID->value;
             } elseif ($credit->paid_amount > 0) {
-                $credit->status = 'partial';
+                $credit->status = CreditStatus::PARTIAL->value;
             } else {
-                $credit->status = 'active';
+                $credit->status = CreditStatus::ACTIVE->value;
             }
-            
+
             $credit->save();
         }
-        
+
         // Update sale payment status to sync with credit
         $this->updatePaymentStatus();
         $this->save();
@@ -562,13 +555,13 @@ class Sale extends Model
     public function calculateCorrectPaymentStatus(): string
     {
         switch ($this->payment_method) {
-            case 'cash':
-            case 'bank_transfer':
-            case 'telebirr':
+            case PaymentMethod::CASH->value:
+            case PaymentMethod::BANK_TRANSFER->value:
+            case PaymentMethod::TELEBIRR->value:
                 return PaymentStatus::PAID->value;
-            case 'credit_advance':
+            case PaymentMethod::CREDIT_ADVANCE->value:
                 return PaymentStatus::PARTIAL->value;
-            case 'full_credit':
+            case PaymentMethod::FULL_CREDIT->value:
                 return PaymentStatus::DUE->value;
             default:
                 // Fallback to amount-based calculation

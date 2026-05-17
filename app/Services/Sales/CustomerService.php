@@ -2,6 +2,7 @@
 
 namespace App\Services\Sales;
 
+use App\Enums\PaymentMethod;
 use App\Models\Customer;
 use Illuminate\Support\Collection;
 
@@ -40,6 +41,6 @@ class CustomerService
 
     public function validateWalkingCustomerPayment(string $paymentMethod): bool
     {
-        return !in_array($paymentMethod, ['full_credit', 'credit_advance']);
+        return !in_array($paymentMethod, [PaymentMethod::FULL_CREDIT->value, PaymentMethod::CREDIT_ADVANCE->value]);
     }
 }

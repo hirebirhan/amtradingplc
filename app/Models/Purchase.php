@@ -15,6 +15,9 @@ use App\Models\User;
 use App\Models\Credit;
 use App\Models\Stock;
 use App\Models\StockHistory;
+use App\Enums\CreditStatus;
+use App\Enums\CreditType;
+use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
 use App\Enums\PurchaseStatus;
 use App\Traits\HasBranch;
@@ -92,8 +95,8 @@ class Purchase extends Model
         // Auto-process purchase after creation based on payment method
         static::created(function ($purchase) {
             // Only auto-process cash/immediate payments that are fully paid
-            if (in_array($purchase->payment_method, ['cash', 'bank_transfer', 'telebirr']) && 
-                $purchase->payment_status === 'paid') {
+            if (in_array($purchase->payment_method, [PaymentMethod::CASH->value, PaymentMethod::BANK_TRANSFER->value, PaymentMethod::TELEBIRR->value]) &&
+                $purchase->payment_status === PaymentStatus::PAID->value) {
                 try {
                     // Load items relationship before processing
                     $purchase->load('items');
@@ -240,7 +243,7 @@ class Purchase extends Model
         }
 
         // For paid purchases, allow processing regardless of current status
-        if ($this->payment_status !== 'paid' && $this->status !== PurchaseStatus::CONFIRMED->value) {
+        if ($this->payment_status !== PaymentStatus::PAID->value && $this->status !== PurchaseStatus::CONFIRMED->value) {
             throw new \InvalidArgumentException(
                 "Cannot process purchase with status '{$this->status}' and payment status '{$this->payment_status}'. Only confirmed or paid purchases can be processed."
             );
@@ -358,11 +361,11 @@ class Purchase extends Model
                 'reference_no'   => $this->reference_no,
                 'reference_type' => 'purchase',
                 'reference_id'   => $this->id,
-                'credit_type'    => 'payable',
+                'credit_type'    => CreditType::PAYABLE->value,
                 'description'    => 'Credit for purchase #' . $this->reference_no,
                 'credit_date'    => $this->purchase_date,
                 'due_date'       => now()->addDays(30),
-                'status'         => 'active',
+                'status'         => CreditStatus::ACTIVE->value,
                 'user_id'        => $this->user_id,
                 'branch_id'      => $this->branch_id,
                 'warehouse_id'   => $this->warehouse_id,
@@ -370,10 +373,9 @@ class Purchase extends Model
 
             // Create advance payment record if advance was made
             if ($this->advance_amount > 0) {
-                $validCreditPaymentMethods = ['cash', 'bank_transfer', 'telebirr', 'credit_card', 'check', 'other'];
-                $advanceMethod = in_array($this->payment_method, $validCreditPaymentMethods, true)
+                $advanceMethod = in_array($this->payment_method, PaymentMethod::forOperationalPaymentValues(), true)
                     ? $this->payment_method
-                    : 'cash';
+                    : PaymentMethod::CASH->value;
 
                 $credit->addPayment(
                     $this->advance_amount,
@@ -422,13 +424,13 @@ class Purchase extends Model
             
             // Update credit status following documented flow
             if ($credit->balance <= 0) {
-                $credit->status = 'paid';
+                $credit->status = CreditStatus::PAID->value;
             } elseif ($credit->paid_amount > 0) {
-                $credit->status = 'partial';
+                $credit->status = CreditStatus::PARTIAL->value;
             } else {
-                $credit->status = 'active';
+                $credit->status = CreditStatus::ACTIVE->value;
             }
-            
+
             $credit->save();
         }
 

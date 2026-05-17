@@ -3,6 +3,7 @@
 namespace App\Policies;
 
 use App\Enums\AuthorizationLevel;
+use App\Enums\TransferStatus;
 use App\Models\Transfer;
 use App\Models\User;
 
@@ -79,7 +80,7 @@ class TransferPolicy
 
         return match (AuthorizationLevel::fromUser($user)) {
             AuthorizationLevel::FULL_ACCESS => true,
-            AuthorizationLevel::BRANCH_RESTRICTED => $transfer->status === 'pending' && $transfer->source_type === 'branch' && $transfer->source_id === $user->branch_id,
+            AuthorizationLevel::BRANCH_RESTRICTED => $transfer->status === TransferStatus::PENDING->value && $transfer->source_type === 'branch' && $transfer->source_id === $user->branch_id,
             AuthorizationLevel::NO_ACCESS => false,
         };
     }
