@@ -3,9 +3,13 @@
 namespace App\Services;
 
 use App\Enums\PaymentMethod;
+use App\Enums\SaleStatus;
 use App\Models\Sale;
 use App\Models\SaleItem;
+use App\Models\Stock;
+use App\Models\StockHistory;
 use App\Models\User;
+use App\Models\Warehouse;
 use Illuminate\Support\Facades\DB;
 
 class SaleService
@@ -16,7 +20,6 @@ class SaleService
             $items = $data['items'];
             unset($data['items']);
 
-            // Resolve branch/warehouse from actor if not provided
             $branchId    = (int) ($data['branch_id']    ?? $actor->branch_id    ?? 0) ?: null;
             $warehouseId = (int) ($data['warehouse_id'] ?? $actor->warehouse_id ?? 0) ?: null;
 
@@ -62,7 +65,7 @@ class SaleService
             }
 
             $sale->load('items.item');
-            $sale->processSale();
+            $this->processStockForSale($sale);
 
             return $sale->fresh();
         });
@@ -75,5 +78,145 @@ class SaleService
             PaymentMethod::CREDIT_ADVANCE->value => [$advance, $total - $advance, 'partial'],
             default                              => [$total,  0,     'paid'],
         };
+    }
+
+    private function processStockForSale(Sale $sale): void
+    {
+        if ($sale->status === SaleStatus::COMPLETED->value) {
+            return;
+        }
+
+        foreach ($sale->items as $saleItem) {
+            $item = $saleItem->item;
+            if ($sale->warehouse_id) {
+                $this->processWarehouseSaleItem($sale, $item, $saleItem);
+            } else {
+                $this->processBranchSaleItem($sale, $item, $saleItem);
+            }
+        }
+
+        $sale->status = SaleStatus::COMPLETED->value;
+        $sale->save();
+
+        if (in_array($sale->payment_method, [PaymentMethod::FULL_CREDIT->value, PaymentMethod::CREDIT_ADVANCE->value], true)) {
+            $sale->createCreditRecord();
+        }
+    }
+
+    private function processWarehouseSaleItem(Sale $sale, $item, $saleItem): void
+    {
+        $warehouse = Warehouse::with('branches')->find($sale->warehouse_id);
+        if (! $warehouse) {
+            throw new \Exception('Warehouse not found: '.$sale->warehouse_id);
+        }
+
+        $warehouseBranchId = $warehouse->branches->first()?->id;
+        if ($sale->branch_id && $warehouseBranchId !== $sale->branch_id) {
+            throw new \Exception('Branch isolation violation: Warehouse does not belong to sale branch');
+        }
+
+        $stock = Stock::where('warehouse_id', $sale->warehouse_id)
+            ->where('item_id', $item->id)
+            ->lockForUpdate()
+            ->first();
+
+        if (! $stock) {
+            $stock = Stock::create([
+                'warehouse_id' => $sale->warehouse_id,
+                'item_id'      => $item->id,
+                'branch_id'    => $sale->branch_id,
+                'quantity'     => 0,
+                'piece_count'  => 0,
+                'total_units'  => 0,
+                'created_by'   => $sale->user_id,
+            ]);
+        }
+
+        $quantity = $saleItem->quantity;
+        if ($saleItem->isSoldByUnit()) {
+            $quantity = $quantity / max($item->unit_quantity ?? 1, 1);
+        }
+
+        $quantityBefore    = $stock->quantity;
+        $stock->quantity   -= $quantity;
+        $stock->piece_count -= $quantity;
+        $stock->save();
+
+        StockHistory::create([
+            'item_id'         => $item->id,
+            'warehouse_id'    => $sale->warehouse_id,
+            'branch_id'       => $sale->branch_id,
+            'movement_type'   => 'sale',
+            'quantity_change' => -$quantity,
+            'quantity_before' => $quantityBefore,
+            'quantity_after'  => $stock->quantity,
+            'reference_id'    => $sale->id,
+            'reference_type'  => 'sale',
+            'notes'           => 'Sale #'.$sale->reference_no,
+            'created_by'      => $sale->user_id,
+        ]);
+    }
+
+    private function processBranchSaleItem(Sale $sale, $item, $saleItem): void
+    {
+        $stocks = Stock::where('item_id', $item->id)
+            ->where('branch_id', $sale->branch_id)
+            ->orderBy('quantity', 'desc')
+            ->lockForUpdate()
+            ->get();
+
+        if ($stocks->isEmpty()) {
+            $firstWarehouse = Warehouse::whereHas('branches', fn ($q) => $q->where('branches.id', $sale->branch_id))->first();
+            if (! $firstWarehouse) {
+                throw new \Exception('No warehouses found for branch: '.$sale->branch_id);
+            }
+            $stocks = collect([Stock::create([
+                'warehouse_id' => $firstWarehouse->id,
+                'item_id'      => $item->id,
+                'branch_id'    => $sale->branch_id,
+                'quantity'     => 0,
+                'piece_count'  => 0,
+                'total_units'  => 0,
+                'created_by'   => $sale->user_id,
+            ])]);
+        }
+
+        $quantity = $saleItem->quantity;
+        if ($saleItem->isSoldByUnit()) {
+            $quantity = $quantity / max($item->unit_quantity ?? 1, 1);
+        }
+
+        $remainingQuantity = $quantity;
+
+        foreach ($stocks as $stock) {
+            if ($remainingQuantity <= 0) {
+                break;
+            }
+
+            $deductQuantity = $stock->quantity > 0
+                ? min($remainingQuantity, $stock->quantity)
+                : $remainingQuantity;
+
+            $quantityBefore    = $stock->quantity;
+            $stock->quantity   -= $deductQuantity;
+            $stock->piece_count -= $deductQuantity;
+            $stock->save();
+
+            StockHistory::create([
+                'item_id'         => $item->id,
+                'warehouse_id'    => $stock->warehouse_id,
+                'branch_id'       => $sale->branch_id,
+                'movement_type'   => 'sale',
+                'quantity_change' => -$deductQuantity,
+                'quantity_before' => $quantityBefore,
+                'quantity_after'  => $stock->quantity,
+                'reference_id'    => $sale->id,
+                'reference_type'  => 'sale',
+                'notes'           => 'Branch sale #'.$sale->reference_no,
+                'created_by'      => $sale->user_id,
+            ]);
+
+            $remainingQuantity -= $deductQuantity;
+        }
     }
 }

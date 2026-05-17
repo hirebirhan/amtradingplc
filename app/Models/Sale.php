@@ -11,16 +11,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
 use Illuminate\Support\Str;
-use Illuminate\Support\Facades\DB;
-use App\Models\User;
 use App\Models\Credit;
 use App\Models\CreditPayment;
-use App\Models\Stock;
+use App\Models\User;
 use App\Enums\CreditStatus;
 use App\Enums\CreditType;
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
-use App\Enums\SaleStatus;
 use App\Traits\HasBranch;
 use App\Traits\HasBranchAuthorization;
 
@@ -223,190 +220,6 @@ class Sale extends Model
     }
 
     /**
-     * Process the sale and update stock.
-     */
-    public function processSale(): bool
-    {
-        if ($this->status === SaleStatus::COMPLETED->value) {
-            return false;
-        }
-
-        return DB::transaction(function () {
-            foreach ($this->items as $saleItem) {
-                $item = $saleItem->item;
-
-                if ($this->warehouse_id) {
-                    $this->processWarehouseSaleItem($item, $saleItem);
-                } else {
-                    $this->processBranchSaleItem($item, $saleItem);
-                }
-            }
-
-            $this->status = SaleStatus::COMPLETED->value;
-            $this->save();
-
-            if (in_array($this->payment_method, [PaymentMethod::FULL_CREDIT->value, PaymentMethod::CREDIT_ADVANCE->value], true)) {
-                $this->createCreditRecord();
-            }
-
-            return true;
-        });
-    }
-
-    /**
-     * Process stock deduction for warehouse sale.
-     * BUSINESS RULE: Allow negative stock (backorder/pre-order system)
-     */
-    private function processWarehouseSaleItem($item, $saleItem): void
-    {
-        // Ensure warehouse belongs to the sale's branch for branch isolation
-        $warehouse = Warehouse::with('branches')->find($this->warehouse_id);
-        if (!$warehouse) {
-            throw new \Exception('Warehouse not found: ' . $this->warehouse_id);
-        }
-        
-        // Get the branch from warehouse relationship
-        $warehouseBranchId = $warehouse->branches->first()?->id;
-        
-        // Enforce branch isolation: warehouse must belong to sale's branch
-        if ($this->branch_id && $warehouseBranchId !== $this->branch_id) {
-            throw new \Exception('Branch isolation violation: Warehouse does not belong to sale branch');
-        }
-        
-        // Get existing stock with a row lock to prevent concurrent sales from reading stale quantity
-        $stock = Stock::where('warehouse_id', $this->warehouse_id)
-            ->where('item_id', $item->id)
-            ->lockForUpdate()
-            ->first();
-            
-        if (!$stock) {
-            $stock = Stock::create([
-                'warehouse_id' => $this->warehouse_id,
-                'item_id' => $item->id,
-                'branch_id' => $this->branch_id,
-                'quantity' => 0,
-                'piece_count' => 0,
-                'total_units' => 0,
-                'created_by' => $this->user_id
-            ]);
-        }
-
-        $quantity = $saleItem->quantity;
-        
-        // If the item is sold by unit (e.g. grams/liters), calculate the piece equivalent
-        if ($saleItem->isSoldByUnit()) {
-            $unitCapacity = max($item->unit_quantity ?? 1, 1);
-            $quantity = $quantity / $unitCapacity;
-        }
-
-        $quantityBefore = $stock->quantity;
-        $pieceCountBefore = $stock->piece_count ?? 0;
-        
-        // CRITICAL FIX: Update both quantity AND piece_count
-        $stock->quantity -= $quantity;
-        $stock->piece_count -= $quantity;
-        $stock->save();
-        
-        // Create stock history
-        \App\Models\StockHistory::create([
-            'item_id' => $item->id,
-            'warehouse_id' => $this->warehouse_id,
-            'branch_id' => $this->branch_id,
-            'movement_type' => 'sale',
-            'quantity_change' => -$quantity,
-            'quantity_before' => $quantityBefore,
-            'quantity_after' => $stock->quantity,
-            'reference_id' => $this->id,
-            'reference_type' => 'sale',
-            'notes' => 'Sale #' . $this->reference_no,
-            'created_by' => $this->user_id,
-        ]);
-    }
-
-    /**
-     * Process stock deduction for branch sale.
-     * BUSINESS RULE: Allow negative stock (backorder/pre-order system)
-     */
-    private function processBranchSaleItem($item, $saleItem): void
-    {
-        // Get all stocks from warehouses in this branch with row locks to prevent concurrent overselling
-        $stocks = Stock::where('item_id', $item->id)
-            ->where('branch_id', $this->branch_id)
-            ->orderBy('quantity', 'desc')
-            ->lockForUpdate()
-            ->get();
-
-        if ($stocks->isEmpty()) {
-            // Create stock record if none exists
-            $firstWarehouse = \App\Models\Warehouse::whereHas('branches', function($q) {
-                $q->where('branches.id', $this->branch_id);
-            })->first();
-            
-            if ($firstWarehouse) {
-                $stock = Stock::create([
-                    'warehouse_id' => $firstWarehouse->id,
-                    'item_id' => $item->id,
-                    'branch_id' => $this->branch_id,
-                    'quantity' => 0,
-                    'piece_count' => 0,
-                    'total_units' => 0,
-                    'created_by' => $this->user_id
-                ]);
-                $stocks = collect([$stock]);
-            } else {
-                throw new \Exception('No warehouses found for branch: ' . $this->branch_id);
-            }
-        }
-
-        $quantity = $saleItem->quantity;
-        
-        // If the item is sold by unit (e.g. grams/liters), calculate the piece equivalent
-        if ($saleItem->isSoldByUnit()) {
-            $unitCapacity = max($item->unit_quantity ?? 1, 1);
-            $quantity = $quantity / $unitCapacity;
-        }
-
-        $remainingQuantity = $quantity;
-
-        // Deduct from warehouses with positive stock first, then allow negative
-        foreach ($stocks as $stock) {
-            if ($remainingQuantity <= 0) break;
-
-            if ($stock->quantity > 0) {
-                // Deduct from positive stock
-                $deductQuantity = min($remainingQuantity, $stock->quantity);
-            } else {
-                // All positive stock exhausted, put remaining on first warehouse (allow negative)
-                $deductQuantity = $remainingQuantity;
-            }
-            
-            // Update stock - CRITICAL FIX: Update both quantity AND piece_count
-            $quantityBefore = $stock->quantity;
-            $pieceCountBefore = $stock->piece_count ?? 0;
-            $stock->quantity -= $deductQuantity;
-            $stock->piece_count -= $deductQuantity;
-            $stock->save();
-            
-            // Create stock history
-            \App\Models\StockHistory::create([
-                'item_id' => $item->id,
-                'warehouse_id' => $stock->warehouse_id,
-                'branch_id' => $this->branch_id,
-                'movement_type' => 'sale',
-                'quantity_change' => -$deductQuantity,
-                'quantity_before' => $quantityBefore,
-                'quantity_after' => $stock->quantity,
-                'reference_id' => $this->id,
-                'reference_type' => 'sale',
-                'notes' => 'Branch sale #' . $this->reference_no,
-                'created_by' => $this->user_id,
-            ]);
-            
-            $remainingQuantity -= $deductQuantity;
-        }
-    }
-
-    /**
      * Create credit record following Purchase system pattern
      */
     public function createCreditRecord(): void
@@ -461,31 +274,6 @@ class Sale extends Model
                 ]);
             }
         }
-    }
-
-    /**
-     * Deduct sold quantity from purchase quantity by creating negative purchase item
-     */
-    private function deductFromPurchaseQuantity($item, $saleItem): void
-    {
-        $quantity = $saleItem->quantity;
-        $unitCapacity = $item->unit_quantity ?? 1;
-
-        // If sold by unit, convert units to pieces for purchase tracking
-        // (e.g. 1000kg sold / 100kg capacity = 10 pieces)
-        if ($saleItem->isSoldByUnit()) {
-            $quantity = $quantity / $unitCapacity;
-        }
-
-        // Create a negative purchase item to deduct from total purchase quantity
-        PurchaseItem::create([
-            'purchase_id' => null, // No specific purchase (system adjustment)
-            'item_id' => $item->id,
-            'quantity' => -$quantity, // Negative quantity (always in pieces for consistency)
-            'unit_cost' => 0, // No cost for sale deduction
-            'subtotal' => 0, // No cost for sale deduction
-            'notes' => 'Sale deduction (' . ($saleItem->sale_method === 'unit' ? 'unit' : 'piece') . ') - Sale #' . $this->reference_no,
-        ]);
     }
 
     /**
