@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Helpers\UserHelper;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\V1\StockReservations\ExtendReservationRequest;
 use App\Http\Resources\Api\V1\StockReservationResource;
 use App\Models\StockReservation;
 use App\Services\StockMovementService;
@@ -73,11 +74,10 @@ final class StockReservationController extends Controller
         )),
         responses: [new OA\Response(response: 200, description: 'Extended')]
     )]
-    public function extend(Request $request, StockReservation $stockReservation): StockReservationResource
+    public function extend(ExtendReservationRequest $request, StockReservation $stockReservation): StockReservationResource
     {
         abort_unless(UserHelper::canManageStockReservations(), 403);
         abort_unless(UserAccess::canAccessReservation($request->user(), $stockReservation), 403);
-        $request->validate(['hours' => ['required', 'integer', 'min:1', 'max:168']]);
         $stockReservation->update(['expires_at' => $stockReservation->expires_at->addHours($request->integer('hours'))]);
 
         return new StockReservationResource($stockReservation->fresh());
